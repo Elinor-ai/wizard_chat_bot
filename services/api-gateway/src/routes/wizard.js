@@ -44,6 +44,75 @@ const jobStateMachine = createJobCreationStateMachine();
 const REQUIRED_FIELDS = ["title", "location", "employmentType", "mustHaves", "roleCategory"];
 const OPTIONAL_FIELDS = ["salaryRange", "benefits", "niceToHaves", "experienceLevel", "licenses"];
 
+const ROLE_MARKET_BENCHMARKS = {
+  general: {
+    salary: { mid: 70000, high: 90000, currency: "USD" },
+    mustHaves: ["Proven track record of reliability", "Ability to collaborate across functions"],
+    benefits: ["Health insurance", "401(k) with match", "Paid time off"],
+    notes: "Balanced expectations across most customer-facing roles.",
+    locations: {
+      remote: 1,
+      "remote (usa)": 1,
+      "new york": 1.15,
+      "san francisco": 1.25,
+      default: 1
+    }
+  },
+  engineering: {
+    salary: { mid: 145000, high: 172000, currency: "USD" },
+    mustHaves: [
+      "Experience building distributed systems",
+      "Exposure to TypeScript/JavaScript backends",
+      "Comfort with event-driven architectures"
+    ],
+    benefits: ["Equity refreshers", "Learning stipend", "Comprehensive health coverage"],
+    notes: "Engineering talent markets reward clarity on scope and growth.",
+    locations: {
+      remote: 1,
+      "remote (usa)": 1,
+      "new york": 1.1,
+      "san francisco": 1.25,
+      austin: 0.95,
+      default: 1
+    }
+  },
+  sales: {
+    salary: { mid: 95000, high: 125000, currency: "USD" },
+    mustHaves: [
+      "Quota-carrying experience",
+      "Comfort with CRM systems",
+      "Ability to run consultative discovery"
+    ],
+    benefits: ["Accelerators over quota", "Healthcare", "401(k)", "Professional development budget"],
+    notes: "Sales candidates respond to clarity on territory and accelerators.",
+    locations: {
+      remote: 1,
+      "remote (usa)": 1,
+      "new york": 1.05,
+      chicago: 0.95,
+      default: 1
+    }
+  },
+  marketing: {
+    salary: { mid: 110000, high: 138000, currency: "USD" },
+    mustHaves: [
+      "Lifecycle campaign ownership",
+      "Cross-functional stakeholder management",
+      "Data-driven experimentation mindset"
+    ],
+    benefits: ["Wellness stipend", "Hybrid work flexibility", "Comprehensive health coverage"],
+    notes: "Highlight access to creative resources and measurable impact.",
+    locations: {
+      remote: 1,
+      "remote (usa)": 1,
+      "san francisco": 1.18,
+      "new york": 1.15,
+      london: 0.95,
+      default: 1
+    }
+  }
+};
+
 function valueProvided(value) {
   if (Array.isArray(value)) {
     return value.length > 0;
@@ -91,6 +160,118 @@ function parseLocation(value) {
     radiusKm: 10,
     workModel: "on_site"
   };
+}
+
+function normaliseKey(value, fallback = "general") {
+  if (!value) return fallback;
+  return String(value).trim().toLowerCase() || fallback;
+}
+
+function buildMarketIntelligence(state = {}) {
+  const locationParsed = parseLocation(state.location);
+  const locationKey = normaliseKey(state.location ?? locationParsed.city ?? "remote", "remote");
+  const roleKey = normaliseKey(state.roleCategory, "general");
+  const roleIntel = ROLE_MARKET_BENCHMARKS[roleKey] ?? ROLE_MARKET_BENCHMARKS.general;
+  const locationMultiplier =
+    roleIntel.locations?.[locationKey] ??
+    roleIntel.locations?.[locationParsed.city?.toLowerCase?.() ?? ""] ??
+    roleIntel.locations?.default ??
+    1;
+
+  const mid = Math.round(roleIntel.salary.mid * locationMultiplier);
+  const high = Math.round(roleIntel.salary.high * locationMultiplier);
+
+  return {
+    roleKey,
+    location: {
+      city: locationParsed.city,
+      country: locationParsed.country,
+      label: state.location ?? locationParsed.city ?? "Remote",
+      multiplier: locationMultiplier
+    },
+    salaryBands: {
+      p50: mid,
+      p75: high,
+      currency: roleIntel.salary.currency
+    },
+    mustHaveExamples: roleIntel.mustHaves,
+    benefitNorms: roleIntel.benefits,
+    hiringNotes: roleIntel.notes
+  };
+}
+
+function buildFallbackSuggestions(stepId, state, marketIntel) {
+  const suggestions = [];
+
+  if (stepId === "compensation" || (!stepId && !valueProvided(state.salaryRange))) {
+    const salary = marketIntel.salaryBands;
+    suggestions.push({
+      id: `fallback-salary-${Date.now()}`,
+      fieldId: "salaryRange",
+      proposal: `$${salary.p50.toLocaleString()} - $${salary.p75.toLocaleString()} ${salary.currency}`,
+      confidence: 0.68,
+      rationale: `Median offers for ${marketIntel.roleKey} roles in ${marketIntel.location.label} trend between $${salary.p50.toLocaleString()} and $${salary.p75.toLocaleString()}.`
+    });
+    suggestions.push({
+      id: `fallback-benefits-${Date.now()}`,
+      fieldId: "benefits",
+      proposal: marketIntel.benefitNorms.join(", "),
+      confidence: 0.62,
+      rationale: "Candidates expect competitive coverage with wellness and retirement support."
+    });
+  } else if (stepId === "requirements") {
+    if (!valueProvided(state.mustHaves)) {
+      suggestions.push({
+        id: `fallback-must-${Date.now()}`,
+        fieldId: "mustHaves",
+        proposal: marketIntel.mustHaveExamples.join("\n"),
+        confidence: 0.64,
+        rationale: "Essential competencies observed across high-performing teams for this role."
+      });
+    }
+    if (!valueProvided(state.roleCategory)) {
+      suggestions.push({
+        id: `fallback-role-${Date.now()}`,
+        fieldId: "roleCategory",
+        proposal: marketIntel.roleKey,
+        confidence: 0.55,
+        rationale: "Aligns the job catalog with market benchmarks for tailored recommendations."
+      });
+    }
+  } else if (stepId === "additional") {
+    if (!valueProvided(state.niceToHaves)) {
+      suggestions.push({
+        id: `fallback-nice-${Date.now()}`,
+        fieldId: "niceToHaves",
+        proposal: marketIntel.mustHaveExamples
+          .map((item) => `Bonus: ${item}`)
+          .join("\n"),
+        confidence: 0.5,
+        rationale: "Highlighting differentiators helps the copilot propose richer messaging later."
+      });
+    }
+    if (!valueProvided(state.experienceLevel)) {
+      suggestions.push({
+        id: `fallback-exp-${Date.now()}`,
+        fieldId: "experienceLevel",
+        proposal: "mid",
+        confidence: 0.48,
+        rationale: "Most teams hiring this role calibrate for mid-level talent before layering senior scope."
+      });
+    }
+  } else {
+    if (!valueProvided(state.title)) {
+      suggestions.push({
+        id: `fallback-title-${Date.now()}`,
+        fieldId: "title",
+        proposal: "Senior " + (state.roleCategory ?? "Specialist"),
+        confidence: 0.47,
+        rationale: "Adds clarity on seniority while keeping the title searchable for broad talent pools."
+      });
+    }
+  }
+
+  return suggestions;
 }
 
 function buildDescription(state) {
@@ -277,27 +458,29 @@ export function wizardRouter({ orchestrator, logger, firestore }) {
         throw httpError(401, "Missing x-user-id header");
       }
 
-      const suggestions = [];
-      const stepId = payload.currentStepId;
+      const stepId = payload.currentStepId ?? "core-details";
+      const marketIntel = buildMarketIntelligence(payload.state ?? {});
+      let suggestions = [];
 
-      if ((!stepId || stepId === "compensation") && !valueProvided(payload.state.salaryRange)) {
-        suggestions.push({
-          id: `salary-${Date.now()}`,
-          fieldId: "salaryRange",
-          proposal: "$120,000 – $150,000 USD",
-          confidence: 0.68,
-          rationale: "Market benchmark for similar roles in the US."
+      try {
+        const llmResult = await orchestrator.run({
+          type: "wizard.suggestion.step",
+          payload: {
+            draftState: payload.state ?? {},
+            currentStepId: stepId,
+            marketIntelligence: marketIntel
+          }
         });
+
+        if (Array.isArray(llmResult?.content?.suggestions)) {
+          suggestions = llmResult.content.suggestions;
+        }
+      } catch (error) {
+        logger.warn({ err: error, stepId }, "Failed to fetch structured suggestions from orchestrator");
       }
 
-      if ((!stepId || stepId === "compensation") && !valueProvided(payload.state.benefits)) {
-        suggestions.push({
-          id: `benefits-${Date.now()}`,
-          fieldId: "benefits",
-          proposal: "Medical, dental, vision, 401k match, learning stipend",
-          confidence: 0.62,
-          rationale: "Common benefits package that improves apply rate."
-        });
+      if (suggestions.length === 0) {
+        suggestions = buildFallbackSuggestions(stepId, payload.state ?? {}, marketIntel);
       }
 
       res.json({ suggestions });
