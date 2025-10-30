@@ -1,4 +1,3 @@
-/* eslint-disable react/no-array-index-key */
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -17,21 +16,21 @@ const REQUIRED_STEPS = [
         id: "title",
         label: "Job title",
         required: true,
-        placeholder: "Provide the job title."
+        placeholder: "Provide the job title.",
       },
       {
         id: "location",
         label: "Location",
         required: true,
-        placeholder: "Specify the primary location (e.g., Remote, NY, USA)."
+        placeholder: "Specify the primary location (e.g., Remote, NY, USA).",
       },
       {
         id: "employmentType",
         label: "Employment type",
         required: true,
-        placeholder: "Indicate employment type (full-time, part-time, etc.)."
-      }
-    ]
+        placeholder: "Indicate employment type (full-time, part-time, etc.).",
+      },
+    ],
   },
   {
     id: "requirements",
@@ -41,16 +40,16 @@ const REQUIRED_STEPS = [
         id: "mustHaves",
         label: "Must-haves",
         required: true,
-        placeholder: "List essential requirements, one per line."
+        placeholder: "List essential requirements, one per line.",
       },
       {
         id: "roleCategory",
         label: "Role category",
         required: true,
-        placeholder: "Describe the role category or department."
-      }
-    ]
-  }
+        placeholder: "Describe the role category or department.",
+      },
+    ],
+  },
 ];
 
 const OPTIONAL_STEPS = [
@@ -62,15 +61,15 @@ const OPTIONAL_STEPS = [
         id: "salaryRange",
         label: "Salary range",
         required: false,
-        placeholder: "Outline salary range or compensation structure."
+        placeholder: "Outline salary range or compensation structure.",
       },
       {
         id: "benefits",
         label: "Benefits",
         required: false,
-        placeholder: "Highlight benefits offered, one per line."
-      }
-    ]
+        placeholder: "Highlight benefits offered, one per line.",
+      },
+    ],
   },
   {
     id: "additional",
@@ -80,16 +79,16 @@ const OPTIONAL_STEPS = [
         id: "niceToHaves",
         label: "Nice-to-haves",
         required: false,
-        placeholder: "Add preferred qualifications or bonus skills."
+        placeholder: "Add preferred qualifications or bonus skills.",
       },
       {
         id: "experienceLevel",
         label: "Experience level",
         required: false,
-        placeholder: "Indicate target experience level (e.g., mid, senior)."
-      }
-    ]
-  }
+        placeholder: "Indicate target experience level (e.g., mid, senior).",
+      },
+    ],
+  },
 ];
 
 export function WizardShell() {
@@ -104,13 +103,14 @@ export function WizardShell() {
       role: "assistant",
       kind: "info",
       content:
-        "Hi! I’m your recruiting copilot. Ask for market data, salary bands, or copy tweaks any time."
-    }
+        "Hi! I’m your recruiting copilot. Ask for market data, salary bands, or copy tweaks any time.",
+    },
   ]);
   const [isChatting, setIsChatting] = useState(false);
 
   const steps = useMemo(
-    () => (includeOptional ? [...REQUIRED_STEPS, ...OPTIONAL_STEPS] : REQUIRED_STEPS),
+    () =>
+      includeOptional ? [...REQUIRED_STEPS, ...OPTIONAL_STEPS] : REQUIRED_STEPS,
     [includeOptional]
   );
 
@@ -126,12 +126,12 @@ export function WizardShell() {
         throw new Error("User not authenticated");
       }
       return WizardApi.fetchSuggestions(
-        { state },
+        { state, currentStepId: currentStep.id },
         { userId: user.id, jobId: draftId, intent: { includeOptional } }
       );
     },
     enabled: false,
-    staleTime: 5_000
+    staleTime: 5_000,
   });
 
   const persistMutation = useMutation({
@@ -139,8 +139,8 @@ export function WizardShell() {
       WizardApi.persistDraft(payload.state, {
         userId: payload.userId,
         jobId: payload.jobId,
-        intent: payload.intent
-      })
+        intent: payload.intent,
+      }),
   });
 
   const onFieldChange = (fieldId, value) => {
@@ -167,8 +167,8 @@ export function WizardShell() {
           id: `auth-${Date.now()}`,
           role: "assistant",
           kind: "error",
-          content: "Please sign in to submit this draft."
-        }
+          content: "Please sign in to submit this draft.",
+        },
       ]);
       return;
     }
@@ -176,7 +176,7 @@ export function WizardShell() {
     const intent = {
       includeOptional,
       optionalCompleted: includeOptional,
-      ...submissionIntent
+      ...submissionIntent,
     };
 
     try {
@@ -184,7 +184,7 @@ export function WizardShell() {
         state,
         userId: user.id,
         jobId: draftId,
-        intent
+        intent,
       });
       setDraftId(result.draftId);
       setAssistantMessages((prev) => [
@@ -194,8 +194,8 @@ export function WizardShell() {
           role: "assistant",
           kind: "info",
           content:
-            "Draft saved to Firestore. Check the Assets tab for the generated description."
-        }
+            "Draft saved to Firestore. Check the Assets tab for the generated description.",
+        },
       ]);
       suggestionQuery.refetch();
     } catch (error) {
@@ -205,8 +205,8 @@ export function WizardShell() {
           id: `error-${Date.now()}`,
           role: "assistant",
           kind: "error",
-          content: error.message ?? "Failed to save the draft."
-        }
+          content: error.message ?? "Failed to save the draft.",
+        },
       ]);
     }
   };
@@ -223,7 +223,7 @@ export function WizardShell() {
           role: "assistant",
           kind: "suggestion",
           content: suggestion.proposal,
-          meta: suggestion
+          meta: suggestion,
         })
       );
       return [...preserved, ...suggestionMessages];
@@ -236,11 +236,11 @@ export function WizardShell() {
     }
     await WizardApi.mergeSuggestion(suggestion, {
       userId: user.id,
-      jobId: draftId
+      jobId: draftId,
     });
     setState((prev) => ({
       ...prev,
-      [suggestion.fieldId]: suggestion.proposal
+      [suggestion.fieldId]: suggestion.proposal,
     }));
     setAssistantMessages((prev) => [
       ...prev,
@@ -248,8 +248,8 @@ export function WizardShell() {
         id: `${suggestion.id}-ack`,
         role: "assistant",
         kind: "ack",
-        content: `Merged the suggestion into ${suggestion.fieldId}.`
-      }
+        content: `Merged the suggestion into ${suggestion.fieldId}.`,
+      },
     ]);
     suggestionQuery.refetch();
   };
@@ -265,8 +265,8 @@ export function WizardShell() {
           id: `auth-${Date.now()}`,
           role: "assistant",
           kind: "error",
-          content: "Please sign in to chat with the copilot."
-        }
+          content: "Please sign in to chat with the copilot.",
+        },
       ]);
       return;
     }
@@ -275,7 +275,7 @@ export function WizardShell() {
       id: `user-${Date.now()}`,
       role: "user",
       kind: "user",
-      content: trimmed
+      content: trimmed,
     };
 
     const historyPayload = [...assistantMessages, userMessage]
@@ -283,7 +283,7 @@ export function WizardShell() {
       .map((msg) => ({
         id: msg.id,
         role: msg.role,
-        content: msg.content
+        content: msg.content,
       }));
 
     setAssistantMessages((current) => [...current, userMessage]);
@@ -292,7 +292,7 @@ export function WizardShell() {
       const response = await WizardApi.sendChatMessage(
         {
           message: trimmed,
-          history: historyPayload
+          history: historyPayload,
         },
         { userId: user.id }
       );
@@ -302,8 +302,8 @@ export function WizardShell() {
           id: response.id,
           role: "assistant",
           kind: "reply",
-          content: response.reply
-        }
+          content: response.reply,
+        },
       ]);
     } catch (error) {
       setAssistantMessages((current) => [
@@ -313,8 +313,8 @@ export function WizardShell() {
           role: "assistant",
           kind: "error",
           content:
-            "I ran into an issue processing that request. Please try again."
-        }
+            "I ran into an issue processing that request. Please try again.",
+        },
       ]);
     } finally {
       setIsChatting(false);
@@ -365,7 +365,9 @@ export function WizardShell() {
                 className="rounded-xl border border-neutral-200 px-4 py-3 text-sm text-neutral-700 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
                 placeholder={field.placeholder}
                 value={state[field.id] ?? ""}
-                onChange={(event) => onFieldChange(field.id, event.target.value)}
+                onChange={(event) =>
+                  onFieldChange(field.id, event.target.value)
+                }
                 rows={field.id === "title" ? 1 : 3}
               />
             </label>
@@ -375,8 +377,8 @@ export function WizardShell() {
         {showOptionalDecision ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-200 bg-primary-50/50 p-4 text-sm">
             <p className="text-neutral-600">
-              Optional details unlock richer enrichment and campaign recommendations.
-              Would you like to add them now?
+              Optional details unlock richer enrichment and campaign
+              recommendations. Would you like to add them now?
             </p>
             <div className="flex gap-3">
               <button
@@ -391,7 +393,12 @@ export function WizardShell() {
               </button>
               <button
                 type="button"
-                onClick={() => handleSubmit({ includeOptional: false, optionalCompleted: false })}
+                onClick={() =>
+                  handleSubmit({
+                    includeOptional: false,
+                    optionalCompleted: false,
+                  })
+                }
                 className="rounded-full bg-primary-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500"
               >
                 Generate now
@@ -411,11 +418,18 @@ export function WizardShell() {
             {isLastStep ? (
               <button
                 type="button"
-                onClick={() => handleSubmit({ includeOptional: true, optionalCompleted: true })}
+                onClick={() =>
+                  handleSubmit({
+                    includeOptional: true,
+                    optionalCompleted: true,
+                  })
+                }
                 disabled={persistMutation.isPending}
                 className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
               >
-                {persistMutation.isPending ? "Saving…" : "Submit for Generation"}
+                {persistMutation.isPending
+                  ? "Saving…"
+                  : "Submit for Generation"}
               </button>
             ) : (
               <button

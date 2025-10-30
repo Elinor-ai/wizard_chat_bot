@@ -13,6 +13,7 @@ import {
 
 const suggestionRequestSchema = z.object({
   jobId: z.string().optional(),
+  currentStepId: z.string().optional(),
   state: z.record(z.string(), z.any()).default({}),
   intent: z
     .object({
@@ -277,7 +278,9 @@ export function wizardRouter({ orchestrator, logger, firestore }) {
       }
 
       const suggestions = [];
-      if (!valueProvided(payload.state.salaryRange)) {
+      const stepId = payload.currentStepId;
+
+      if ((!stepId || stepId === "compensation") && !valueProvided(payload.state.salaryRange)) {
         suggestions.push({
           id: `salary-${Date.now()}`,
           fieldId: "salaryRange",
@@ -287,7 +290,7 @@ export function wizardRouter({ orchestrator, logger, firestore }) {
         });
       }
 
-      if (!valueProvided(payload.state.benefits)) {
+      if ((!stepId || stepId === "compensation") && !valueProvided(payload.state.benefits)) {
         suggestions.push({
           id: `benefits-${Date.now()}`,
           fieldId: "benefits",
