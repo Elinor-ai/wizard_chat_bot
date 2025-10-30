@@ -1,4 +1,8 @@
-import { Suspense } from "react";
+"use client";
+
+import { Suspense, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useUser } from "../../../components/user-context";
 
 const mockMetrics = [
   { label: "Active Campaigns", value: "12", delta: "+3 this week" },
@@ -8,6 +12,16 @@ const mockMetrics = [
 ];
 
 export default function DashboardOverviewPage() {
+  const { data: session } = useSession();
+  const { user, setUser } = useUser();
+
+  // Sync OAuth session with user context
+  useEffect(() => {
+    if (session?.user && !user) {
+      setUser(session.user);
+    }
+  }, [session, user, setUser]);
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-2">

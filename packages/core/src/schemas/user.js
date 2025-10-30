@@ -14,7 +14,8 @@ export const UserSchema = z.object({
     providerUid: z.string(),
     email: z.string().email(),
     emailVerified: z.boolean(),
-    roles: z.array(UserRoleEnum).min(1)
+    roles: z.array(UserRoleEnum).min(1),
+    passwordHash: z.string().optional() // Only for password provider
   }),
   profile: z.object({
     name: z.string(),
