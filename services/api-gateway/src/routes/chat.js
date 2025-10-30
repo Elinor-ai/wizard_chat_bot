@@ -1,43 +1,49 @@
 import { Router } from "express";
 import { z } from "zod";
-import { wrapAsync } from "@wizard/utils";
+import { wrapAsync, httpError } from "@wizard/utils";
 
-const chatSchema = z.object({
-  message: z.string().min(1),
-  history: z
-    .array(
-      z.object({
-        id: z.string(),
-        role: z.enum(["system", "user", "assistant", "tool"]).default("user"),
-        content: z.string()
-      })
-    )
-    .default([])
+const chatRequestSchema = z.object({
+  jobId: z.string().optional(),
+  userMessage: z.string().min(1),
+  intent: z.record(z.string(), z.unknown()).optional()
 });
 
-export function chatRouter({ orchestrator, logger }) {
+const DRAFT_COLLECTION = "jobsDraft";
+
+function requireUserId(req) {
+  const userId = req.headers["x-user-id"];
+  if (!userId || typeof userId !== "string") {
+    throw httpError(401, "Missing x-user-id header");
+  }
+  return userId;
+}
+
+export function chatRouter({ firestore, llmClient, logger }) {
   const router = Router();
 
   router.post(
-    "/command",
+    "/message",
     wrapAsync(async (req, res) => {
-      const payload = chatSchema.parse(req.body ?? {});
-      logger.info({ messageLength: payload.message.length }, "Received chat command");
+      requireUserId(req);
+      const payload = chatRequestSchema.parse(req.body ?? {});
 
-      const result = await orchestrator.run({
-        type: "chat-response",
-        payload
-      });
-
-      res.json({
-        id: `chat-${Date.now()}`,
-        reply: result.content ?? "Stubbed chat reply",
-        costBreakdown: {
-          totalCredits: "0.0",
-          tokens: 0,
-          inferenceCostUsd: 0
+      let draftState = {};
+      if (payload.jobId) {
+        const draft = await firestore.getDocument(DRAFT_COLLECTION, payload.jobId);
+        if (draft?.state) {
+          draftState = draft.state;
         }
+      }
+
+      const assistantMessage = await llmClient.askChat({
+        userMessage: payload.userMessage,
+        draftState,
+        intent: payload.intent ?? {}
       });
+
+      logger.info({ jobId: payload.jobId, messageLength: payload.userMessage.length }, "Chat message handled");
+
+      res.json({ assistantMessage });
     })
   );
 

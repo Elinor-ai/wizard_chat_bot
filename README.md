@@ -53,7 +53,7 @@ All other services ship with `dev` scripts and structured logging stubs, ready t
 - **Server-side intelligence only:** React app renders status/UX; all orchestration, validation, and persistence happen in services.
 - **Event-driven backbone:** `packages/events` defines the event taxonomy so services can publish/subscribe consistently.
 - **LLM orchestration layer:** `packages/llm` centralizes prompt registration, schema validation, and provider routing. Currently stubbed for easy provider swap.
-- **Deterministic job state machine:** The job wizard progresses through `DRAFT → REQUIRED_IN_PROGRESS → REQUIRED_COMPLETE → ENRICHING_REQUIRED → OPTIONAL_IN_PROGRESS → LLM_ENRICHING → OPTIONAL_COMPLETE → ENRICHING_OPTIONAL → USER_REVIEW → APPROVED → DISTRIBUTION_RECOMMENDATION_LLM → ASSET_SELECTION_READY`. Use the `/wizard/transition` endpoint to promote confirmed jobs into distribution and asset selection phases.
+- **Deterministic job state machine:** The job wizard progresses through `DRAFT → REQUIRED_IN_PROGRESS → REQUIRED_COMPLETE → ENRICHING_REQUIRED → OPTIONAL_IN_PROGRESS → LLM_ENRICHING → OPTIONAL_COMPLETE → ENRICHING_OPTIONAL → USER_REVIEW → APPROVED → DISTRIBUTION_RECOMMENDATION_LLM → ASSET_SELECTION_READY`.
 - **Data abstractions:** `packages/data` exposes Firestore and Redis adapter contracts with logging and config validation baked in.
 - **Credit metering:** Dedicated credits service stub ensures reserve/charge/refund flows remain isolated and auditable.
 - **Observability ready:** `@wizard/utils` bundles Pino logging, env loading, and Express error helpers so every service ships with consistent traces.

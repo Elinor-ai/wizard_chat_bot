@@ -33,7 +33,8 @@ export function WizardSuggestionPanel({
         <button
           type="button"
           onClick={onRefresh}
-          className="rounded-full border border-primary-200 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-white"
+          disabled={isLoading}
+          className="rounded-full border border-primary-200 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isLoading ? "Thinking…" : "Refresh"}
         </button>
@@ -56,7 +57,9 @@ export function WizardSuggestionPanel({
                   : "mr-auto border-primary-100 bg-white text-neutral-700"
               )}
             >
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              {!["followUp", "skip"].includes(message.kind) ? (
+                <p className="whitespace-pre-wrap">{message.content}</p>
+              ) : null}
 
               {message.kind === "suggestion" && message.meta ? (
                 <div className="mt-3 space-y-2 text-xs">
@@ -64,9 +67,11 @@ export function WizardSuggestionPanel({
                     <span className="rounded-full bg-primary-100 px-2 py-1 font-medium text-primary-700">
                       {message.meta.fieldId}
                     </span>
-                    <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">
-                      {(message.meta.confidence * 100).toFixed(0)}% confident
-                    </span>
+                    {typeof message.meta.confidence === "number" ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">
+                        {(message.meta.confidence * 100).toFixed(0)}% confident
+                      </span>
+                    ) : null}
                   </div>
                   <p className="uppercase tracking-wide text-neutral-400">
                     Why: {message.meta.rationale}
@@ -79,6 +84,16 @@ export function WizardSuggestionPanel({
                     Merge suggestion
                   </button>
                 </div>
+              ) : null}
+
+              {message.kind === "followUp" ? (
+                <p className="mt-2 text-xs font-medium text-primary-600">
+                  Follow-up: {message.content}
+                </p>
+              ) : null}
+
+              {message.kind === "skip" ? (
+                <p className="mt-2 text-xs text-neutral-500">{message.content}</p>
               ) : null}
 
               {message.kind === "error" ? (

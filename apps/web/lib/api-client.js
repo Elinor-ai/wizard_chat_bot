@@ -3,37 +3,45 @@ import { z } from "zod";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
+const valueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.record(z.string(), z.unknown()),
+  z.array(z.unknown()),
+  z.null()
+]);
+
 const suggestionSchema = z.object({
   id: z.string(),
   fieldId: z.string(),
-  proposal: z.string(),
+  proposal: valueSchema,
   confidence: z.number(),
   rationale: z.string()
 });
 
+const skipSchema = z.object({
+  fieldId: z.string(),
+  reason: z.string()
+});
+
 const suggestionResponseSchema = z.object({
-  suggestions: z.array(suggestionSchema)
+  suggestions: z.array(suggestionSchema).default([]),
+  skip: z.array(skipSchema).default([]),
+  followUpToUser: z.array(z.string()).default([])
 });
 
 const persistResponseSchema = z.object({
   draftId: z.string(),
-  status: z.literal("SAVED")
+  status: z.string()
+});
+
+const mergeResponseSchema = z.object({
+  status: z.string()
 });
 
 const chatResponseSchema = z.object({
-  id: z.string(),
-  reply: z.string(),
-  costBreakdown: z.object({
-    totalCredits: z.string(),
-    tokens: z.number().optional(),
-    inferenceCostUsd: z.number().optional()
-  })
-});
-
-const transitionResponseSchema = z.object({
-  jobId: z.string(),
-  currentState: z.string(),
-  status: z.string()
+  assistantMessage: z.string()
 });
 
 function authHeaders(userId) {
@@ -47,6 +55,8 @@ function authHeaders(userId) {
 
 export const WizardApi = {
   async fetchSuggestions(payload, options = {}) {
+    const normalizedJobId =
+      options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
     const response = await fetch(`${API_BASE_URL}/wizard/suggestions`, {
       method: "POST",
       headers: {
@@ -55,8 +65,7 @@ export const WizardApi = {
       },
       body: JSON.stringify({
         ...payload,
-        jobId: options.jobId,
-        intent: options.intent ?? {}
+        jobId: normalizedJobId
       })
     });
 
@@ -69,13 +78,20 @@ export const WizardApi = {
   },
 
   async persistDraft(state, options = {}) {
+    const normalizedJobId =
+      options.jobId === null || options.jobId === undefined ? undefined : options.jobId;
     const response = await fetch(`${API_BASE_URL}/wizard/draft`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.userId)
       },
-      body: JSON.stringify({ state, jobId: options.jobId, intent: options.intent ?? {} })
+      body: JSON.stringify({
+        state,
+        jobId: normalizedJobId,
+        intent: options.intent ?? {},
+        currentStepId: options.currentStepId
+      })
     });
 
     if (!response.ok) {
@@ -86,25 +102,26 @@ export const WizardApi = {
     return persistResponseSchema.parse(data);
   },
 
-  async mergeSuggestion(suggestion, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/wizard/confirm`, {
+  async mergeSuggestion(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/wizard/suggestions/merge`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.userId)
       },
-      body: JSON.stringify({ ...suggestion, jobId: options.jobId })
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
       throw new Error("Failed to merge suggestion");
     }
 
-    return response.json();
+    const data = await response.json();
+    return mergeResponseSchema.parse(data);
   },
 
   async sendChatMessage(payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/chat/command`, {
+    const response = await fetch(`${API_BASE_URL}/chat/message`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -119,28 +136,5 @@ export const WizardApi = {
 
     const data = await response.json();
     return chatResponseSchema.parse(data);
-  },
-
-  async transitionJob(jobId, nextState, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/wizard/transition`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders(options.userId)
-      },
-      body: JSON.stringify({
-        jobId,
-        nextState,
-        reason: options.reason ?? ""
-      })
-    });
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(payload?.error?.message ?? "Failed to transition job");
-    }
-
-    const data = await response.json();
-    return transitionResponseSchema.parse(data);
   }
 };

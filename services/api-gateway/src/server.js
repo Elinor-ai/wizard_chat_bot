@@ -7,10 +7,18 @@ import { chatRouter } from "./routes/chat.js";
 import { authRouter } from "./routes/auth.js";
 import { assetsRouter } from "./routes/assets.js";
 
-export function createApp({ orchestrator, logger, firestore }) {
+const corsConfig = {
+  origin: "http://localhost:3000",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "x-user-id"]
+};
+
+export function createApp({ logger, firestore, llmClient }) {
   const app = express();
 
-  app.use(cors());
+  app.use(cors(corsConfig));
+  app.options("*", cors(corsConfig));
+
   app.use(express.json({ limit: "2mb" }));
   app.use(
     morgan("tiny", {
@@ -21,15 +29,8 @@ export function createApp({ orchestrator, logger, firestore }) {
   );
 
   app.use("/auth", authRouter({ firestore, logger }));
-  app.use(
-    "/wizard",
-    wizardRouter({
-      orchestrator,
-      logger,
-      firestore
-    })
-  );
-  app.use("/chat", chatRouter({ orchestrator, logger }));
+  app.use("/wizard", wizardRouter({ firestore, logger }));
+  app.use("/chat", chatRouter({ firestore, llmClient, logger }));
   app.use("/assets", assetsRouter({ firestore, logger }));
 
   app.use(notFound);

@@ -37,23 +37,34 @@ export function ChatConsole() {
     setMessages((current) => [...current, newMessage]);
     setInput("");
 
-    const response = await WizardApi.sendChatMessage(
-      {
-        message: input,
-        history: messages,
-      },
-      { userId: user.id }
-    );
+    try {
+      const response = await WizardApi.sendChatMessage(
+        {
+          jobId: undefined,
+          userMessage: input,
+          intent: {}
+        },
+        { userId: user.id }
+      );
 
-    setMessages((current) => [
-      ...current,
-      {
-        id: response.id,
-        role: "assistant",
-        content: response.reply,
-        cost: response.costBreakdown.totalCredits,
-      },
-    ]);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: response.assistantMessage
+        }
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-error-${Date.now()}`,
+          role: "system",
+          content: error.message ?? "Could not reach the orchestrator."
+        }
+      ]);
+    }
   };
 
   return (

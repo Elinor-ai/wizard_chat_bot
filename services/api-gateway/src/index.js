@@ -1,18 +1,15 @@
 import "express-async-errors";
 import { createApp } from "./server.js";
 import { loadEnv, createLogger } from "@wizard/utils";
-import { LLMOrchestrator } from "@wizard/llm";
 import { createFirestoreAdapter } from "@wizard/data";
-import { createPromptRegistry } from "./prompts.js";
+import { llmClient } from "./llm-client.js";
 
 async function main() {
   const env = loadEnv();
   const logger = createLogger("api-gateway");
-  const promptRegistry = createPromptRegistry();
-  const orchestrator = new LLMOrchestrator({ logger, registry: promptRegistry });
   const firestore = createFirestoreAdapter();
 
-  const app = createApp({ orchestrator, logger, firestore });
+  const app = createApp({ logger, firestore, llmClient });
   const port = Number(env.PORT ?? 4000);
 
   app.listen(port, () => {
