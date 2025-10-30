@@ -10,6 +10,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "npm run bootstrap && npm run dev",
     "bootstrap": "npm install --workspaces --include-workspace-root",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",

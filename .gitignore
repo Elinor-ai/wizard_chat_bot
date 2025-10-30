@@ -6,3 +6,4 @@ out
 coverage
 **/dist
 config/service-account.json
+.claude
