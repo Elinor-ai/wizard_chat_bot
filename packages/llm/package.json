@@ -1,0 +1,25 @@
+{
+  "name": "@wizard/llm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "echo '@wizard/llm uses plain JavaScript'",
+    "dev": "npm run build",
+    "lint": "eslint src --ext .js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@wizard/core": "file:../core",
+    "@wizard/utils": "file:../utils"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.10.0",
+    "eslint": "^8.57.0",
+    "vitest": "^1.6.1"
+  }
+}

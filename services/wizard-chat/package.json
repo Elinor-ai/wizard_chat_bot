@@ -1,0 +1,29 @@
+{
+  "name": "@wizard/service-wizard-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "echo 'Wizard chat service uses plain JavaScript'",
+    "dev": "NODE_ENV=development node --watch src/index.js",
+    "start": "NODE_ENV=production node src/index.js",
+    "lint": "eslint src --ext .js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@wizard/core": "file:../../packages/core",
+    "@wizard/data": "file:../../packages/data",
+    "@wizard/events": "file:../../packages/events",
+    "@wizard/llm": "file:../../packages/llm",
+    "@wizard/utils": "file:../../packages/utils"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.10.0",
+    "eslint": "^8.57.0",
+    "vitest": "^1.6.1"
+  }
+}

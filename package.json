@@ -1,0 +1,26 @@
+{
+  "name": "wizard-chat-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@10.8.1",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "bootstrap": "npm install --workspaces --include-workspace-root",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "dev:web": "npm run dev --workspace web-app",
+    "dev:api": "npm run dev --workspace @wizard/api-gateway",
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:api\"",
+    "format": "npm run format --workspaces --if-present",
+    "lint:fix": "npm run lint:fix --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

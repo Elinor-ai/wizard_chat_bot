@@ -1,0 +1,29 @@
+{
+  "name": "@wizard/data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "echo '@wizard/data uses plain JavaScript'",
+    "dev": "npm run build",
+    "lint": "eslint src --ext .js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^7.6.0",
+    "@wizard/core": "file:../core",
+    "@wizard/utils": "file:../utils",
+    "firebase-admin": "^12.5.0",
+    "ioredis": "^5.4.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.10.0",
+    "eslint": "^8.57.0",
+    "vitest": "^1.6.1"
+  }
+}
