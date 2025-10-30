@@ -8,6 +8,42 @@ const NonNegativeNumber = z.number().min(0);
 const TimestampSchema = z.coerce.date();
 const NullableString = z.string().nullable().optional();
 
+export const JobCreationStateEnum = z.enum([
+  "DRAFT",
+  "REQUIRED_IN_PROGRESS",
+  "REQUIRED_COMPLETE",
+  "ENRICHING_REQUIRED",
+  "OPTIONAL_IN_PROGRESS",
+  "LLM_ENRICHING",
+  "OPTIONAL_COMPLETE",
+  "ENRICHING_OPTIONAL",
+  "USER_REVIEW",
+  "APPROVED",
+  "DISTRIBUTION_RECOMMENDATION_LLM",
+  "ASSET_SELECTION_READY"
+]);
+
+export const JOB_CREATION_STATES = JobCreationStateEnum.options;
+
+export const JobStateToStatusMap = {
+  DRAFT: "draft",
+  REQUIRED_IN_PROGRESS: "intake_in_progress",
+  REQUIRED_COMPLETE: "awaiting_confirmation",
+  ENRICHING_REQUIRED: "awaiting_confirmation",
+  OPTIONAL_IN_PROGRESS: "awaiting_confirmation",
+  LLM_ENRICHING: "assets_generating",
+  OPTIONAL_COMPLETE: "awaiting_confirmation",
+  ENRICHING_OPTIONAL: "assets_generating",
+  USER_REVIEW: "awaiting_confirmation",
+  APPROVED: "approved",
+  DISTRIBUTION_RECOMMENDATION_LLM: "campaigns_planned",
+  ASSET_SELECTION_READY: "assets_generating"
+};
+
+export function deriveJobStatusFromState(state) {
+  return JobStateToStatusMap[state] ?? "draft";
+}
+
 /**
  * LLM suggestion payloads used across wizard/chat experiences.
  */
@@ -48,6 +84,24 @@ export class DeterministicStateMachine {
   }
 }
 
+export function createJobCreationStateMachine() {
+  const machine = new DeterministicStateMachine("job-creation");
+  machine.registerTransition("DRAFT", "REQUIRED_IN_PROGRESS");
+  machine.registerTransition("REQUIRED_IN_PROGRESS", "REQUIRED_COMPLETE");
+  machine.registerTransition("REQUIRED_COMPLETE", "ENRICHING_REQUIRED");
+  machine.registerTransition("ENRICHING_REQUIRED", "USER_REVIEW");
+  machine.registerTransition("REQUIRED_COMPLETE", "OPTIONAL_IN_PROGRESS");
+  machine.registerTransition("OPTIONAL_IN_PROGRESS", "LLM_ENRICHING");
+  machine.registerTransition("LLM_ENRICHING", "OPTIONAL_COMPLETE");
+  machine.registerTransition("OPTIONAL_COMPLETE", "ENRICHING_OPTIONAL");
+  machine.registerTransition("ENRICHING_OPTIONAL", "USER_REVIEW");
+  machine.registerTransition("USER_REVIEW", "APPROVED");
+  machine.registerTransition("APPROVED", "DISTRIBUTION_RECOMMENDATION_LLM");
+  machine.registerTransition("DISTRIBUTION_RECOMMENDATION_LLM", "ASSET_SELECTION_READY");
+  machine.registerTransition("ASSET_SELECTION_READY", "ASSET_SELECTION_READY");
+  return machine;
+}
+
 /**
  * Prompt definitions for LLM orchestration.
  */
@@ -81,6 +135,66 @@ export const ChatThreadSchema = z.object({
   totalCredits: NonNegativeNumber.default(0)
 });
 
+export const LlmSuggestionBucketSchema = z.object({
+  salaryRanges: z
+    .array(
+      z.object({
+        min: z.number().optional(),
+        max: z.number().optional(),
+        confidence: z.number().min(0).max(1),
+        source: z.string().optional()
+      })
+    )
+    .default([]),
+  benefitIdeas: z
+    .array(z.object({ text: z.string(), source: z.string().optional() }))
+    .default([]),
+  titleVariants: z
+    .array(
+      z.object({
+        text: z.string(),
+        score: z.number().optional(),
+        goal: z.enum(["CTR", "SEO", "ApplyRate"]).optional()
+      })
+    )
+    .default([]),
+  descriptionDrafts: z
+    .array(
+      z.object({
+        id: z.string(),
+        text: z.string(),
+        promptVersion: z.string(),
+        model: z.string(),
+        score: z.number().optional()
+      })
+    )
+    .default([]),
+  channelRecommendations: z
+    .array(
+      z.object({
+        channel: z.string(),
+        reason: z.string(),
+        expectedCPA: z.number().optional()
+      })
+    )
+    .default([])
+});
+
+const EMPTY_SUGGESTIONS = LlmSuggestionBucketSchema.parse({});
+
+export const AssetVersionSchema = z.object({
+  version: z.number().int().min(1),
+  promptVersion: z.string(),
+  model: z.string(),
+  summary: z.string().optional(),
+  payload: z.unknown(),
+  createdAt: TimestampSchema,
+  createdBy: z.string().nullable().optional(),
+  tokensUsed: NonNegativeNumber.optional(),
+  creditsCharged: NonNegativeNumber.optional(),
+  suggestionIds: z.array(z.string()).default([])
+});
+
 /**
  * Asset + campaign schemas (provenance + attribution).
  */
@@ -97,9 +211,9 @@ export const AssetArtifactSchema = z.object({
     "INTERVIEW_GUIDE"
   ]),
   status: z.enum(["QUEUED", "DRAFT", "REVIEW", "APPROVED", "FAILED", "ARCHIVED"]),
-  model: z.string(),
-  promptVersion: z.string(),
-  payload: z.unknown(),
+  versions: z.array(AssetVersionSchema).min(1),
+  currentVersion: z.number().int().min(1),
+  selectedForDistribution: z.boolean().default(false),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
   provenance: z.object({
@@ -286,6 +400,22 @@ const GeoPointSchema = z
   })
   .nullable();
 
+export const JobAssetSchema = z.object({
+  assetId: z.string(),
+  type: z.enum(["jd", "image", "video", "lp", "post"]),
+  status: z.enum(["queued", "ok", "failed", "review", "approved", "archived"]),
+  currentVersion: z.number().int().min(1),
+  versions: z.array(AssetVersionSchema).min(1),
+  selectedForDistribution: z.boolean().default(false),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema.optional(),
+  provenance: z.object({
+    confirmedVersionId: z.string().optional(),
+    suggestionIds: z.array(z.string()).default([]),
+    costCredits: z.number().optional()
+  }).optional()
+});
+
 export const JobSchema = z.object({
   id: z.string(),
   ownerUserId: z.string(),
@@ -293,7 +423,18 @@ export const JobSchema = z.object({
   status: JobStatusEnum,
   schemaVersion: z.string(),
   stateMachine: z.object({
-    currentStep: z.string(),
+    currentState: JobCreationStateEnum,
+    previousState: JobCreationStateEnum.nullable().optional(),
+    history: z
+      .array(
+        z.object({
+          from: JobCreationStateEnum,
+          to: JobCreationStateEnum,
+          at: TimestampSchema,
+          reason: z.string().optional()
+        })
+      )
+      .default([]),
     requiredComplete: z.boolean(),
     optionalOffered: z.array(z.string()).default([]),
     lastTransitionAt: TimestampSchema,
@@ -343,69 +484,34 @@ export const JobSchema = z.object({
       .optional(),
     notesCompliance: z.string().optional()
   }),
-  pendingSuggestions: z.object({
-    salaryRanges: z
-      .array(
-        z.object({
-          min: z.number().optional(),
-          max: z.number().optional(),
-          confidence: z.number().min(0).max(1),
-          source: z.string().optional()
-        })
-      )
-      .default([]),
-    benefitIdeas: z
-      .array(z.object({ text: z.string(), source: z.string().optional() }))
-      .default([]),
-    titleVariants: z
-      .array(
-        z.object({
-          text: z.string(),
-          score: z.number().optional(),
-          goal: z.enum(["CTR", "SEO", "ApplyRate"]).optional()
-        })
-      )
-      .default([]),
-    descriptionDrafts: z
-      .array(
-        z.object({
-          id: z.string(),
-          text: z.string(),
-          promptVersion: z.string(),
-          model: z.string(),
-          score: z.number().optional()
-        })
-      )
-      .default([]),
-    channelRecommendations: z
-      .array(
-        z.object({
-          channel: CampaignSchema.shape.channel,
-          reason: z.string(),
-          expectedCPA: z.number().optional()
-        })
-      )
-      .default([])
-  }),
+  pendingSuggestions: LlmSuggestionBucketSchema.default(EMPTY_SUGGESTIONS),
+  llm: z
+    .object({
+      predictions: LlmSuggestionBucketSchema.default(EMPTY_SUGGESTIONS),
+      lastRunAt: TimestampSchema.nullable().optional(),
+      modelsUsed: z
+        .array(
+          z.object({
+            task: z.string(),
+            provider: z.string(),
+            model: z.string(),
+            tokens: NonNegativeNumber.optional(),
+            credits: NonNegativeNumber.optional(),
+            ranAt: TimestampSchema
+          })
+        )
+        .default([])
+    })
+    .default({
+      predictions: EMPTY_SUGGESTIONS,
+      modelsUsed: []
+    }),
   approvals: z.object({
     fieldsApproved: z.array(z.string()).default([]),
     approvedBy: z.string().nullable().optional(),
     approvedAt: TimestampSchema.nullable().optional()
   }),
-  assets: z
-    .array(
-      z.object({
-        assetId: z.string(),
-        type: z.enum(["jd", "image", "video", "lp", "post"]),
-        status: z.enum(["queued", "ok", "failed"]),
-        promptVersion: z.string(),
-        model: z.string(),
-        createdAt: TimestampSchema,
-        updatedAt: TimestampSchema.optional(),
-        summary: z.string().optional()
-      })
-    )
-    .default([]),
+  assets: z.array(JobAssetSchema).default([]),
   campaigns: z
     .array(
       z.object({
@@ -464,6 +570,18 @@ export const JobSchema = z.object({
   }),
   credits: z.object({
     reserved: NonNegativeNumber,
+    reservations: z
+      .array(
+        z.object({
+          reservationId: z.string(),
+          amount: z.number(),
+          reason: z.string(),
+          at: TimestampSchema,
+          status: z.enum(["pending", "released", "cancelled"]).optional(),
+          releasedAt: TimestampSchema.optional()
+        })
+      )
+      .default([]),
     charges: z
       .array(
         z.object({
@@ -475,7 +593,8 @@ export const JobSchema = z.object({
       )
       .default([]),
     pricingVersion: z.string(),
-    policy: z.record(z.string(), z.unknown()).default({})
+    policy: z.record(z.string(), z.unknown()).default({}),
+    tokenToCreditRatio: z.number().optional()
   }),
   publishing: z.object({
     selectedChannels: z.array(z.string()).default([]),

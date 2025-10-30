@@ -9,8 +9,11 @@ const API_BASE_URL =
 
 const statusColor = {
   ok: "bg-emerald-100 text-emerald-700",
+  review: "bg-blue-100 text-blue-700",
+  approved: "bg-emerald-200 text-emerald-800",
   queued: "bg-amber-100 text-amber-700",
-  failed: "bg-red-100 text-red-700"
+  failed: "bg-red-100 text-red-700",
+  archived: "bg-neutral-200 text-neutral-600"
 };
 
 export function AssetList() {
@@ -104,44 +107,49 @@ export function AssetList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 text-neutral-600">
-              {assets.map((asset) => (
-                <tr key={asset.assetId} className="bg-white">
-                  <td className="px-4 py-4">
-                    <p className="font-semibold text-neutral-800">
-                      {asset.type?.toUpperCase()}
-                    </p>
-                    <p className="text-xs text-neutral-400">{asset.assetId}</p>
-                  </td>
-                  <td className="px-4 py-4">
-                    <p className="font-medium text-neutral-700">
-                      {asset.jobTitle}
-                    </p>
-                    {asset.summary ? (
-                      <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
-                        {asset.summary}
+              {assets.map((asset) => {
+                const latestVersion = asset.latestVersion ?? asset.versions?.[asset.versions.length - 1] ?? null;
+                return (
+                  <tr key={asset.assetId} className="bg-white">
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-neutral-800">
+                        {asset.type?.toUpperCase()}
                       </p>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-4">{asset.model}</td>
-                  <td className="px-4 py-4">{asset.promptVersion}</td>
-                  <td className="px-4 py-4 text-neutral-500">
-                    {asset.updatedAt
-                      ? new Date(asset.updatedAt).toLocaleString()
-                      : new Date(asset.createdAt).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span
-                      className={clsx(
-                        "rounded-full px-3 py-1 text-xs font-semibold capitalize",
-                        statusColor[asset.status] ??
-                          "bg-neutral-200 text-neutral-600"
-                      )}
-                    >
-                      {asset.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                      <p className="text-xs text-neutral-400">{asset.assetId}</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-neutral-700">
+                        {asset.jobTitle}
+                      </p>
+                      {latestVersion?.summary ? (
+                        <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
+                          {latestVersion.summary}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-4">{latestVersion?.model ?? "—"}</td>
+                    <td className="px-4 py-4">{latestVersion?.promptVersion ?? "—"}</td>
+                    <td className="px-4 py-4 text-neutral-500">
+                      {asset.updatedAt
+                        ? new Date(asset.updatedAt).toLocaleString()
+                        : latestVersion
+                          ? new Date(latestVersion.createdAt).toLocaleString()
+                          : new Date(asset.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <span
+                        className={clsx(
+                          "rounded-full px-3 py-1 text-xs font-semibold capitalize",
+                          statusColor[asset.status] ??
+                            "bg-neutral-200 text-neutral-600"
+                        )}
+                      >
+                        {asset.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -30,6 +30,12 @@ const chatResponseSchema = z.object({
   })
 });
 
+const transitionResponseSchema = z.object({
+  jobId: z.string(),
+  currentState: z.string(),
+  status: z.string()
+});
+
 function authHeaders(userId) {
   if (!userId) {
     return {};
@@ -49,7 +55,8 @@ export const WizardApi = {
       },
       body: JSON.stringify({
         ...payload,
-        jobId: options.jobId
+        jobId: options.jobId,
+        intent: options.intent ?? {}
       })
     });
 
@@ -68,7 +75,7 @@ export const WizardApi = {
         "Content-Type": "application/json",
         ...authHeaders(options.userId)
       },
-      body: JSON.stringify({ state, jobId: options.jobId })
+      body: JSON.stringify({ state, jobId: options.jobId, intent: options.intent ?? {} })
     });
 
     if (!response.ok) {
@@ -112,5 +119,28 @@ export const WizardApi = {
 
     const data = await response.json();
     return chatResponseSchema.parse(data);
+  },
+
+  async transitionJob(jobId, nextState, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/wizard/transition`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.userId)
+      },
+      body: JSON.stringify({
+        jobId,
+        nextState,
+        reason: options.reason ?? ""
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error?.message ?? "Failed to transition job");
+    }
+
+    const data = await response.json();
+    return transitionResponseSchema.parse(data);
   }
 };

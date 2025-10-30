@@ -21,7 +21,8 @@ export function assetsRouter({ firestore, logger }) {
         return jobAssets.map((asset) => ({
           jobId: job.id,
           jobTitle: job.confirmed?.title ?? "Untitled",
-          ...asset
+          ...asset,
+          latestVersion: asset.versions?.[asset.versions.length - 1] ?? null
         }));
       });
 

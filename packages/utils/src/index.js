@@ -5,6 +5,18 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
 
+let pinoElastic = null;
+
+try {
+  const module = await import("pino-elasticsearch");
+  pinoElastic = module.default ?? module;
+} catch (error) {
+  if (!/Cannot find/.test(error.message)) {
+    // eslint-disable-next-line no-console
+    console.warn("Failed to load pino-elasticsearch", error);
+  }
+}
+
 const configSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.string().default("4000"),
@@ -36,8 +48,47 @@ export function loadEnv(options = {}) {
 }
 
 export function createLogger(name = "app", opts = {}) {
-  const stream = pretty({ colorize: process.env.NODE_ENV !== "production" });
-  return pino({ name, level: opts.level ?? process.env.LOG_LEVEL ?? "info" }, stream);
+  const level = opts.level ?? process.env.LOG_LEVEL ?? "info";
+  const streams = [];
+
+  if (process.env.NODE_ENV !== "production") {
+    streams.push({ stream: pretty({ colorize: true }), level });
+  }
+
+  if (process.env.ELASTICSEARCH_URL && pinoElastic) {
+    try {
+      const elasticStream = pinoElastic({
+        node: process.env.ELASTICSEARCH_URL,
+        index: process.env.ELASTICSEARCH_INDEX ?? "wizard-logs",
+        auth:
+          process.env.ELASTICSEARCH_USERNAME && process.env.ELASTICSEARCH_PASSWORD
+            ? {
+                username: process.env.ELASTICSEARCH_USERNAME,
+                password: process.env.ELASTICSEARCH_PASSWORD
+              }
+            : undefined,
+        tls:
+          process.env.ELASTICSEARCH_TLS?.toLowerCase() === "false"
+            ? { rejectUnauthorized: false }
+            : undefined
+      });
+      streams.push({ stream: elasticStream, level });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to initialise Elasticsearch logging", error);
+    }
+  } else if (process.env.ELASTICSEARCH_URL && !pinoElastic) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "ELASTICSEARCH_URL provided but pino-elasticsearch is not installed; skipping Elasticsearch logging stream."
+    );
+  }
+
+  if (streams.length === 0) {
+    return pino({ name, level });
+  }
+
+  return pino({ name, level }, pino.multistream(streams));
 }
 
 export function wrapAsync(handler) {

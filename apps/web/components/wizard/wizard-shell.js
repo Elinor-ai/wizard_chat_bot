@@ -2,13 +2,13 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { WizardApi } from "../../lib/api-client";
 import { clsx } from "../../lib/cn";
 import { WizardSuggestionPanel } from "./wizard-suggestion-panel";
 import { useUser } from "../user-context";
 
-const steps = [
+const REQUIRED_STEPS = [
   {
     id: "core-details",
     title: "Core details",
@@ -17,22 +17,43 @@ const steps = [
         id: "title",
         label: "Job title",
         required: true,
-        placeholder: "Senior Backend Engineer"
+        placeholder: "Provide the job title."
       },
       {
         id: "location",
         label: "Location",
         required: true,
-        placeholder: "Remote (USA)"
+        placeholder: "Specify the primary location (e.g., Remote, NY, USA)."
       },
       {
         id: "employmentType",
         label: "Employment type",
         required: true,
-        placeholder: "Full-time"
+        placeholder: "Indicate employment type (full-time, part-time, etc.)."
       }
     ]
   },
+  {
+    id: "requirements",
+    title: "Minimum requirements",
+    fields: [
+      {
+        id: "mustHaves",
+        label: "Must-haves",
+        required: true,
+        placeholder: "List essential requirements, one per line."
+      },
+      {
+        id: "roleCategory",
+        label: "Role category",
+        required: true,
+        placeholder: "Describe the role category or department."
+      }
+    ]
+  }
+];
+
+const OPTIONAL_STEPS = [
   {
     id: "compensation",
     title: "Compensation",
@@ -41,31 +62,31 @@ const steps = [
         id: "salaryRange",
         label: "Salary range",
         required: false,
-        placeholder: "$140k – $190k + equity"
+        placeholder: "Outline salary range or compensation structure."
       },
       {
         id: "benefits",
         label: "Benefits",
         required: false,
-        placeholder: "Healthcare, 401k match, wellness stipend"
+        placeholder: "Highlight benefits offered, one per line."
       }
     ]
   },
   {
-    id: "requirements",
-    title: "Requirements",
+    id: "additional",
+    title: "Additional context",
     fields: [
-      {
-        id: "mustHaves",
-        label: "Must-haves",
-        required: true,
-        placeholder: "8+ years building distributed systems"
-      },
       {
         id: "niceToHaves",
         label: "Nice-to-haves",
         required: false,
-        placeholder: "Experience with event-driven architectures"
+        placeholder: "Add preferred qualifications or bonus skills."
+      },
+      {
+        id: "experienceLevel",
+        label: "Experience level",
+        required: false,
+        placeholder: "Indicate target experience level (e.g., mid, senior)."
       }
     ]
   }
@@ -74,8 +95,9 @@ const steps = [
 export function WizardShell() {
   const { user } = useUser();
   const [state, setState] = useState({});
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [draftId, setDraftId] = useState(null);
+  const [includeOptional, setIncludeOptional] = useState(false);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [assistantMessages, setAssistantMessages] = useState([
     {
       id: "intro",
@@ -87,15 +109,25 @@ export function WizardShell() {
   ]);
   const [isChatting, setIsChatting] = useState(false);
 
+  const steps = useMemo(
+    () => (includeOptional ? [...REQUIRED_STEPS, ...OPTIONAL_STEPS] : REQUIRED_STEPS),
+    [includeOptional]
+  );
+
+  const currentStep = steps[currentStepIndex];
+  const showOptionalDecision =
+    !includeOptional && currentStepIndex === REQUIRED_STEPS.length - 1;
+  const isLastStep = currentStepIndex === steps.length - 1;
+
   const suggestionQuery = useQuery({
-    queryKey: ["wizard", "suggestions", draftId, user?.id],
+    queryKey: ["wizard", "suggestions", draftId, user?.id, includeOptional],
     queryFn: () => {
       if (!user) {
         throw new Error("User not authenticated");
       }
       return WizardApi.fetchSuggestions(
         { state },
-        { userId: user.id, jobId: draftId }
+        { userId: user.id, jobId: draftId, intent: { includeOptional } }
       );
     },
     enabled: false,
@@ -106,11 +138,10 @@ export function WizardShell() {
     mutationFn: (payload) =>
       WizardApi.persistDraft(payload.state, {
         userId: payload.userId,
-        jobId: payload.jobId
+        jobId: payload.jobId,
+        intent: payload.intent
       })
   });
-
-  const currentStep = steps[currentStepIndex];
 
   const onFieldChange = (fieldId, value) => {
     setState((prev) => ({ ...prev, [fieldId]: value }));
@@ -128,7 +159,7 @@ export function WizardShell() {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (submissionIntent = {}) => {
     if (!user) {
       setAssistantMessages((prev) => [
         ...prev,
@@ -142,11 +173,18 @@ export function WizardShell() {
       return;
     }
 
+    const intent = {
+      includeOptional,
+      optionalCompleted: includeOptional,
+      ...submissionIntent
+    };
+
     try {
       const result = await persistMutation.mutateAsync({
         state,
         userId: user.id,
-        jobId: draftId
+        jobId: draftId,
+        intent
       });
       setDraftId(result.draftId);
       setAssistantMessages((prev) => [
@@ -155,7 +193,8 @@ export function WizardShell() {
           id: `saved-${Date.now()}`,
           role: "assistant",
           kind: "info",
-          content: "Draft saved to Firestore. Check the Assets tab for the generated description."
+          content:
+            "Draft saved to Firestore. Check the Assets tab for the generated description."
         }
       ]);
       suggestionQuery.refetch();
@@ -247,7 +286,7 @@ export function WizardShell() {
         content: msg.content
       }));
 
-    setAssistantMessages((prev) => [...prev, userMessage]);
+    setAssistantMessages((current) => [...current, userMessage]);
     setIsChatting(true);
     try {
       const response = await WizardApi.sendChatMessage(
@@ -257,8 +296,8 @@ export function WizardShell() {
         },
         { userId: user.id }
       );
-      setAssistantMessages((prev) => [
-        ...prev,
+      setAssistantMessages((current) => [
+        ...current,
         {
           id: response.id,
           role: "assistant",
@@ -267,8 +306,8 @@ export function WizardShell() {
         }
       ]);
     } catch (error) {
-      setAssistantMessages((prev) => [
-        ...prev,
+      setAssistantMessages((current) => [
+        ...current,
         {
           id: `error-${Date.now()}`,
           role: "assistant",
@@ -333,34 +372,62 @@ export function WizardShell() {
           ))}
         </form>
 
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleBack}
-            disabled={currentStepIndex === 0}
-            className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 transition hover:border-primary-500 hover:text-primary-600 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
-          >
-            Back
-          </button>
-          {currentStepIndex < steps.length - 1 ? (
+        {showOptionalDecision ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-200 bg-primary-50/50 p-4 text-sm">
+            <p className="text-neutral-600">
+              Optional details unlock richer enrichment and campaign recommendations.
+              Would you like to add them now?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIncludeOptional(true);
+                  setCurrentStepIndex((index) => index + 1);
+                }}
+                className="rounded-full border border-primary-500 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-primary-100"
+              >
+                Add optional fields
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSubmit({ includeOptional: false, optionalCompleted: false })}
+                className="rounded-full bg-primary-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500"
+              >
+                Generate now
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={handleNext}
-              className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500"
+              onClick={handleBack}
+              disabled={currentStepIndex === 0}
+              className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 transition hover:border-primary-500 hover:text-primary-600 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
             >
-              Next
+              Back
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={persistMutation.isPending}
-              className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-            >
-              {persistMutation.isPending ? "Saving…" : "Submit for Generation"}
-            </button>
-          )}
-        </div>
+            {isLastStep ? (
+              <button
+                type="button"
+                onClick={() => handleSubmit({ includeOptional: true, optionalCompleted: true })}
+                disabled={persistMutation.isPending}
+                className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+              >
+                {persistMutation.isPending ? "Saving…" : "Submit for Generation"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleNext}
+                className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500"
+              >
+                Next
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <WizardSuggestionPanel

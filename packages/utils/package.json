@@ -16,6 +16,7 @@
   "dependencies": {
     "dotenv": "^16.4.5",
     "pino": "^9.4.0",
+    "pino-elasticsearch": "^7.4.0",
     "pino-pretty": "^11.2.2",
     "zod": "^3.23.8"
   },
