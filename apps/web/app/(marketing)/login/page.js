@@ -46,7 +46,7 @@ export default function LoginPage() {
 
       const data = await response.json();
       setUser(data.user);
-      router.push("/dashboard");
+      router.push("/");
     } catch (loginError) {
       setError(loginError.message);
     } finally {
@@ -58,7 +58,7 @@ export default function LoginPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await signIn("google", { callbackUrl: "/dashboard" });
+      await signIn("google", { callbackUrl: "/" });
     } catch (err) {
       setError("Google sign in failed");
       setIsSubmitting(false);

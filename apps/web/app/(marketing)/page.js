@@ -1,4 +1,9 @@
+"use client";
+
 import Link from "next/link";
+import { useState, useEffect, useRef } from "react";
+import { signOut, useSession } from "next-auth/react";
+import { useUser } from "../../components/user-context";
 
 const highlights = [
   {
@@ -19,6 +24,41 @@ const highlights = [
 ];
 
 export default function MarketingPage() {
+  const { user, setUser } = useUser();
+  const { data: session } = useSession();
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  // Sync OAuth session with user context
+  useEffect(() => {
+    if (session?.user && !user) {
+      console.log("Home: Syncing session user to context:", session.user);
+      setUser(session.user);
+    }
+  }, [session, user, setUser]);
+
+  // Use session user as fallback if user context is empty
+  const displayUser = user || session?.user;
+
+  const handleSignOut = async () => {
+    setUser(null);
+    await signOut({ callbackUrl: "/" });
+  };
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setShowUserMenu(false);
+      }
+    };
+
+    if (showUserMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showUserMenu]);
+
   return (
     <main className="flex min-h-screen flex-col bg-gradient-to-b from-neutral-100 to-white">
       <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
@@ -32,18 +72,70 @@ export default function MarketingPage() {
           <Link href="/contact" className="hover:text-primary-600">
             Contact
           </Link>
-          <Link
-            href="/login"
-            className="rounded-full border border-primary-500 px-5 py-2 text-primary-600 transition hover:bg-primary-50"
-          >
-            Log In
-          </Link>
-          <Link
-            href="/signup"
-            className="rounded-full bg-primary-600 px-5 py-2 text-white shadow-lg shadow-primary-200 transition hover:bg-primary-500"
-          >
-            Sign Up
-          </Link>
+
+          {displayUser ? (
+            <>
+              <Link
+                href="/wizard"
+                className="rounded-full border border-primary-500 px-5 py-2 text-primary-600 transition hover:bg-primary-50"
+              >
+                Launch Wizard
+              </Link>
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center gap-2 rounded-full border border-neutral-300 px-3 py-2 transition hover:border-primary-500"
+                >
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700">
+                    {displayUser.profile?.name?.[0]?.toUpperCase() || displayUser.auth?.email?.[0]?.toUpperCase() || displayUser.email?.[0]?.toUpperCase() || "U"}
+                  </div>
+                  <span className="text-sm">{displayUser.profile?.name || displayUser.auth?.email?.split("@")[0] || displayUser.email?.split("@")[0]}</span>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {showUserMenu && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-xl border border-neutral-200 bg-white shadow-lg z-10">
+                    <div className="border-b border-neutral-100 px-4 py-3">
+                      <p className="text-sm font-semibold text-neutral-900">{displayUser.profile?.name || displayUser.name}</p>
+                      <p className="text-xs text-neutral-500">{displayUser.auth?.email || displayUser.email}</p>
+                    </div>
+                    <div className="p-2">
+                      <Link
+                        href="/dashboard"
+                        className="block rounded-lg px-3 py-2 text-sm text-neutral-700 transition hover:bg-neutral-50"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        Dashboard
+                      </Link>
+                      <button
+                        onClick={handleSignOut}
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-full border border-primary-500 px-5 py-2 text-primary-600 transition hover:bg-primary-50"
+              >
+                Log In
+              </Link>
+              <Link
+                href="/signup"
+                className="rounded-full bg-primary-600 px-5 py-2 text-white shadow-lg shadow-primary-200 transition hover:bg-primary-500"
+              >
+                Sign Up
+              </Link>
+            </>
+          )}
         </div>
       </nav>
 

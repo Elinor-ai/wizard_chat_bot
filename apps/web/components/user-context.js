@@ -22,8 +22,11 @@ export function UserProvider({ children }) {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
+      console.log("Loading user from localStorage:", stored ? "Found" : "Not found");
       if (stored) {
-        setUserState(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        console.log("Parsed user:", parsed);
+        setUserState(parsed);
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -32,11 +35,14 @@ export function UserProvider({ children }) {
   }, []);
 
   const setUser = useCallback((nextUser) => {
+    console.log("Setting user:", nextUser);
     setUserState(nextUser);
     if (nextUser) {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser));
+      console.log("User saved to localStorage");
     } else {
       window.localStorage.removeItem(STORAGE_KEY);
+      console.log("User removed from localStorage");
     }
   }, []);
 
