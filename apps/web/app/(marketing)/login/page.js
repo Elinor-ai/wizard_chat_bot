@@ -10,7 +10,6 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 export default function LoginPage() {
-  const devBypass = process.env.NEXT_PUBLIC_DEV_BYPASS === "true";
   const { setUser } = useUser();
   const router = useRouter();
   const [form, setForm] = useState({
@@ -149,14 +148,6 @@ export default function LoginPage() {
           Start your trial
         </Link>
       </p>
-      {devBypass ? (
-        <p className="text-center text-xs text-neutral-400">
-          Dev mode:{" "}
-          <Link href="/wizard" className="font-semibold text-primary-600">
-            Skip login and open console
-          </Link>
-        </p>
-      ) : null}
     </section>
   );
 }

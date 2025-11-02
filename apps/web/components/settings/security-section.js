@@ -122,12 +122,11 @@ export default function SecuritySection({ user }) {
               </div>
               <div>
                 <p className="font-semibold text-neutral-900">Password</p>
-                <p className="text-xs text-neutral-600">Last changed: Unknown</p>
+                <p className="text-xs text-neutral-600">
+                  Manage your password from the profile tab while editing your details.
+                </p>
               </div>
             </div>
-            <button className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-700 transition-colors hover:border-primary-600 hover:text-primary-600">
-              Change
-            </button>
           </div>
         )}
       </div>

@@ -8,7 +8,6 @@ export default function ProfileSection({ user }) {
   const { setUser } = useUser();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [message, setMessage] = useState(null);
   const [isMounted, setIsMounted] = useState(false);
 
@@ -18,6 +17,11 @@ export default function ProfileSection({ user }) {
     phone: '',
     timezone: 'America/New_York',
     locale: 'en-US',
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
   });
 
   // Initialize form data after mount to prevent hydration mismatch
@@ -29,6 +33,11 @@ export default function ProfileSection({ user }) {
       timezone: user?.profile?.timezone || 'America/New_York',
       locale: user?.profile?.locale || 'en-US',
     });
+    setPasswordForm({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
     setIsMounted(true);
   }, [user]);
 
@@ -37,13 +46,48 @@ export default function ProfileSection({ user }) {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handlePasswordChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordForm((prev) => ({ ...prev, [name]: value }));
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     setMessage(null);
 
+    const shouldChangePassword =
+      user?.auth?.provider === 'password' && passwordForm.newPassword.trim().length > 0;
+
+    if (shouldChangePassword) {
+      if (passwordForm.newPassword.trim().length < 8) {
+        setMessage({
+          type: 'error',
+          text: 'New password must be at least 8 characters long.',
+        });
+        setIsSaving(false);
+        return;
+      }
+      if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+        setMessage({
+          type: 'error',
+          text: 'New password and confirmation must match.',
+        });
+        setIsSaving(false);
+        return;
+      }
+      if (!passwordForm.currentPassword.trim()) {
+        setMessage({
+          type: 'error',
+          text: 'Please enter your current password to set a new one.',
+        });
+        setIsSaving(false);
+        return;
+      }
+    }
+
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
-      const response = await fetch(`${apiBaseUrl}/users/me`, {
+      const profileResponse = await fetch(`${apiBaseUrl}/users/me`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -54,14 +98,39 @@ export default function ProfileSection({ user }) {
         }),
       });
 
-      if (!response.ok) {
+      if (!profileResponse.ok) {
         throw new Error('Failed to update profile');
       }
 
-      const updatedUser = await response.json();
+      let updatedUser = await profileResponse.json();
+
+      if (shouldChangePassword) {
+        const passwordResponse = await fetch(`${apiBaseUrl}/users/me/change-password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.id,
+          },
+          body: JSON.stringify({
+            currentPassword: passwordForm.currentPassword,
+            newPassword: passwordForm.newPassword,
+          }),
+        });
+
+        if (!passwordResponse.ok) {
+          const payload = await passwordResponse.json().catch(() => null);
+          throw new Error(payload?.error?.message ?? 'Failed to change password');
+        }
+      }
+
       setUser(updatedUser);
       setIsEditing(false);
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
     } catch (error) {
       console.error('Error updating profile:', error);
       setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
@@ -80,6 +149,11 @@ export default function ProfileSection({ user }) {
     });
     setIsEditing(false);
     setMessage(null);
+    setPasswordForm({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
   };
 
   const getProviderBadge = () => {
@@ -317,6 +391,54 @@ export default function ProfileSection({ user }) {
             <option value="ja-JP">日本語 (日本)</option>
           </select>
         </div>
+
+        {/* Password Fields */}
+        {isEditing && user?.auth?.provider === 'password' && (
+          <div className="space-y-4 border-t border-neutral-200 pt-4">
+            <div>
+              <label className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Current Password
+              </label>
+              <input
+                type="password"
+                name="currentPassword"
+                value={passwordForm.currentPassword}
+                onChange={handlePasswordChange}
+                className="w-full rounded-xl border border-neutral-200 px-4 py-3 text-sm text-neutral-700 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
+                placeholder="Enter your current password"
+              />
+            </div>
+            <div>
+              <label className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                New Password
+              </label>
+              <input
+                type="password"
+                name="newPassword"
+                value={passwordForm.newPassword}
+                onChange={handlePasswordChange}
+                className="w-full rounded-xl border border-neutral-200 px-4 py-3 text-sm text-neutral-700 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
+                placeholder="Set a new password (leave blank to keep current)"
+              />
+            </div>
+            <div>
+              <label className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Confirm New Password
+              </label>
+              <input
+                type="password"
+                name="confirmPassword"
+                value={passwordForm.confirmPassword}
+                onChange={handlePasswordChange}
+                className="w-full rounded-xl border border-neutral-200 px-4 py-3 text-sm text-neutral-700 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
+                placeholder="Re-enter new password"
+              />
+            </div>
+            <p className="text-xs text-neutral-500">
+              Leaving the password fields blank will keep your current password unchanged.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Action Buttons */}
@@ -335,19 +457,6 @@ export default function ProfileSection({ user }) {
             className="flex-1 rounded-full border border-neutral-200 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-700 transition-colors hover:border-neutral-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
-          </button>
-        </div>
-      )}
-
-      {/* Change Password */}
-      {user?.auth?.provider === 'password' && !isEditing && (
-        <div className="mt-6 border-t border-neutral-200 pt-6">
-          <button
-            onClick={() => setShowPasswordModal(true)}
-            className="flex items-center gap-2 text-sm font-semibold text-primary-600 hover:text-primary-700"
-          >
-            <Key className="h-4 w-4" />
-            Change Password
           </button>
         </div>
       )}

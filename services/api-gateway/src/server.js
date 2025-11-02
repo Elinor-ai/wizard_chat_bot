@@ -7,10 +7,12 @@ import { chatRouter } from "./routes/chat.js";
 import { authRouter } from "./routes/auth.js";
 import { assetsRouter } from "./routes/assets.js";
 import { dashboardRouter } from "./routes/dashboard.js";
+import { contactRouter } from "./routes/contact.js";
+import { usersRouter } from "./routes/users.js";
 
 const corsConfig = {
   origin: "http://localhost:3000",
-  methods: ["GET", "POST", "OPTIONS"],
+  methods: ["GET", "POST", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-user-id"]
 };
 
@@ -34,6 +36,8 @@ export function createApp({ logger, firestore, llmClient }) {
   app.use("/chat", chatRouter({ firestore, llmClient, logger }));
   app.use("/assets", assetsRouter({ firestore, logger }));
   app.use("/dashboard", dashboardRouter({ firestore, logger }));
+  app.use("/users", usersRouter({ firestore, logger }));
+  app.use("/contact", contactRouter({ logger }));
 
   app.use(notFound);
   app.use(errorHandler(logger));

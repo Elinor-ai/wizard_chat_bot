@@ -10,8 +10,7 @@ const navItems = [
   { href: "/wizard", label: "Job Wizard" },
   { href: "/assets", label: "Assets" },
   { href: "/campaigns", label: "Campaigns" },
-  { href: "/credits", label: "Credits" },
-  { href: "/chat", label: "LLM Console" }
+  { href: "/credits", label: "Credits" }
 ];
 
 export default function DashboardLayout({ children }) {
