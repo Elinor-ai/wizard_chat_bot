@@ -6,6 +6,7 @@ import { wizardRouter } from "./routes/wizard.js";
 import { chatRouter } from "./routes/chat.js";
 import { authRouter } from "./routes/auth.js";
 import { assetsRouter } from "./routes/assets.js";
+import { dashboardRouter } from "./routes/dashboard.js";
 
 const corsConfig = {
   origin: "http://localhost:3000",
@@ -32,6 +33,7 @@ export function createApp({ logger, firestore, llmClient }) {
   app.use("/wizard", wizardRouter({ firestore, logger, llmClient }));
   app.use("/chat", chatRouter({ firestore, llmClient, logger }));
   app.use("/assets", assetsRouter({ firestore, logger }));
+  app.use("/dashboard", dashboardRouter({ firestore, logger }));
 
   app.use(notFound);
   app.use(errorHandler(logger));

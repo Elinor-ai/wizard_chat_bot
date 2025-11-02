@@ -89,16 +89,18 @@ export const JobSchema = z.object({
       .nullable()
       .optional(),
     description: z.string(),
-    requirements: z.object({
-      mustHave: z.array(z.string()),
-      niceToHave: z.array(z.string()).default([])
-    }),
+    requirements: z
+      .object({
+        mustHave: z.array(z.string()).default([]),
+        niceToHave: z.array(z.string()).default([])
+      })
+      .default({}),
     benefits: z.array(z.string()).default([]),
     experienceLevel: ExperienceLevelEnum.optional(),
     licenses: z.array(z.string()).default([]),
-    language: z.string(),
+    language: z.string().default("en-US"),
     industry: z.string().optional(),
-    applyMethod: ApplyMethodEnum,
+    applyMethod: ApplyMethodEnum.default("internal_form"),
     applicationFormId: z.string().nullable().optional(),
     externalApplyUrl: z.string().nullable().optional(),
     brand: z

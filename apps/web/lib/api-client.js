@@ -44,6 +44,89 @@ const chatResponseSchema = z.object({
   assistantMessage: z.string()
 });
 
+const dashboardSummarySchema = z.object({
+  jobs: z.object({
+    total: z.number(),
+    active: z.number(),
+    awaitingApproval: z.number(),
+    draft: z.number(),
+    states: z.record(z.string(), z.number())
+  }),
+  assets: z.object({
+    total: z.number(),
+    approved: z.number(),
+    queued: z.number()
+  }),
+  campaigns: z.object({
+    total: z.number(),
+    live: z.number(),
+    planned: z.number()
+  }),
+  credits: z.object({
+    balance: z.number(),
+    reserved: z.number(),
+    lifetimeUsed: z.number()
+  }),
+  usage: z.object({
+    tokens: z.number(),
+    applies: z.number(),
+    interviews: z.number(),
+    hires: z.number()
+  }),
+  updatedAt: z.string()
+});
+
+const dashboardSummaryResponseSchema = z.object({
+  summary: dashboardSummarySchema
+});
+
+const dashboardCampaignSchema = z.object({
+  campaignId: z.string(),
+  jobId: z.string(),
+  jobTitle: z.string(),
+  channel: z.string(),
+  status: z.string(),
+  budget: z.number(),
+  objective: z.string(),
+  createdAt: z.union([z.string(), z.instanceof(Date)]).transform((value) =>
+    value instanceof Date ? value.toISOString() : value
+  )
+});
+
+const dashboardCampaignResponseSchema = z.object({
+  campaigns: z.array(dashboardCampaignSchema)
+});
+
+const dashboardLedgerEntrySchema = z.object({
+  id: z.string(),
+  jobId: z.string(),
+  type: z.string(),
+  workflow: z.string(),
+  amount: z.number(),
+  status: z.string(),
+  occurredAt: z.union([z.string(), z.instanceof(Date)]).transform((value) =>
+    value instanceof Date ? value.toISOString() : value
+  )
+});
+
+const dashboardLedgerResponseSchema = z.object({
+  entries: z.array(dashboardLedgerEntrySchema)
+});
+
+const dashboardActivityEventSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  title: z.string(),
+  detail: z.string(),
+  occurredAt: z.union([z.string(), z.instanceof(Date)]).transform((value) =>
+    value instanceof Date ? value.toISOString() : value
+  )
+});
+
+const dashboardActivityResponseSchema = z.object({
+  events: z.array(dashboardActivityEventSchema)
+});
+
 function authHeaders(userId) {
   if (!userId) {
     return {};
@@ -136,5 +219,71 @@ export const WizardApi = {
 
     const data = await response.json();
     return chatResponseSchema.parse(data);
+  }
+};
+
+export const DashboardApi = {
+  async fetchSummary(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/dashboard/summary`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.userId)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load dashboard summary");
+    }
+
+    const data = await response.json();
+    return dashboardSummaryResponseSchema.parse(data).summary;
+  },
+
+  async fetchCampaigns(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/dashboard/campaigns`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.userId)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load campaigns");
+    }
+
+    const data = await response.json();
+    return dashboardCampaignResponseSchema.parse(data).campaigns;
+  },
+
+  async fetchLedger(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/dashboard/ledger`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.userId)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load credit ledger");
+    }
+
+    const data = await response.json();
+    return dashboardLedgerResponseSchema.parse(data).entries;
+  },
+
+  async fetchActivity(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/dashboard/activity`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.userId)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load activity feed");
+    }
+
+    const data = await response.json();
+    return dashboardActivityResponseSchema.parse(data).events;
   }
 };

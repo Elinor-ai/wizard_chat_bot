@@ -1,26 +1,78 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { DashboardApi } from "../../../lib/api-client";
 import { useUser } from "../../../components/user-context";
 
-const mockMetrics = [
-  { label: "Active Campaigns", value: "12", delta: "+3 this week" },
-  { label: "Spend (MTD)", value: "$8,420", delta: "0.72 credit/job" },
-  { label: "Qualified Leads", value: "94", delta: "+21%" },
-  { label: "Avg. Time-to-Hire", value: "17 days", delta: "-4 days" }
-];
+function formatNumber(value, { currency = false } = {}) {
+  if (currency) {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+  }
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
+}
 
 export default function DashboardOverviewPage() {
   const { data: session } = useSession();
   const { user, setUser } = useUser();
 
-  // Sync OAuth session with user context
   useEffect(() => {
     if (session?.user && !user) {
       setUser(session.user);
     }
   }, [session, user, setUser]);
+
+  const userId = user?.id;
+
+  const summaryQuery = useQuery({
+    queryKey: ["dashboard-summary", userId],
+    queryFn: () => DashboardApi.fetchSummary({ userId }),
+    enabled: Boolean(userId)
+  });
+
+  const activityQuery = useQuery({
+    queryKey: ["dashboard-activity", userId],
+    queryFn: () => DashboardApi.fetchActivity({ userId }),
+    enabled: Boolean(userId)
+  });
+
+  const metricCards = useMemo(() => {
+    if (!summaryQuery.data) {
+      return [];
+    }
+    const summary = summaryQuery.data;
+    return [
+      {
+        label: "Jobs live",
+        value: formatNumber(summary.jobs.active),
+        detail: `${formatNumber(summary.jobs.awaitingApproval)} awaiting approval`
+      },
+      {
+        label: "Assets",
+        value: formatNumber(summary.assets.total),
+        detail: `${formatNumber(summary.assets.approved)} approved`
+      },
+      {
+        label: "Campaigns",
+        value: formatNumber(summary.campaigns.total),
+        detail: `${formatNumber(summary.campaigns.live)} live`
+      },
+      {
+        label: "Credits",
+        value: formatNumber(summary.credits.balance, { currency: true }),
+        detail: `${formatNumber(summary.credits.reserved, { currency: true })} reserved`
+      }
+    ];
+  }, [summaryQuery.data]);
+
+  if (!userId) {
+    return (
+      <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-neutral-600 shadow-sm shadow-neutral-100">
+        Sign in to review your recruiting performance.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -34,59 +86,100 @@ export default function DashboardOverviewPage() {
       </header>
 
       <section className="grid gap-4 md:grid-cols-4">
-        {mockMetrics.map((metric) => (
-          <article
-            key={metric.label}
-            className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100"
-          >
-            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-              {metric.label}
-            </p>
-            <p className="mt-3 text-2xl font-semibold text-neutral-900">
-              {metric.value}
-            </p>
-            <p className="mt-2 text-xs text-primary-600">{metric.delta}</p>
+        {summaryQuery.isLoading ? (
+          Array.from({ length: 4 }).map((_, index) => (
+            <article
+              key={`summary-skeleton-${index}`}
+              className="animate-pulse rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100"
+            >
+              <div className="h-3 w-24 rounded bg-neutral-200" />
+              <div className="mt-4 h-6 w-32 rounded bg-neutral-200" />
+              <div className="mt-2 h-3 w-20 rounded bg-neutral-100" />
+            </article>
+          ))
+        ) : summaryQuery.isError ? (
+          <article className="rounded-3xl border border-red-200 bg-red-50 p-6 text-sm text-red-600 shadow-sm shadow-red-100">
+            Failed to load summary data. Please retry shortly.
           </article>
-        ))}
+        ) : metricCards.length === 0 ? (
+          <article className="rounded-3xl border border-dashed border-neutral-200 bg-white p-6 text-sm text-neutral-500 shadow-sm shadow-neutral-100">
+            No job data yet. Launch your first wizard to populate the dashboard.
+          </article>
+        ) : (
+          metricCards.map((metric) => (
+            <article
+              key={metric.label}
+              className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                {metric.label}
+              </p>
+              <p className="mt-3 text-2xl font-semibold text-neutral-900">
+                {metric.value}
+              </p>
+              <p className="mt-2 text-xs text-primary-600">{metric.detail}</p>
+            </article>
+          ))
+        )}
       </section>
 
-      <Suspense fallback={<div className="text-sm text-neutral-500">Loading activity…</div>}>
-        <RecentActivity />
-      </Suspense>
+      <RecentActivity
+        events={activityQuery.data ?? []}
+        isLoading={activityQuery.isLoading}
+        isError={activityQuery.isError}
+      />
     </div>
   );
 }
 
-function RecentActivity() {
-  const events = [
-    {
-      id: "evt-1",
-      title: "Campaign: Senior Backend Engineer",
-      detail: "LinkedIn + Reddit went live. Credits reserved: 98."
-    },
-    {
-      id: "evt-2",
-      title: "Asset approved",
-      detail: "Landing page variation v3 confirmed by Dana."
-    },
-    {
-      id: "evt-3",
-      title: "Interview kit generated",
-      detail: "Structured rubric with compliant prompts ready."
-    }
-  ];
+function RecentActivity({ events, isLoading, isError }) {
+  if (isLoading) {
+    return (
+      <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100">
+        <h2 className="text-lg font-semibold text-neutral-900">Recent activity</h2>
+        <ul className="mt-4 space-y-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <li key={`activity-skeleton-${index}`} className="animate-pulse rounded-2xl border border-neutral-100 p-4">
+              <div className="h-3 w-48 rounded bg-neutral-200" />
+              <div className="mt-2 h-3 w-64 rounded bg-neutral-100" />
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
+
+  if (isError) {
+    return (
+      <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100">
+        <h2 className="text-lg font-semibold text-neutral-900">Recent activity</h2>
+        <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-600">
+          Unable to load activity feed. Please refresh the page.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100">
       <h2 className="text-lg font-semibold text-neutral-900">Recent activity</h2>
-      <ul className="mt-4 space-y-4 text-sm text-neutral-600">
-        {events.map((event) => (
-          <li key={event.id} className="rounded-2xl border border-neutral-100 p-4">
-            <p className="font-semibold text-neutral-800">{event.title}</p>
-            <p className="mt-1 text-xs text-neutral-500">{event.detail}</p>
-          </li>
-        ))}
-      </ul>
+      {events.length === 0 ? (
+        <p className="mt-4 rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 p-6 text-sm text-neutral-500">
+          No workflow events yet. Once jobs progress through the pipeline their activity will appear here.
+        </p>
+      ) : (
+        <ul className="mt-4 space-y-4 text-sm text-neutral-600">
+          {events.map((event) => (
+            <li key={event.id} className="rounded-2xl border border-neutral-100 p-4">
+              <p className="font-semibold text-neutral-800">{event.title}</p>
+              <p className="mt-1 text-xs text-neutral-500">{event.detail}</p>
+              <p className="mt-1 text-[11px] uppercase tracking-wide text-neutral-400">
+                {new Date(event.occurredAt).toLocaleString()}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
