@@ -29,7 +29,7 @@ export function createApp({ logger, firestore, llmClient }) {
   );
 
   app.use("/auth", authRouter({ firestore, logger }));
-  app.use("/wizard", wizardRouter({ firestore, logger }));
+  app.use("/wizard", wizardRouter({ firestore, logger, llmClient }));
   app.use("/chat", chatRouter({ firestore, llmClient, logger }));
   app.use("/assets", assetsRouter({ firestore, logger }));
 

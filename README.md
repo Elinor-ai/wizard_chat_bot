@@ -62,6 +62,17 @@ All other services ship with `dev` scripts and structured logging stubs, ready t
 
 Copy `.env.example` to `.env` and populate credentials per environment. Secrets are never committed.
 
+For LLM-backed suggestions and chat, set the following (OpenAI example):
+
+```
+OPENAI_API_KEY=sk-...
+# Optional overrides
+OPENAI_CHAT_MODEL=gpt-4o-mini
+OPENAI_SUGGEST_MODEL=gpt-4o-mini
+```
+
+If these are not provided, the orchestrator falls back to heuristic suggestions and canned chat replies.
+
 ## Next Steps
 
 1. Wire services to a message broker (Pub/Sub, Cloud Tasks, etc.) and persist events in Firestore.
