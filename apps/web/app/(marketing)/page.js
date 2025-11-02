@@ -24,8 +24,8 @@ const highlights = [
 ];
 
 export default function MarketingPage() {
-  const { user, setUser } = useUser();
-  const { data: session } = useSession();
+  const { user, setUser, isHydrated } = useUser();
+  const { data: session, status } = useSession();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef(null);
 
@@ -39,6 +39,7 @@ export default function MarketingPage() {
 
   // Use session user as fallback if user context is empty
   const displayUser = user || session?.user;
+  const isLoading = status === "loading" || !isHydrated;
 
   const handleSignOut = async () => {
     setUser(null);
@@ -61,7 +62,7 @@ export default function MarketingPage() {
 
   return (
     <main className="flex min-h-screen flex-col bg-gradient-to-b from-neutral-100 to-white">
-      <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
+      <nav className="flex w-full items-center justify-between px-6 py-6">
         <span className="text-lg font-semibold text-primary-700">
           Wizard Recruiting OS
         </span>
@@ -73,7 +74,12 @@ export default function MarketingPage() {
             Contact
           </Link>
 
-          {displayUser ? (
+          {isLoading ? (
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-28 animate-pulse rounded-full bg-neutral-200"></div>
+              <div className="h-9 w-24 animate-pulse rounded-full bg-neutral-200"></div>
+            </div>
+          ) : displayUser ? (
             <>
               <Link
                 href="/wizard"
@@ -108,6 +114,13 @@ export default function MarketingPage() {
                         onClick={() => setShowUserMenu(false)}
                       >
                         Dashboard
+                      </Link>
+                      <Link
+                        href="/settings"
+                        className="block rounded-lg px-3 py-2 text-sm text-neutral-700 transition hover:bg-neutral-50"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        Settings
                       </Link>
                       <button
                         onClick={handleSignOut}

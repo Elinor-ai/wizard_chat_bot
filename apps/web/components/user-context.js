@@ -11,13 +11,15 @@ import {
 
 const UserContext = createContext({
   user: null,
-  setUser: () => {}
+  setUser: () => {},
+  isHydrated: false
 });
 
 const STORAGE_KEY = "wizard:user";
 
 export function UserProvider({ children }) {
   const [user, setUserState] = useState(null);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
     try {
@@ -31,6 +33,9 @@ export function UserProvider({ children }) {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn("Failed to parse stored user", error);
+    } finally {
+      // Mark as hydrated whether we found a user or not
+      setIsHydrated(true);
     }
   }, []);
 
@@ -49,9 +54,10 @@ export function UserProvider({ children }) {
   const value = useMemo(
     () => ({
       user,
-      setUser
+      setUser,
+      isHydrated
     }),
-    [user, setUser]
+    [user, setUser, isHydrated]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

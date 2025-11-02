@@ -15,8 +15,8 @@ const navItems = [
 ];
 
 export default function DashboardLayout({ children }) {
-  const { user, setUser } = useUser();
-  const { data: session } = useSession();
+  const { user, setUser, isHydrated } = useUser();
+  const { data: session, status } = useSession();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef(null);
 
@@ -30,6 +30,7 @@ export default function DashboardLayout({ children }) {
 
   // Use session user as fallback if user context is empty
   const displayUser = user || session?.user;
+  const isLoading = status === "loading" || !isHydrated;
 
   const handleSignOut = async () => {
     setUser(null);
@@ -77,7 +78,12 @@ export default function DashboardLayout({ children }) {
         {/* Top header with user menu */}
         <header className="border-b border-neutral-200 bg-white px-4 py-3 md:px-10">
           <div className="flex items-center justify-end">
-            {displayUser ? (
+            {isLoading ? (
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2">
+                <div className="h-8 w-8 animate-pulse rounded-full bg-neutral-200"></div>
+                <div className="h-4 w-24 animate-pulse rounded bg-neutral-200"></div>
+              </div>
+            ) : displayUser ? (
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
@@ -115,6 +121,13 @@ export default function DashboardLayout({ children }) {
                         onClick={() => setShowUserMenu(false)}
                       >
                         Dashboard
+                      </Link>
+                      <Link
+                        href="/settings"
+                        className="block rounded-lg px-3 py-2 text-sm text-neutral-700 transition hover:bg-neutral-50"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        Settings
                       </Link>
                       <button
                         onClick={handleSignOut}
