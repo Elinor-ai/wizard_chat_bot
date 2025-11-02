@@ -1,4 +1,3 @@
-/* eslint-disable react/no-array-index-key */
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
@@ -8,10 +7,48 @@ import { clsx } from "../../lib/cn";
 import { WizardSuggestionPanel } from "./wizard-suggestion-panel";
 import { useUser } from "../user-context";
 
+function setDeep(obj, path, value) {
+  const segments = path.split(".");
+  const last = segments.pop();
+  let cursor = obj;
+  for (const segment of segments) {
+    if (!cursor[segment] || typeof cursor[segment] !== "object") {
+      cursor[segment] = {};
+    }
+    cursor = cursor[segment];
+  }
+  if (value === undefined) {
+    if (cursor && typeof cursor === "object") {
+      delete cursor[last];
+    }
+  } else {
+    cursor[last] = value;
+  }
+}
+
+function getDeep(obj, path) {
+  const segments = path.split(".");
+  let cursor = obj;
+  for (const segment of segments) {
+    if (cursor == null || typeof cursor !== "object") {
+      return undefined;
+    }
+    cursor = cursor[segment];
+  }
+  return cursor;
+}
+
+function deepClone(value) {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
 const WORK_MODEL_OPTIONS = [
   { value: "on_site", label: "On-site" },
   { value: "hybrid", label: "Hybrid" },
-  { value: "remote", label: "Remote" }
+  { value: "remote", label: "Remote" },
 ];
 
 const EMPLOYMENT_TYPE_OPTIONS = [
@@ -19,25 +56,25 @@ const EMPLOYMENT_TYPE_OPTIONS = [
   { value: "part_time", label: "Part-time" },
   { value: "contract", label: "Contract" },
   { value: "temp", label: "Temporary" },
-  { value: "intern", label: "Internship" }
+  { value: "intern", label: "Internship" },
 ];
 
 const SALARY_PERIOD_OPTIONS = [
   { value: "hour", label: "Per hour" },
   { value: "month", label: "Per month" },
-  { value: "year", label: "Per year" }
+  { value: "year", label: "Per year" },
 ];
 
 const APPLY_METHOD_OPTIONS = [
   { value: "internal_form", label: "Internal form" },
   { value: "external_link", label: "External link" },
-  { value: "both", label: "Internal form + external link" }
+  { value: "both", label: "Internal form + external link" },
 ];
 
 const EXPERIENCE_LEVEL_OPTIONS = [
   { value: "entry", label: "Entry level" },
   { value: "mid", label: "Mid level" },
-  { value: "senior", label: "Senior" }
+  { value: "senior", label: "Senior" },
 ];
 
 const REQUIRED_STEPS = [
@@ -46,21 +83,21 @@ const REQUIRED_STEPS = [
     title: "Role basics",
     fields: [
       {
-        id: "title",
+        id: "core.job_title",
         label: "Job title",
         required: true,
         placeholder: "e.g. Senior Backend Engineer",
         type: "text",
-        maxLength: 120
+        maxLength: 120,
       },
       {
-        id: "roleCategory",
+        id: "core.job_family",
         label: "Role category / department",
         required: true,
         placeholder: "e.g. Engineering, Customer Success",
-        type: "text"
-      }
-    ]
+        type: "text",
+      },
+    ],
   },
   {
     id: "location-model",
@@ -71,7 +108,7 @@ const REQUIRED_STEPS = [
         label: "Primary city",
         required: true,
         placeholder: "e.g. Tel Aviv",
-        type: "text"
+        type: "text",
       },
       {
         id: "location.country",
@@ -79,38 +116,38 @@ const REQUIRED_STEPS = [
         required: true,
         placeholder: "e.g. IL",
         type: "text",
-        maxLength: 2
+        maxLength: 2,
       },
       {
-        id: "workModel",
+        id: "location.work_model",
         label: "Work model",
         required: true,
         type: "select",
-        options: WORK_MODEL_OPTIONS
-      }
-    ]
+        options: WORK_MODEL_OPTIONS,
+      },
+    ],
   },
   {
     id: "employment-overview",
     title: "Employment overview",
     fields: [
       {
-        id: "employmentType",
+        id: "core.employment_type",
         label: "Employment type",
         required: true,
         type: "select",
-        options: EMPLOYMENT_TYPE_OPTIONS
+        options: EMPLOYMENT_TYPE_OPTIONS,
       },
       {
-        id: "description",
+        id: "role_description.recruiter_input",
         label: "Role summary",
         required: true,
         placeholder: "Outline mission, responsibilities, and key outcomes.",
         type: "textarea",
-        rows: 5
-      }
-    ]
-  }
+        rows: 5,
+      },
+    ],
+  },
 ];
 
 const OPTIONAL_STEPS = [
@@ -119,192 +156,197 @@ const OPTIONAL_STEPS = [
     title: "Requirements & skills",
     fields: [
       {
-        id: "requirements.mustHave",
+        id: "requirements.hard_requirements.technical_skills.must_have",
         label: "Must-have skills",
         required: false,
         placeholder: "List essential qualifications, one per line.",
         type: "textarea",
-        rows: 4
+        rows: 4,
+        asList: true,
       },
       {
-        id: "requirements.niceToHave",
+        id: "requirements.preferred_qualifications.skills",
         label: "Nice-to-have skills",
         required: false,
         placeholder: "Optional stretch skills or bonuses.",
         type: "textarea",
-        rows: 4
+        rows: 4,
+        asList: true,
       },
       {
-        id: "experienceLevel",
+        id: "core.seniority_level",
         label: "Target experience level",
         required: false,
         type: "select",
-        options: EXPERIENCE_LEVEL_OPTIONS
+        options: EXPERIENCE_LEVEL_OPTIONS,
       },
       {
-        id: "language",
+        id: "metadata.tags",
         label: "Primary language tag",
         required: false,
         placeholder: "e.g. en-US, he-IL",
-        type: "text"
-      }
-    ]
+        type: "text",
+      },
+    ],
   },
   {
     id: "compensation-benefits",
     title: "Compensation & benefits",
     fields: [
       {
-        id: "salary.currency",
+        id: "compensation.salary_range.currency",
         label: "Currency (ISO-4217)",
         required: false,
         placeholder: "e.g. USD",
         type: "text",
-        maxLength: 3
+        maxLength: 3,
       },
       {
-        id: "salary.min",
+        id: "compensation.salary_range.min",
         label: "Minimum compensation",
         required: false,
         placeholder: "e.g. 24000",
         type: "number",
-        valueAs: "number"
+        valueAs: "number",
       },
       {
-        id: "salary.max",
+        id: "compensation.salary_range.max",
         label: "Maximum compensation",
         required: false,
         placeholder: "e.g. 31000",
         type: "number",
-        valueAs: "number"
+        valueAs: "number",
       },
       {
-        id: "salary.period",
+        id: "compensation.salary_range.period",
         label: "Compensation period",
         required: false,
         type: "select",
-        options: SALARY_PERIOD_OPTIONS
+        options: SALARY_PERIOD_OPTIONS,
       },
       {
-        id: "salary.overtime",
+        id: "compensation.salary_range.overtime_eligible",
         label: "Overtime eligible",
         required: false,
         type: "select",
         options: [
           { value: "true", label: "Yes" },
-          { value: "false", label: "No" }
+          { value: "false", label: "No" },
         ],
-        valueAs: "boolean"
+        valueAs: "boolean",
       },
       {
-        id: "benefits",
+        id: "benefits.standout_benefits",
         label: "Benefits",
         required: false,
         placeholder: "List benefits (comma separated or one per line).",
         type: "textarea",
-        rows: 4
-      }
-    ]
+        rows: 4,
+        asList: true,
+      },
+    ],
   },
   {
     id: "schedule-availability",
     title: "Schedule & logistics",
     fields: [
       {
-        id: "schedule",
+        id: "role_description.day_to_day",
         label: "Schedule / shifts",
         required: false,
         placeholder: "e.g. Sunday-Thursday, core hours 09:00-18:00",
         type: "textarea",
-        rows: 3
+        rows: 3,
+        asList: true,
       },
       {
-        id: "licenses",
+        id: "requirements.hard_requirements.certifications",
         label: "Required licenses",
         required: false,
         placeholder: "List any mandatory certifications or licenses.",
         type: "textarea",
-        rows: 3
+        rows: 3,
+        asList: true,
       },
       {
-        id: "location.radiusKm",
+        id: "location.radius_km",
         label: "Hiring radius (km)",
         required: false,
         placeholder: "e.g. 25",
         type: "number",
-        valueAs: "number"
-      }
-    ]
+        valueAs: "number",
+      },
+    ],
   },
   {
     id: "application-flow",
     title: "Application flow",
     fields: [
       {
-        id: "applyMethod",
+        id: "application_process.apply_method",
         label: "How should candidates apply?",
         required: false,
         type: "select",
-        options: APPLY_METHOD_OPTIONS
+        options: APPLY_METHOD_OPTIONS,
       },
       {
-        id: "applicationFormId",
+        id: "application_process.internal_form_id",
         label: "Internal form ID",
         required: false,
         placeholder: "Reference to your internal form (optional).",
-        type: "text"
+        type: "text",
       },
       {
-        id: "externalApplyUrl",
+        id: "application_process.external_url",
         label: "External apply URL",
         required: false,
         placeholder: "https://careers.company.com/jobs/backend-senior",
-        type: "text"
-      }
-    ]
+        type: "text",
+      },
+    ],
   },
   {
     id: "brand-voice",
     title: "Brand & tone",
     fields: [
       {
-        id: "brand.logoUrl",
+        id: "company_context.branding.logo_url",
         label: "Logo URL",
         required: false,
         placeholder: "https://cdn.company.com/logo.svg",
-        type: "text"
+        type: "text",
       },
       {
-        id: "brand.color",
+        id: "company_context.branding.color",
         label: "Primary brand color",
         required: false,
         placeholder: "#4338ca",
-        type: "text"
+        type: "text",
       },
       {
-        id: "brand.tone",
+        id: "metadata.llm_generation_hints.tone",
         label: "Voice & tone guidance",
         required: false,
         placeholder: "e.g. Confident, data-driven, people-first.",
         type: "textarea",
-        rows: 3
+        rows: 3,
       },
       {
-        id: "industry",
+        id: "core.industry",
         label: "Industry",
         required: false,
         placeholder: "e.g. Technology, Hospitality",
-        type: "text"
+        type: "text",
       },
       {
-        id: "notesCompliance",
+        id: "company_context.dei_commitment",
         label: "Compliance notes / legal copy",
         required: false,
         placeholder: "Add equal opportunity statements or legal requirements.",
         type: "textarea",
-        rows: 3
-      }
-    ]
+        rows: 3,
+      },
+    ],
   },
   {
     id: "location-precision",
@@ -317,7 +359,7 @@ const OPTIONAL_STEPS = [
         placeholder: "e.g. 32.0853",
         type: "number",
         valueAs: "number",
-        step: "any"
+        step: "any",
       },
       {
         id: "location.geo.longitude",
@@ -326,10 +368,10 @@ const OPTIONAL_STEPS = [
         placeholder: "e.g. 34.7818",
         type: "number",
         valueAs: "number",
-        step: "any"
-      }
-    ]
-  }
+        step: "any",
+      },
+    ],
+  },
 ];
 
 function findFieldDefinition(fieldId) {
@@ -364,13 +406,13 @@ function isStepComplete(step, data) {
 
   if (requiredFields.length > 0) {
     return requiredFields.every((field) =>
-      isFieldValueProvided(data[field.id], field)
+      isFieldValueProvided(getDeep(data, field.id), field)
     );
   }
 
   if (optionalFields.length > 0) {
     return optionalFields.some((field) =>
-      isFieldValueProvided(data[field.id], field)
+      isFieldValueProvided(getDeep(data, field.id), field)
     );
   }
 
@@ -391,15 +433,16 @@ export function WizardShell() {
       role: "assistant",
       kind: "info",
       content:
-        "Hi! I’m your recruiting copilot. Ask for market data, salary bands, or copy tweaks any time."
-    }
+        "Hi! I’m your recruiting copilot. Ask for market data, salary bands, or copy tweaks any time.",
+    },
   ]);
   const [isChatting, setIsChatting] = useState(false);
   const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
   const [skippedFields, setSkippedFields] = useState({});
 
   const steps = useMemo(
-    () => (includeOptional ? [...REQUIRED_STEPS, ...OPTIONAL_STEPS] : REQUIRED_STEPS),
+    () =>
+      includeOptional ? [...REQUIRED_STEPS, ...OPTIONAL_STEPS] : REQUIRED_STEPS,
     [includeOptional]
   );
 
@@ -420,16 +463,26 @@ export function WizardShell() {
 
   const stepMetrics = useMemo(() => {
     return steps.map((step) => {
-      const requiredFieldsInStep = step.fields.filter((field) => field.required);
-      const optionalFieldsInStep = step.fields.filter((field) => !field.required);
+      const requiredFieldsInStep = step.fields.filter(
+        (field) => field.required
+      );
+      const optionalFieldsInStep = step.fields.filter(
+        (field) => !field.required
+      );
       const requiredCompletedCount = requiredFieldsInStep.reduce(
         (count, field) =>
-          count + (isFieldValueProvided(committedState[field.id], field) ? 1 : 0),
+          count +
+          (isFieldValueProvided(getDeep(committedState, field.id), field)
+            ? 1
+            : 0),
         0
       );
       const optionalCompletedCount = optionalFieldsInStep.reduce(
         (count, field) =>
-          count + (isFieldValueProvided(committedState[field.id], field) ? 1 : 0),
+          count +
+          (isFieldValueProvided(getDeep(committedState, field.id), field)
+            ? 1
+            : 0),
         0
       );
 
@@ -446,7 +499,7 @@ export function WizardShell() {
         requiredCompletedCount,
         optionalCount: optionalFieldsInStep.length,
         optionalCompletedCount,
-        stepComplete
+        stepComplete,
       };
     });
   }, [committedState, steps]);
@@ -492,8 +545,8 @@ export function WizardShell() {
         userId,
         jobId,
         intent,
-        currentStepId
-      })
+        currentStepId,
+      }),
   });
 
   const goToStep = useCallback((nextIndex) => {
@@ -536,11 +589,11 @@ export function WizardShell() {
 
   const onFieldChange = useCallback((fieldId, value) => {
     setState((prev) => {
-      const next = { ...prev };
+      const next = deepClone(prev);
       if (value === "" || value === null || value === undefined) {
-        delete next[fieldId];
+        setDeep(next, fieldId, undefined);
       } else {
-        next[fieldId] = value;
+        setDeep(next, fieldId, value);
       }
       return next;
     });
@@ -549,7 +602,9 @@ export function WizardShell() {
   useEffect(() => {
     setSkippedFields({});
     setAssistantMessages((prev) =>
-      prev.filter((message) => !["suggestion", "followUp", "skip"].includes(message.kind))
+      prev.filter(
+        (message) => !["suggestion", "followUp", "skip"].includes(message.kind)
+      )
     );
   }, [currentStepIndex]);
 
@@ -560,8 +615,8 @@ export function WizardShell() {
         id: `auth-${Date.now()}`,
         role: "assistant",
         kind: "error",
-        content: "Please sign in to continue working on this draft."
-      }
+        content: "Please sign in to continue working on this draft.",
+      },
     ]);
   }, []);
 
@@ -585,49 +640,62 @@ export function WizardShell() {
           {
             state,
             currentStepId: stepId,
-            intent: { includeOptional, ...intentOverrides }
+            intent: { includeOptional, ...intentOverrides },
           },
           { userId: user.id, jobId: effectiveJobId }
         );
 
         const skipMap = {};
         (response.skip ?? []).forEach((item) => {
-          skipMap[item.fieldId] = item.reason;
+          if (item?.fieldId) {
+            setDeep(skipMap, item.fieldId, item.reason);
+          }
         });
         setSkippedFields(skipMap);
 
         setAssistantMessages((prev) => {
           const base = prev.filter(
-            (message) => !["suggestion", "followUp", "skip"].includes(message.kind)
+            (message) =>
+              !["suggestion", "followUp", "skip"].includes(message.kind)
           );
 
-          const suggestionMessages = (response.suggestions ?? []).map((suggestion) => ({
-            id: suggestion.id,
-            role: "assistant",
-            kind: "suggestion",
-            content:
-              typeof suggestion.proposal === "string" || typeof suggestion.proposal === "number"
-                ? String(suggestion.proposal)
-                : JSON.stringify(suggestion.proposal),
-            meta: suggestion
-          }));
+          const suggestionMessages = (response.suggestions ?? []).map(
+            (suggestion) => ({
+              id: suggestion.id,
+              role: "assistant",
+              kind: "suggestion",
+              content:
+                typeof suggestion.proposal === "string" ||
+                typeof suggestion.proposal === "number"
+                  ? String(suggestion.proposal)
+                  : JSON.stringify(suggestion.proposal),
+              meta: suggestion,
+            })
+          );
 
-          const followUps = (response.followUpToUser ?? []).map((text, index) => ({
-            id: `follow-up-${Date.now()}-${index}`,
-            role: "assistant",
-            kind: "followUp",
-            content: text
-          }));
+          const followUps = (response.followUpToUser ?? []).map(
+            (text, index) => ({
+              id: `follow-up-${Date.now()}-${index}`,
+              role: "assistant",
+              kind: "followUp",
+              content: text,
+            })
+          );
 
           const skipMessages = (response.skip ?? []).map((item, index) => ({
             id: `skip-${item.fieldId}-${index}`,
             role: "assistant",
             kind: "skip",
             content: `Skipped ${item.fieldId}: ${item.reason}`,
-            meta: item
+            meta: item,
           }));
 
-          return [...base, ...suggestionMessages, ...followUps, ...skipMessages];
+          return [
+            ...base,
+            ...suggestionMessages,
+            ...followUps,
+            ...skipMessages,
+          ];
         });
       } catch (error) {
         setAssistantMessages((prev) => [
@@ -636,14 +704,21 @@ export function WizardShell() {
             id: `suggestion-error-${Date.now()}`,
             role: "assistant",
             kind: "error",
-            content: error.message ?? "Failed to load suggestions."
-          }
+            content: error.message ?? "Failed to load suggestions.",
+          },
         ]);
       } finally {
         setIsFetchingSuggestions(false);
       }
     },
-    [announceAuthRequired, currentStep?.id, draftId, includeOptional, state, user]
+    [
+      announceAuthRequired,
+      currentStep?.id,
+      draftId,
+      includeOptional,
+      state,
+      user,
+    ]
   );
 
   const persistCurrentDraft = useCallback(
@@ -661,14 +736,14 @@ export function WizardShell() {
           userId: user.id,
           jobId: draftId,
           intent,
-          currentStepId: stepId
+          currentStepId: stepId,
         });
 
         if (response?.draftId) {
           setDraftId(response.draftId);
         }
 
-        setCommittedState(() => ({ ...state }));
+        setCommittedState(() => deepClone(state));
 
         return { savedId: response?.draftId ?? draftId, intent };
       } catch (error) {
@@ -678,13 +753,21 @@ export function WizardShell() {
             id: `persist-error-${Date.now()}`,
             role: "assistant",
             kind: "error",
-            content: error.message ?? "Failed to save the draft."
-          }
+            content: error.message ?? "Failed to save the draft.",
+          },
         ]);
         return null;
       }
     },
-    [announceAuthRequired, currentStep?.id, draftId, includeOptional, persistMutation, state, user]
+    [
+      announceAuthRequired,
+      currentStep?.id,
+      draftId,
+      includeOptional,
+      persistMutation,
+      state,
+      user,
+    ]
   );
 
   const handleNext = async () => {
@@ -699,8 +782,8 @@ export function WizardShell() {
           id: `validation-${Date.now()}`,
           role: "assistant",
           kind: "error",
-          content: "Please complete all required fields before continuing."
-        }
+          content: "Please complete all required fields before continuing.",
+        },
       ]);
       return;
     }
@@ -715,7 +798,11 @@ export function WizardShell() {
     const nextStep = steps[nextIndex] ?? steps[steps.length - 1];
 
     goToStep(nextIndex);
-    await fetchSuggestionsForStep(nextStep?.id ?? stepId, result.intent, result.savedId);
+    await fetchSuggestionsForStep(
+      nextStep?.id ?? stepId,
+      result.intent,
+      result.savedId
+    );
   };
 
   const handleBack = async () => {
@@ -732,19 +819,26 @@ export function WizardShell() {
     const previousIndex = currentStepIndex - 1;
     const previousStep = steps[previousIndex] ?? steps[0];
     goToStep(previousIndex);
-    await fetchSuggestionsForStep(previousStep?.id ?? stepId, result.intent, result.savedId);
+    await fetchSuggestionsForStep(
+      previousStep?.id ?? stepId,
+      result.intent,
+      result.savedId
+    );
   };
 
   const handleSubmit = async (submissionIntent = {}) => {
-    if (currentStepIndex < REQUIRED_STEPS.length && !currentRequiredStepCompleteInState) {
+    if (
+      currentStepIndex < REQUIRED_STEPS.length &&
+      !currentRequiredStepCompleteInState
+    ) {
       setAssistantMessages((prev) => [
         ...prev,
         {
           id: `submit-validation-${Date.now()}`,
           role: "assistant",
           kind: "error",
-          content: "Fill every required field before submitting."
-        }
+          content: "Fill every required field before submitting.",
+        },
       ]);
       return;
     }
@@ -753,7 +847,7 @@ export function WizardShell() {
     const result = await persistCurrentDraft(
       {
         optionalCompleted: includeOptional,
-        ...submissionIntent
+        ...submissionIntent,
       },
       stepId
     );
@@ -768,8 +862,8 @@ export function WizardShell() {
         id: `saved-${Date.now()}`,
         role: "assistant",
         kind: "info",
-        content: "Draft saved. Copilot will continue enriching your inputs."
-      }
+        content: "Draft saved. Copilot will continue enriching your inputs.",
+      },
     ]);
 
     await fetchSuggestionsForStep(stepId, result.intent, result.savedId);
@@ -783,8 +877,9 @@ export function WizardShell() {
           id: `optional-block-${Date.now()}`,
           role: "assistant",
           kind: "error",
-          content: "Complete all required screens before unlocking optional details."
-        }
+          content:
+            "Complete all required screens before unlocking optional details.",
+        },
       ]);
       return;
     }
@@ -801,7 +896,11 @@ export function WizardShell() {
     const optionalFlowSteps = [...REQUIRED_STEPS, ...OPTIONAL_STEPS];
     const nextStep = optionalFlowSteps[nextIndex];
     goToStep(nextIndex);
-    await fetchSuggestionsForStep(nextStep?.id ?? "compensation-benefits", nextIntent, result.savedId);
+    await fetchSuggestionsForStep(
+      nextStep?.id ?? "compensation-benefits",
+      nextIntent,
+      result.savedId
+    );
   };
 
   const handleAcceptSuggestion = async (suggestion) => {
@@ -811,34 +910,49 @@ export function WizardShell() {
     }
 
     const fieldDef = findFieldDefinition(suggestion.fieldId);
+    const proposal = suggestion.proposal;
     let value;
 
-    if (fieldDef?.valueAs === "boolean") {
-      if (typeof suggestion.proposal === "boolean") {
-        value = suggestion.proposal;
-      } else if (typeof suggestion.proposal === "string") {
-        value = suggestion.proposal === "true";
+    if (fieldDef?.asList) {
+      if (Array.isArray(proposal)) {
+        value = proposal;
+      } else if (typeof proposal === "string") {
+        const entries = proposal
+          .split(/\n|,/)
+          .map((part) => part.trim())
+          .filter(Boolean);
+        value = entries.length > 0 ? entries : undefined;
+      } else if (proposal === null || proposal === undefined) {
+        value = undefined;
       } else {
-        value = Boolean(suggestion.proposal);
+        value = [String(proposal)];
+      }
+    } else if (fieldDef?.valueAs === "boolean") {
+      if (typeof proposal === "boolean") {
+        value = proposal;
+      } else if (typeof proposal === "string") {
+        value = proposal === "true";
+      } else {
+        value = Boolean(proposal);
       }
     } else if (fieldDef?.type === "number" || fieldDef?.valueAs === "number") {
-      if (typeof suggestion.proposal === "number") {
-        value = suggestion.proposal;
+      if (typeof proposal === "number") {
+        value = proposal;
       } else if (
-        typeof suggestion.proposal === "string" &&
-        suggestion.proposal.trim().length > 0 &&
-        !Number.isNaN(Number(suggestion.proposal))
+        typeof proposal === "string" &&
+        proposal.trim().length > 0 &&
+        !Number.isNaN(Number(proposal))
       ) {
-        value = Number(suggestion.proposal);
+        value = Number(proposal);
       } else {
         value = undefined;
       }
-    } else if (typeof suggestion.proposal === "string") {
-      value = suggestion.proposal;
-    } else if (typeof suggestion.proposal === "number") {
-      value = String(suggestion.proposal);
+    } else if (typeof proposal === "string" || typeof proposal === "number") {
+      value = proposal;
+    } else if (proposal === null || proposal === undefined) {
+      value = undefined;
     } else {
-      value = JSON.stringify(suggestion.proposal);
+      value = JSON.stringify(proposal);
     }
 
     onFieldChange(suggestion.fieldId, value);
@@ -848,16 +962,16 @@ export function WizardShell() {
         {
           jobId: draftId,
           fieldId: suggestion.fieldId,
-          value: suggestion.proposal
+          value,
         },
         { userId: user.id }
       );
       setCommittedState((prev) => {
-        const next = { ...prev };
+        const next = deepClone(prev);
         if (value === undefined) {
-          delete next[suggestion.fieldId];
+          setDeep(next, suggestion.fieldId, undefined);
         } else {
-          next[suggestion.fieldId] = value;
+          setDeep(next, suggestion.fieldId, value);
         }
         return next;
       });
@@ -869,8 +983,8 @@ export function WizardShell() {
           id: `merge-error-${Date.now()}`,
           role: "assistant",
           kind: "error",
-          content: error.message ?? "Failed to merge the suggestion."
-        }
+          content: error.message ?? "Failed to merge the suggestion.",
+        },
       ]);
     }
   };
@@ -881,15 +995,19 @@ export function WizardShell() {
       const targetStep = steps[index];
       if (!targetStep) return;
 
-      if (isCurrentStepRequired && !currentRequiredStepCompleteInState && index > currentStepIndex) {
+      if (
+        isCurrentStepRequired &&
+        !currentRequiredStepCompleteInState &&
+        index > currentStepIndex
+      ) {
         setAssistantMessages((prev) => [
           ...prev,
           {
             id: `nav-block-${Date.now()}`,
             role: "assistant",
             kind: "error",
-            content: "Complete the current screen before moving forward."
-          }
+            content: "Complete the current screen before moving forward.",
+          },
         ]);
         return;
       }
@@ -901,8 +1019,9 @@ export function WizardShell() {
             id: `optional-nav-block-${Date.now()}`,
             role: "assistant",
             kind: "error",
-            content: "Optional screens unlock after all required screens are complete."
-          }
+            content:
+              "Optional screens unlock after all required screens are complete.",
+          },
         ]);
         return;
       }
@@ -913,7 +1032,11 @@ export function WizardShell() {
       }
 
       goToStep(index);
-      await fetchSuggestionsForStep(targetStep.id, result.intent, result.savedId);
+      await fetchSuggestionsForStep(
+        targetStep.id,
+        result.intent,
+        result.savedId
+      );
     },
     [
       currentStep?.id,
@@ -924,7 +1047,7 @@ export function WizardShell() {
       fetchSuggestionsForStep,
       goToStep,
       persistCurrentDraft,
-      steps
+      steps,
     ]
   );
 
@@ -941,7 +1064,7 @@ export function WizardShell() {
       id: `user-${Date.now()}`,
       role: "user",
       kind: "user",
-      content: trimmed
+      content: trimmed,
     };
 
     setAssistantMessages((prev) => [...prev, userMessage]);
@@ -952,7 +1075,7 @@ export function WizardShell() {
         {
           jobId: draftId ?? undefined,
           userMessage: trimmed,
-          intent: { currentStepId: currentStep?.id }
+          intent: { currentStepId: currentStep?.id },
         },
         { userId: user.id }
       );
@@ -963,8 +1086,8 @@ export function WizardShell() {
           id: `chat-${Date.now()}`,
           role: "assistant",
           kind: "reply",
-          content: response.assistantMessage
-        }
+          content: response.assistantMessage,
+        },
       ]);
     } catch (error) {
       setAssistantMessages((prev) => [
@@ -973,8 +1096,9 @@ export function WizardShell() {
           id: `chat-error-${Date.now()}`,
           role: "assistant",
           kind: "error",
-          content: error.message ?? "I ran into an issue processing that request."
-        }
+          content:
+            error.message ?? "I ran into an issue processing that request.",
+        },
       ]);
     } finally {
       setIsChatting(false);
@@ -984,8 +1108,8 @@ export function WizardShell() {
   if (!user) {
     return (
       <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-neutral-600 shadow-sm shadow-neutral-100">
-        Please sign in to build a job brief. Once authenticated, your wizard drafts will be saved
-        to Firestore and synced across the console.
+        Please sign in to build a job brief. Once authenticated, your wizard
+        drafts will be saved to Firestore and synced across the console.
       </div>
     );
   }
@@ -1003,7 +1127,7 @@ export function WizardShell() {
               requiredCompletedCount: 0,
               optionalCount: 0,
               optionalCompletedCount: 0,
-              stepComplete: false
+              stepComplete: false,
             };
 
             return (
@@ -1047,7 +1171,8 @@ export function WizardShell() {
           </div>
           {REQUIRED_STEPS.length > 0 ? (
             <p className="text-[11px] font-medium text-neutral-400">
-              {requiredStepsCompleted} / {REQUIRED_STEPS.length} required screens complete
+              {requiredStepsCompleted} / {REQUIRED_STEPS.length} required
+              screens complete
             </p>
           ) : null}
 
@@ -1065,7 +1190,8 @@ export function WizardShell() {
               </div>
               {OPTIONAL_STEPS.length > 0 ? (
                 <p className="text-[11px] font-medium text-neutral-400">
-                  {optionalStepsCompleted} / {OPTIONAL_STEPS.length} optional screens with saved input
+                  {optionalStepsCompleted} / {OPTIONAL_STEPS.length} optional
+                  screens with saved input
                 </p>
               ) : null}
             </div>
@@ -1074,8 +1200,9 @@ export function WizardShell() {
 
         <form className="grid gap-4">
           {currentStep.fields.map((field) => {
-            const skipReason = skippedFields[field.id];
-            const rawValue = state[field.id];
+            const skipReason = getDeep(skippedFields, field.id);
+            const rawValue = getDeep(state, field.id);
+            const isListField = field.asList === true;
             let inputValue;
 
             if (field.valueAs === "boolean") {
@@ -1083,6 +1210,14 @@ export function WizardShell() {
                 rawValue === true ? "true" : rawValue === false ? "false" : "";
             } else if (field.type === "number" || field.valueAs === "number") {
               inputValue = rawValue ?? "";
+            } else if (isListField) {
+              if (Array.isArray(rawValue)) {
+                inputValue = rawValue.join("\n");
+              } else if (typeof rawValue === "string") {
+                inputValue = rawValue;
+              } else {
+                inputValue = "";
+              }
             } else {
               inputValue = rawValue ?? "";
             }
@@ -1104,8 +1239,23 @@ export function WizardShell() {
                   onFieldChange(field.id, undefined);
                 } else {
                   const numeric = Number(value);
-                  onFieldChange(field.id, Number.isNaN(numeric) ? undefined : numeric);
+                  onFieldChange(
+                    field.id,
+                    Number.isNaN(numeric) ? undefined : numeric
+                  );
                 }
+                return;
+              }
+
+              if (isListField) {
+                const entries = value
+                  .split(/\n|,/)
+                  .map((part) => part.trim())
+                  .filter(Boolean);
+                onFieldChange(
+                  field.id,
+                  entries.length > 0 ? entries : undefined
+                );
                 return;
               }
 
@@ -1129,7 +1279,9 @@ export function WizardShell() {
               >
                 <span>
                   {field.label}
-                  {field.required ? <span className="ml-1 text-primary-600">*</span> : null}
+                  {field.required ? (
+                    <span className="ml-1 text-primary-600">*</span>
+                  ) : null}
                 </span>
 
                 {field.type === "select" ? (
@@ -1140,7 +1292,9 @@ export function WizardShell() {
                     disabled={Boolean(skipReason)}
                     title={skipReason ? `Skipped: ${skipReason}` : undefined}
                   >
-                    <option value="">{field.placeholder ?? "Select an option"}</option>
+                    <option value="">
+                      {field.placeholder ?? "Select an option"}
+                    </option>
                     {(field.options ?? []).map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -1189,14 +1343,17 @@ export function WizardShell() {
         {showOptionalDecision ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-200 bg-primary-50/50 p-4 text-sm">
             <p className="text-neutral-600">
-              Optional screens cover compensation, application flow, branding, and precise location
-              targeting. Add them now to unlock richer enrichment and downstream automations?
+              Optional screens cover compensation, application flow, branding,
+              and precise location targeting. Add them now to unlock richer
+              enrichment and downstream automations?
             </p>
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={handleAddOptional}
-                disabled={!allRequiredStepsCompleteInState || persistMutation.isPending}
+                disabled={
+                  !allRequiredStepsCompleteInState || persistMutation.isPending
+                }
                 className="rounded-full border border-primary-500 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-primary-100 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
               >
                 Add optional flow
@@ -1206,10 +1363,12 @@ export function WizardShell() {
                 onClick={() =>
                   handleSubmit({
                     includeOptional: false,
-                    optionalCompleted: false
+                    optionalCompleted: false,
                   })
                 }
-                disabled={!allRequiredStepsCompleteInState || persistMutation.isPending}
+                disabled={
+                  !allRequiredStepsCompleteInState || persistMutation.isPending
+                }
                 className="rounded-full bg-primary-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
               >
                 Generate now
@@ -1232,22 +1391,29 @@ export function WizardShell() {
                 onClick={() =>
                   handleSubmit({
                     includeOptional: true,
-                    optionalCompleted: true
+                    optionalCompleted: true,
                   })
                 }
                 disabled={
                   persistMutation.isPending ||
-                  (currentStepIndex < REQUIRED_STEPS.length && !currentRequiredStepCompleteInState)
+                  (currentStepIndex < REQUIRED_STEPS.length &&
+                    !currentRequiredStepCompleteInState)
                 }
                 className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
               >
-                {persistMutation.isPending ? "Saving…" : "Submit for Generation"}
+                {persistMutation.isPending
+                  ? "Saving…"
+                  : "Submit for Generation"}
               </button>
             ) : (
               <button
                 type="button"
                 onClick={handleNext}
-                disabled={(isCurrentStepRequired && !currentRequiredStepCompleteInState) || persistMutation.isPending}
+                disabled={
+                  (isCurrentStepRequired &&
+                    !currentRequiredStepCompleteInState) ||
+                  persistMutation.isPending
+                }
                 className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
               >
                 Next

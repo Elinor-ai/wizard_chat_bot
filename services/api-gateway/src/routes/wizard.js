@@ -2,20 +2,23 @@ import { Router } from "express";
 import { z } from "zod";
 import { v4 as uuid } from "uuid";
 import { wrapAsync, httpError } from "@wizard/utils";
+import { JobSchemaV2 } from "@wizard/core";
 
 const DRAFT_COLLECTION = "jobsDraft";
 
+const looseObjectSchema = z.object({}).catchall(z.unknown());
+
 const draftRequestSchema = z.object({
   jobId: z.string().optional(),
-  state: z.record(z.string(), z.unknown()).default({}),
-  intent: z.record(z.string(), z.unknown()).optional(),
+  state: looseObjectSchema.default({}),
+  intent: looseObjectSchema.optional(),
   currentStepId: z.string()
 });
 
 const suggestionsRequestSchema = z.object({
   jobId: z.string(),
-  state: z.record(z.string(), z.unknown()).default({}),
-  intent: z.record(z.string(), z.unknown()).optional(),
+  state: looseObjectSchema.default({}),
+  intent: looseObjectSchema.optional(),
   currentStepId: z.string()
 });
 
@@ -33,6 +36,144 @@ function requireUserId(req) {
   return userId;
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function deepMerge(base, update) {
+  if (!isPlainObject(update)) {
+    return update === undefined ? base : update;
+  }
+
+  const result = isPlainObject(base) ? { ...base } : {};
+
+  const keys = new Set([
+    ...Object.keys(isPlainObject(base) ? base : {}),
+    ...Object.keys(update)
+  ]);
+
+  for (const key of keys) {
+    const incoming = update[key];
+    const existing = isPlainObject(base) ? base[key] : undefined;
+
+    if (incoming === undefined) {
+      continue;
+    }
+
+    if (isPlainObject(incoming) && isPlainObject(existing)) {
+      const mergedChild = deepMerge(existing, incoming);
+      if (mergedChild === undefined || (isPlainObject(mergedChild) && Object.keys(mergedChild).length === 0)) {
+        delete result[key];
+      } else {
+        result[key] = mergedChild;
+      }
+    } else if (Array.isArray(incoming)) {
+      result[key] = incoming.slice();
+    } else {
+      result[key] = incoming;
+    }
+  }
+
+  return result;
+}
+
+function deepClone(value) {
+  return typeof structuredClone === "function"
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value));
+}
+
+function getDeep(target, path) {
+  if (!path || !target) return path ? undefined : target;
+  const parts = path.split(".");
+  let current = target;
+  for (const part of parts) {
+    if (current === null || current === undefined) return undefined;
+    if (typeof current !== "object") return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function setDeep(target, path, value) {
+  if (!path) return;
+  const parts = path.split(".");
+  const last = parts.pop();
+  let current = target;
+  for (const part of parts) {
+    if (!isPlainObject(current[part])) {
+      current[part] = {};
+    }
+    current = current[part];
+  }
+  if (value === undefined) {
+    delete current[last];
+  } else {
+    current[last] = value;
+  }
+}
+
+function createBaseDraft({ draftId, userId, nowMs }) {
+  return {
+    schema_version: "2",
+    core: {
+      job_id: draftId,
+      company_id: userId,
+      job_title: "",
+      job_title_variations: [],
+      industry: "",
+      sub_industry: "",
+      job_family: "",
+      seniority_level: "mid"
+    },
+    location: {},
+    role_description: {
+      recruiter_input: "",
+      tldr_pitch: "",
+      day_to_day: [],
+      problem_being_solved: "",
+      impact_metrics: {},
+      responsibilities: {
+        core: [],
+        growth: [],
+        collaborative: []
+      },
+      first_30_60_90_days: {}
+    },
+    compensation: {},
+    benefits: {
+      standout_benefits: []
+    },
+    requirements: {},
+    application_process: {},
+    company_context: {},
+    metadata: {
+      created_at: nowMs,
+      updated_at: nowMs,
+      created_by: userId,
+      extraction_source: "manual_form",
+      tags: [],
+      approval_status: "draft"
+    }
+  };
+}
+
+function ensureMetadata(nextDraft, { userId, nowMs }) {
+  const metadata = isPlainObject(nextDraft.metadata) ? { ...nextDraft.metadata } : {};
+  metadata.created_at =
+    typeof metadata.created_at === "number" ? metadata.created_at : nowMs;
+  metadata.updated_at = nowMs;
+  metadata.created_by = metadata.created_by || userId;
+  metadata.extraction_source = metadata.extraction_source || "manual_form";
+  metadata.approval_status = metadata.approval_status || "draft";
+  metadata.tags = Array.isArray(metadata.tags)
+    ? metadata.tags
+    : typeof metadata.tags === "string" && metadata.tags.trim().length > 0
+    ? [metadata.tags.trim()]
+    : [];
+  nextDraft.metadata = metadata;
+}
+
 function valueProvided(value) {
   if (Array.isArray(value)) {
     return value.length > 0;
@@ -43,93 +184,72 @@ function valueProvided(value) {
   return Boolean(value);
 }
 
-function parseList(value) {
-  if (!value) return [];
-  return String(value)
-    .split(/\n|,/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+function valueProvidedAt(state, path) {
+  return valueProvided(getDeep(state, path));
 }
 
 function parseLocation(state = {}) {
-  const city =
-    state["location.city"] ??
-    state?.location?.city ??
-    (typeof state.location === "string" ? state.location.split(",")[0]?.trim() : undefined);
-  const countryRaw =
-    state["location.country"] ??
-    state?.location?.country ??
-    (typeof state.location === "string" ? state.location.split(",")[1]?.trim() : undefined);
-  const radiusRaw = state["location.radiusKm"] ?? state?.location?.radiusKm;
-  const remoteFlag =
-    state.workModel === "remote" ||
-    (typeof state.location === "string" && /remote/i.test(state.location));
-  const geoLat =
-    state["location.geo.latitude"] ??
-    state?.location?.geo?.latitude ??
-    state["location.geo.lat"];
-  const geoLng =
-    state["location.geo.longitude"] ??
-    state?.location?.geo?.longitude ??
-    state["location.geo.lng"];
+  const city = getDeep(state, "location.city");
+  const country = getDeep(state, "location.country");
+  const radiusRaw = getDeep(state, "location.radius_km");
+  const workModelRaw = getDeep(state, "location.work_model");
+  const geoCandidate = getDeep(state, "location.geo");
+  const geoLat = getDeep(state, "location.geo.latitude");
+  const geoLng = getDeep(state, "location.geo.longitude");
 
-  const geo =
-    geoLat !== undefined && geoLng !== undefined
-      ? {
-          latitude: Number(geoLat),
-          longitude: Number(geoLng)
-        }
-      : null;
+  let geo = null;
+  if (
+    isPlainObject(geoCandidate) &&
+    geoCandidate.latitude !== undefined &&
+    geoCandidate.longitude !== undefined
+  ) {
+    geo = {
+      latitude: Number(geoCandidate.latitude),
+      longitude: Number(geoCandidate.longitude)
+    };
+  } else if (geoLat !== undefined && geoLng !== undefined) {
+    geo = {
+      latitude: Number(geoLat),
+      longitude: Number(geoLng)
+    };
+  }
 
-  const country = countryRaw ? countryRaw.slice(0, 2).toUpperCase() : undefined;
+  const normalizedWorkModel =
+    typeof workModelRaw === "string" && workModelRaw.trim().length > 0
+      ? workModelRaw.trim().toLowerCase()
+      : undefined;
+  const remoteFlag = normalizedWorkModel === "remote";
+
+  const normalizedCity =
+    typeof city === "string" && city.trim().length > 0
+      ? city.trim()
+      : remoteFlag
+      ? "Remote"
+      : undefined;
+
+  const normalizedCountry =
+    typeof country === "string" && country.trim().length > 0
+      ? country.trim().slice(0, 2).toUpperCase()
+      : remoteFlag
+      ? "US"
+      : undefined;
+
   const radiusKm =
     radiusRaw === undefined || radiusRaw === null || radiusRaw === ""
       ? undefined
       : Number(radiusRaw);
 
-  if (city || country) {
-    return {
-      geo,
-      city: city ?? (remoteFlag ? "Remote" : "Unknown"),
-      country: country ?? (remoteFlag ? "US" : "US"),
-      radiusKm,
-      workModel: state.workModel ?? (remoteFlag ? "remote" : "on_site"),
-      label: [city, country].filter(Boolean).join(", ") || (remoteFlag ? "Remote" : "Unknown")
-    };
-  }
-
-  if (remoteFlag) {
-    return {
-      geo: null,
-      city: "Remote",
-      country: "US",
-      radiusKm: undefined,
-      workModel: "remote",
-      label: "Remote"
-    };
-  }
-
-  if (typeof state.location === "string" && state.location.trim().length > 0) {
-    const [cityPart, countryPart] = state.location.split(",").map((item) => item.trim());
-    const fallbackCity = cityPart ?? state.location;
-    const fallbackCountry = (countryPart ?? "US").slice(0, 2).toUpperCase();
-    return {
-      geo: null,
-      city: fallbackCity,
-      country: fallbackCountry,
-      radiusKm: 10,
-      workModel: state.workModel ?? "on_site",
-      label: [fallbackCity, fallbackCountry].filter(Boolean).join(", ")
-    };
-  }
+  const label =
+    [normalizedCity, normalizedCountry].filter(Boolean).join(", ") ||
+    (remoteFlag ? "Remote" : "Unknown");
 
   return {
-    geo: null,
-    city: "Remote",
-    country: "US",
-    radiusKm: undefined,
-    workModel: state.workModel ?? "remote",
-    label: "Remote"
+    geo,
+    city: normalizedCity ?? null,
+    country: normalizedCountry ?? null,
+    radiusKm,
+    workModel: remoteFlag ? "remote" : normalizedWorkModel ?? "on_site",
+    label
   };
 }
 
@@ -141,7 +261,7 @@ function normaliseKey(value, fallback = "general") {
 function buildMarketIntelligence(state = {}) {
   const locationParsed = parseLocation(state);
   const locationKey = normaliseKey(locationParsed.city ?? locationParsed.label ?? "remote", "remote");
-  const roleKey = normaliseKey(state.roleCategory, "general");
+  const roleKey = normaliseKey(getDeep(state, "core.job_family"), "general");
   const ROLE_MARKET_BENCHMARKS = {
     general: {
       salary: { mid: 70000, high: 90000, currency: "USD" },
@@ -186,6 +306,7 @@ function buildMarketIntelligence(state = {}) {
       city: locationParsed.city,
       country: locationParsed.country,
       label: locationParsed.label ?? "Remote",
+      workModel: locationParsed.workModel ?? "remote",
       multiplier: locationMultiplier
     },
     salaryBands: {
@@ -207,143 +328,149 @@ function buildFallbackResponse(stepId, state, marketIntel) {
   };
 
   const normalisedStep = stepId ?? "";
-  const title = String(state?.title ?? "").toLowerCase();
+  const title = String(getDeep(state, "core.job_title") ?? "").toLowerCase();
+  const workModel = String(
+    getDeep(state, "location.work_model") ?? marketIntel.location.workModel ?? ""
+  ).toLowerCase();
 
   if (["compensation-benefits", "compensation"].includes(normalisedStep)) {
     const salary = marketIntel.salaryBands;
-    if (!valueProvided(state["salary.currency"])) {
+    if (!valueProvidedAt(state, "compensation.salary_range.currency")) {
       response.suggestions.push({
         id: `fallback-salary-currency-${Date.now()}`,
-        fieldId: "salary.currency",
+        fieldId: "compensation.salary_range.currency",
         proposal: salary.currency,
         confidence: 0.62,
         rationale: "Aligns compensation currency with market benchmarks for this role."
       });
     }
-    if (!valueProvided(state["salary.min"])) {
+    if (!valueProvidedAt(state, "compensation.salary_range.min")) {
       response.suggestions.push({
         id: `fallback-salary-min-${Date.now()}`,
-        fieldId: "salary.min",
+        fieldId: "compensation.salary_range.min",
         proposal: Math.round(salary.p50),
         confidence: 0.65,
         rationale: `Typical offers for ${marketIntel.roleKey} roles near ${marketIntel.location.label} start around ${salary.currency} ${salary.p50}.`
       });
     }
-    if (!valueProvided(state["salary.max"])) {
+    if (!valueProvidedAt(state, "compensation.salary_range.max")) {
       response.suggestions.push({
         id: `fallback-salary-max-${Date.now()}`,
-        fieldId: "salary.max",
+        fieldId: "compensation.salary_range.max",
         proposal: Math.round(salary.p75),
         confidence: 0.6,
         rationale: `Upper range in ${marketIntel.location.label} reaches ${salary.currency} ${salary.p75}.`
       });
     }
-    if (!valueProvided(state["salary.period"])) {
+    if (!valueProvidedAt(state, "compensation.salary_range.period")) {
       response.suggestions.push({
         id: `fallback-salary-period-${Date.now()}`,
-        fieldId: "salary.period",
+        fieldId: "compensation.salary_range.period",
         proposal: "month",
         confidence: 0.55,
         rationale: "Monthly ranges make comparison easier for candidates and analytics."
       });
     }
-    if (!valueProvided(state.benefits)) {
+    if (!valueProvidedAt(state, "benefits.standout_benefits")) {
       response.suggestions.push({
         id: `fallback-benefits-${Date.now()}`,
-        fieldId: "benefits",
+        fieldId: "benefits.standout_benefits",
         proposal: marketIntel.benefitNorms.join(", "),
         confidence: 0.58,
         rationale: "Spell out benefits that nudge apply rates."
       });
     }
   } else if (["requirements-skills", "requirements"].includes(normalisedStep)) {
-    if (!valueProvided(state["requirements.mustHave"])) {
+    if (!valueProvidedAt(state, "requirements.hard_requirements.technical_skills.must_have")) {
       response.suggestions.push({
         id: `fallback-must-${Date.now()}`,
-        fieldId: "requirements.mustHave",
+        fieldId: "requirements.hard_requirements.technical_skills.must_have",
         proposal: marketIntel.mustHaveExamples.join("\n"),
         confidence: 0.62,
         rationale: "These competencies repeatedly show up in successful hires."
       });
     }
-    if (!valueProvided(state["requirements.niceToHave"])) {
+    if (!valueProvidedAt(state, "requirements.preferred_qualifications.skills")) {
       response.suggestions.push({
         id: `fallback-nice-${Date.now()}`,
-        fieldId: "requirements.niceToHave",
+        fieldId: "requirements.preferred_qualifications.skills",
         proposal: marketIntel.mustHaveExamples.map((item) => `Bonus: ${item}`).join("\n"),
         confidence: 0.54,
         rationale: "Bonus skills give the copilot more copy angles without excluding applicants."
       });
     }
-    if (!valueProvided(state.experienceLevel)) {
+    if (!valueProvidedAt(state, "core.seniority_level")) {
       response.suggestions.push({
         id: `fallback-exp-${Date.now()}`,
-        fieldId: "experienceLevel",
+        fieldId: "core.seniority_level",
         proposal: "mid",
         confidence: 0.5,
         rationale: "Mid-level is the default for most growth-stage teams."
       });
     }
-    if (!valueProvided(state.language)) {
+    if (!valueProvidedAt(state, "metadata.tags")) {
       response.suggestions.push({
         id: `fallback-language-${Date.now()}`,
-        fieldId: "language",
+        fieldId: "metadata.tags",
         proposal: marketIntel.location.country === "IL" ? "he-IL" : "en-US",
         confidence: 0.48,
-        rationale: "Set a base language for downstream asset generation."
+        rationale: "Use tags to anchor asset generation prompts and routing."
       });
     }
-    if (!valueProvided(state.roleCategory)) {
+    if (!valueProvidedAt(state, "core.job_family") && marketIntel.roleKey !== "general") {
       response.suggestions.push({
         id: `fallback-role-${Date.now()}`,
-        fieldId: "roleCategory",
+        fieldId: "core.job_family",
         proposal: marketIntel.roleKey,
         confidence: 0.55,
         rationale: "Clear taxonomy unlocks better benchmarking downstream."
       });
     }
   } else if (normalisedStep === "schedule-availability") {
-    if (!valueProvided(state.schedule)) {
+    if (!valueProvidedAt(state, "role_description.day_to_day")) {
       response.suggestions.push({
         id: `fallback-schedule-${Date.now()}`,
-        fieldId: "schedule",
+        fieldId: "role_description.day_to_day",
         proposal: "Sunday-Thursday, core hours 09:00-18:00",
         confidence: 0.46,
         rationale: "Clarify availability expectations so candidates self-qualify."
       });
     }
-    if (!valueProvided(state.licenses) && title.includes("driver")) {
+    if (
+      !valueProvidedAt(state, "requirements.hard_requirements.certifications") &&
+      title.includes("driver")
+    ) {
       response.suggestions.push({
         id: `fallback-license-${Date.now()}`,
-        fieldId: "licenses",
+        fieldId: "requirements.hard_requirements.certifications",
         proposal: "Valid local driver license (Category B)",
         confidence: 0.68,
         rationale: "Driving roles typically mandate verified licensing."
       });
     }
   } else if (normalisedStep === "location-precision") {
-    if ((state.workModel ?? "").toLowerCase() === "remote") {
+    if (workModel === "remote") {
       response.skip.push({
-        fieldId: "location.radiusKm",
+        fieldId: "location.radius_km",
         reason: "Remote roles do not require a commute radius."
       });
-    } else if (!valueProvided(state["location.radiusKm"])) {
+    } else if (!valueProvidedAt(state, "location.radius_km")) {
       response.suggestions.push({
         id: `fallback-radius-${Date.now()}`,
-        fieldId: "location.radiusKm",
+        fieldId: "location.radius_km",
         proposal: 25,
         confidence: 0.42,
         rationale: "Start with a 25km radius for local targeting; you can refine later."
       });
     }
-    if (!valueProvided(state["location.geo.latitude"]) && marketIntel.location.city) {
+    if (!valueProvidedAt(state, "location.geo.latitude") && marketIntel.location.city) {
       response.followUpToUser.push("Would you like us to pin the office latitude/longitude for channel geofencing?");
     }
   } else {
-    if (!valueProvided(state.title)) {
+    if (!valueProvidedAt(state, "core.job_title")) {
       response.suggestions.push({
         id: `fallback-title-${Date.now()}`,
-        fieldId: "title",
+        fieldId: "core.job_title",
         proposal: `Senior ${marketIntel.roleKey}`,
         confidence: 0.48,
         rationale: "Clear seniority keeps the job searchable across boards."
@@ -356,7 +483,7 @@ function buildFallbackResponse(stepId, state, marketIntel) {
     if (["compensation-benefits", "compensation"].includes(normalisedStep)) {
       response.suggestions.push({
         id: `hospitality-benefits-${Date.now()}`,
-        fieldId: "benefits",
+        fieldId: "benefits.standout_benefits",
         proposal: "Shared service charge, team meal each shift, paid training programme",
         confidence: 0.7,
         rationale: "Hospitality applicants expect clarity on gratuities and daily perks."
@@ -378,13 +505,25 @@ export function wizardRouter({ firestore, logger, llmClient }) {
 
       const draftId = payload.jobId ?? `draft_${uuid()}`;
       const now = new Date();
+      const nowMs = now.getTime();
+
+      const existing = await firestore.getDocument(DRAFT_COLLECTION, draftId);
+      const baseState = existing?.state
+        ? deepClone(existing.state)
+        : createBaseDraft({ draftId, userId, nowMs });
+
+      const withIncoming = deepMerge(baseState, payload.state ?? {});
+      ensureMetadata(withIncoming, { userId, nowMs });
+
+      const parsedDraft = JobSchemaV2.parse(withIncoming);
 
       await firestore.saveDocument(DRAFT_COLLECTION, draftId, {
         jobId: draftId,
         userId,
-        state: payload.state,
+        state: parsedDraft,
         currentStepId: payload.currentStepId,
         intent: payload.intent ?? {},
+        createdAt: existing?.createdAt ?? now,
         updatedAt: now
       });
 
@@ -401,18 +540,13 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       const payload = suggestionsRequestSchema.parse(req.body ?? {});
 
       const draft = await firestore.getDocument(DRAFT_COLLECTION, payload.jobId);
-      const mergedState = draft?.state
-        ? { ...draft.state, ...payload.state }
-        : payload.state;
-
-      const locationLabel =
-        mergedState?.["location.city"] && mergedState?.["location.country"]
-          ? `${mergedState["location.city"]}, ${mergedState["location.country"]}`
-          : mergedState?.location ?? "";
+      const baseState = draft?.state ? deepClone(draft.state) : {};
+      const mergedState = deepMerge(baseState, payload.state ?? {});
+      const locationMeta = parseLocation(mergedState);
 
       const context = {
-        jobTitle: mergedState?.title ?? "",
-        location: locationLabel,
+        jobTitle: getDeep(mergedState, "core.job_title") ?? "",
+        location: locationMeta.label,
         currentStepId: payload.currentStepId,
         state: mergedState
       };
@@ -446,13 +580,26 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       }
 
       const now = new Date();
-      const nextState = {
-        ...(draft.state ?? {}),
-        [payload.fieldId]: payload.value
-      };
+      const nowMs = now.getTime();
+      const nextState = deepClone(draft.state ?? {});
+
+      setDeep(nextState, payload.fieldId, payload.value);
+
+      const metadataOwner =
+        getDeep(nextState, "metadata.created_by") ??
+        getDeep(draft.state ?? {}, "metadata.created_by") ??
+        userId;
+      ensureMetadata(nextState, { userId: metadataOwner, nowMs });
+
+      const parsedState = JobSchemaV2.parse(nextState);
 
       await firestore.saveDocument(DRAFT_COLLECTION, payload.jobId, {
-        state: nextState,
+        jobId: draft.jobId ?? payload.jobId,
+        userId: draft.userId ?? userId,
+        state: parsedState,
+        currentStepId: draft.currentStepId,
+        intent: draft.intent ?? {},
+        createdAt: draft.createdAt ?? now,
         updatedAt: now,
         lastMergedBy: userId
       });

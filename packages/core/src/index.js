@@ -35,6 +35,7 @@ export {
   ApplyMethodEnum,
   ExperienceLevelEnum
 } from "./schemas/job.js";
+export { JobSchemaV2, JobDraftV2 } from "./schemas/job-v2.js";
 export { JobStepSchema } from "./schemas/job-step.js";
 export { JobVersionSchema } from "./schemas/job-version.js";
 
