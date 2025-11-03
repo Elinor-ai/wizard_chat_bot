@@ -1,13 +1,11 @@
 'use client';
 
 import { Shield, Lock, Eye, AlertTriangle, CheckCircle, Clock, Smartphone } from 'lucide-react';
-import { useState } from 'react';
 
 export default function SecuritySection({ user }) {
-  const [mfaEnabled, setMfaEnabled] = useState(user?.security?.mfaEnabled || false);
-
   const security = user?.security || {};
   const riskScore = security.riskScore || 0;
+  const mfaEnabled = Boolean(security.mfaEnabled);
 
   const formatDate = (dateString) => {
     if (!dateString) return 'Never';
@@ -99,18 +97,9 @@ export default function SecuritySection({ user }) {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleMfaToggle}
-            className={`relative h-7 w-12 rounded-full transition-colors ${
-              mfaEnabled ? 'bg-emerald-600' : 'bg-neutral-300'
-            }`}
-          >
-            <div
-              className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                mfaEnabled ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            ></div>
-          </button>
+          <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            {mfaEnabled ? 'Enabled' : 'Disabled'}
+          </span>
         </div>
 
         {/* Password Protection */}
@@ -205,9 +194,9 @@ export default function SecuritySection({ user }) {
         </div>
 
         <div className="flex justify-end">
-          <button className="text-xs font-semibold text-primary-600 hover:text-primary-700">
-            View all login activity →
-          </button>
+          <span className="text-xs font-semibold text-neutral-400">
+            Audit log retained for enterprise plans
+          </span>
         </div>
       </div>
 
