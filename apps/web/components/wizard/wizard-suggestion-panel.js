@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { clsx } from "../../lib/cn";
 
 export function WizardSuggestionPanel({
@@ -8,9 +8,24 @@ export function WizardSuggestionPanel({
   isSending,
   onRefresh,
   onSendMessage,
-  onAcceptSuggestion
+  onAcceptSuggestion,
+  onToggleSuggestion,
+  nextStepTeaser
 }) {
   const [draftMessage, setDraftMessage] = useState("");
+  const [acceptedMap, setAcceptedMap] = useState({});
+
+  useEffect(() => {
+    setAcceptedMap((prev) => {
+      const next = {};
+      messages.forEach((message) => {
+        if (message.kind === "suggestion") {
+          next[message.id] = prev[message.id] ?? true;
+        }
+      });
+      return next;
+    });
+  }, [messages]);
 
   const handleSubmit = () => {
     if (!draftMessage.trim()) return;
@@ -29,6 +44,11 @@ export function WizardSuggestionPanel({
             Ask questions, review suggestions, and merge updates without
             overwriting the confirmed record.
           </p>
+          {nextStepTeaser ? (
+            <p className="mt-2 text-[11px] font-medium uppercase tracking-wide text-primary-500">
+              {nextStepTeaser}
+            </p>
+          ) : null}
         </div>
         <button
           type="button"
@@ -62,27 +82,52 @@ export function WizardSuggestionPanel({
               ) : null}
 
               {message.kind === "suggestion" && message.meta ? (
-                <div className="mt-3 space-y-2 text-xs">
-                  <div className="flex items-center gap-2">
+                <div className="mt-3 space-y-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-primary-100 px-2 py-1 font-medium text-primary-700">
                       {message.meta.fieldId}
                     </span>
                     {typeof message.meta.confidence === "number" ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">
+                      <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-700">
                         {(message.meta.confidence * 100).toFixed(0)}% confident
                       </span>
                     ) : null}
                   </div>
-                  <p className="uppercase tracking-wide text-neutral-400">
-                    Why: {message.meta.rationale}
+                  <p className="whitespace-pre-wrap text-neutral-500">
+                    {message.meta.rationale}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => onAcceptSuggestion(message.meta)}
-                    className="w-full rounded-full bg-primary-600 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500"
-                  >
-                    Merge suggestion
-                  </button>
+                  <div className="flex items-center justify-between gap-2 rounded-2xl border border-primary-200 bg-primary-50/60 px-3 py-2">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-primary-700">
+                      <input
+                        type="checkbox"
+                        className="h-[18px] w-[18px] rounded border border-primary-400 text-primary-600 focus:ring-primary-500"
+                        checked={acceptedMap[message.id] ?? true}
+                        onChange={(event) => {
+                          const isChecked = event.target.checked;
+                          setAcceptedMap((prev) => ({
+                            ...prev,
+                            [message.id]: isChecked
+                          }));
+                          if (onToggleSuggestion) {
+                            onToggleSuggestion(message.meta, isChecked);
+                          } else if (isChecked) {
+                            onAcceptSuggestion(message.meta);
+                          }
+                        }}
+                      />
+                      <span>{acceptedMap[message.id] ? "Looks good" : "Skip this suggestion"}</span>
+                    </label>
+                    <div className="flex items-center gap-3 text-base">
+                      <button
+                        type="button"
+                        className="transition hover:scale-110"
+                        onClick={() => onAcceptSuggestion(message.meta)}
+                        title="Apply again"
+                      >
+                        🔄
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ) : null}
 

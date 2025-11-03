@@ -19,7 +19,11 @@ const suggestionsRequestSchema = z.object({
   jobId: z.string(),
   state: looseObjectSchema.default({}),
   intent: looseObjectSchema.optional(),
-  currentStepId: z.string()
+  currentStepId: z.string(),
+  updatedFieldId: z.string().optional(),
+  updatedFieldValue: z.unknown().optional(),
+  emptyFieldIds: z.array(z.string()).optional(),
+  upcomingFieldIds: z.array(z.string()).optional()
 });
 
 const mergeRequestSchema = z.object({
@@ -320,178 +324,580 @@ function buildMarketIntelligence(state = {}) {
   };
 }
 
-function buildFallbackResponse(stepId, state, marketIntel) {
-  const response = {
-    suggestions: [],
-    skip: [],
-    followUpToUser: []
+const STEP_TEASERS = {
+  "role-setup": "Next we’ll capture why this role matters so the story resonates with great candidates.",
+  "role-story": "Next we’ll cover pay, schedules, and day-to-day details so only people who can actually do the work reach out.",
+  "pay-schedule": "Next we’ll define who’s the right fit so you avoid interview churn.",
+  "right-fit": "Next we’ll map how applicants move through your process so everything routes cleanly.",
+  "apply-flow": "You’re at the finish line—approve when ready and we’ll generate the full hiring pack."
+};
+
+function buildNextStepTeaser(stepId) {
+  return STEP_TEASERS[stepId] ?? "Keep going—each answer trains your hiring copilot to do more for you.";
+}
+
+function normaliseTextSpacing(value) {
+  return value
+    .split("\n")
+    .map((line) => line.trim().replace(/\s+/g, " "))
+    .join("\n")
+    .replace(/\s+\n/g, "\n")
+    .trim();
+}
+
+function capitaliseFirst(input) {
+  if (!input) return input;
+  return input.charAt(0).toUpperCase() + input.slice(1);
+}
+
+function ensureSentenceEnding(text) {
+  if (!text) return text;
+  if (text.length < 12) return text;
+  if (/[.!?…]$/.test(text.trim())) {
+    return text;
+  }
+  return `${text}.`;
+}
+
+function polishFreeformText(rawValue) {
+  if (typeof rawValue !== "string") {
+    return null;
+  }
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalised = normaliseTextSpacing(trimmed);
+  const hasMultipleLines = normalised.includes("\n");
+
+  if (hasMultipleLines) {
+    const polishedLines = normalised
+      .split("\n")
+      .map((line) => ensureSentenceEnding(capitaliseFirst(line.trim())));
+    const rebuilt = polishedLines.join("\n");
+    return rebuilt !== rawValue ? rebuilt : null;
+  }
+
+  const capitalised = capitaliseFirst(normalised);
+  const final = ensureSentenceEnding(capitalised);
+  return final !== rawValue ? final : null;
+}
+
+function buildImprovedValueCandidate({ fieldId, rawValue }) {
+  if (!fieldId || rawValue === undefined || rawValue === null) {
+    return null;
+  }
+  const polished = polishFreeformText(rawValue);
+  if (!polished) {
+    return null;
+  }
+  return {
+    fieldId,
+    value: polished,
+    rationale: "Smoothed the wording so candidates know exactly what you mean.",
+    confidence: 0.55,
+    source: "fallback",
+    mode: "rewrite"
+  };
+}
+
+function normaliseAutofillCandidate(candidate, defaults = {}) {
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+  const fieldId = candidate.fieldId ?? candidate.field_id ?? defaults.fieldId;
+  if (!fieldId || typeof fieldId !== "string") {
+    return null;
+  }
+  const value =
+    candidate.value !== undefined
+      ? candidate.value
+      : candidate.proposal !== undefined
+      ? candidate.proposal
+      : defaults.value;
+
+  if (value === undefined) {
+    return null;
+  }
+
+  const confidence =
+    typeof candidate.confidence === "number"
+      ? candidate.confidence
+      : typeof defaults.confidence === "number"
+      ? defaults.confidence
+      : 0.5;
+
+  const rationale = candidate.rationale ?? defaults.rationale ?? "";
+  const source = candidate.source ?? defaults.source ?? "fallback";
+  const appliesToFutureStep =
+    typeof candidate.appliesToFutureStep === "boolean"
+      ? candidate.appliesToFutureStep
+      : defaults.appliesToFutureStep ?? false;
+
+  return {
+    fieldId,
+    value,
+    confidence,
+    rationale,
+    source,
+    appliesToFutureStep
+  };
+}
+
+function normaliseImprovedValue(candidate, defaults = {}) {
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+  const fieldId = candidate.fieldId ?? candidate.field_id ?? defaults.fieldId;
+  if (!fieldId || typeof fieldId !== "string") {
+    return null;
+  }
+  const value =
+    candidate.value !== undefined
+      ? candidate.value
+      : candidate.proposal !== undefined
+      ? candidate.proposal
+      : defaults.value;
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const confidence =
+    typeof candidate.confidence === "number"
+      ? candidate.confidence
+      : typeof defaults.confidence === "number"
+      ? defaults.confidence
+      : 0.6;
+  const rationale = candidate.rationale ?? defaults.rationale ?? "Polished for clarity.";
+  const source = candidate.source ?? defaults.source ?? "copilot";
+  const mode = candidate.mode ?? defaults.mode ?? "rewrite";
+
+  return {
+    fieldId,
+    value,
+    confidence,
+    rationale,
+    source,
+    mode
+  };
+}
+
+function normaliseIrrelevantField(entry, defaults = {}) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+  const fieldId = entry.fieldId ?? entry.field_id ?? defaults.fieldId;
+  if (!fieldId || typeof fieldId !== "string") {
+    return null;
+  }
+  const reason =
+    entry.reason ??
+    defaults.reason ??
+    "Not relevant based on the information already provided.";
+
+  return { fieldId, reason };
+}
+
+function mergeCandidateArrays(base = [], incoming = []) {
+  const result = Array.isArray(base) ? base.slice() : [];
+  if (!Array.isArray(incoming)) {
+    return result;
+  }
+  for (const candidate of incoming) {
+    if (!candidate) continue;
+    const index = result.findIndex((item) => item.fieldId === candidate.fieldId);
+    if (index >= 0) {
+      result[index] = { ...result[index], ...candidate };
+    } else {
+      result.push(candidate);
+    }
+  }
+  return result;
+}
+
+function mergeIrrelevantArrays(base = [], incoming = []) {
+  const result = Array.isArray(base) ? base.slice() : [];
+  if (!Array.isArray(incoming)) {
+    return result;
+  }
+  for (const entry of incoming) {
+    if (!entry) continue;
+    const index = result.findIndex((item) => item.fieldId === entry.fieldId);
+    if (index >= 0) {
+      result[index] = { ...result[index], ...entry };
+    } else {
+      result.push(entry);
+    }
+  }
+  return result;
+}
+
+function convertAutofillToLegacy(autofillCandidates) {
+  const baseTimestamp = Date.now();
+  return (autofillCandidates ?? []).map((candidate, index) => ({
+    id: `suggestion-${candidate.fieldId}-${baseTimestamp + index}`,
+    fieldId: candidate.fieldId,
+    proposal: candidate.value,
+    confidence: candidate.confidence ?? 0.5,
+    rationale:
+      candidate.rationale ??
+      "Preset by the copilot so you can approve or tweak in one click."
+  }));
+}
+
+function convertIrrelevantToLegacy(irrelevantFields) {
+  return (irrelevantFields ?? []).map((entry) => ({
+    fieldId: entry.fieldId,
+    reason: entry.reason
+  }));
+}
+
+function ensureUniqueMessages(messages = []) {
+  const seen = new Set();
+  const result = [];
+  for (const message of messages) {
+    if (!message || typeof message !== "string") continue;
+    const trimmed = message.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+function extractImprovedValue(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const candidate = raw.improved_value ?? raw.improvedValue ?? null;
+  return normaliseImprovedValue(candidate);
+}
+
+function extractAutofillCandidates(raw) {
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  const candidatesRaw =
+    raw.autofill_candidates ?? raw.autofillCandidates ?? raw.suggestions ?? [];
+  if (!Array.isArray(candidatesRaw)) {
+    return [];
+  }
+  const normalized = [];
+  for (const candidate of candidatesRaw) {
+    const normalised = normaliseAutofillCandidate(candidate);
+    if (normalised) {
+      normalized.push(normalised);
+    }
+  }
+  return normalized;
+}
+
+function extractIrrelevantFields(raw) {
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  const entriesRaw =
+    raw.irrelevant_fields ?? raw.irrelevantFields ?? raw.skip ?? [];
+  if (!Array.isArray(entriesRaw)) {
+    return [];
+  }
+  const normalized = [];
+  for (const entry of entriesRaw) {
+    const normalised = normaliseIrrelevantField(entry);
+    if (normalised) {
+      normalized.push(normalised);
+    }
+  }
+  return normalized;
+}
+
+function mergeCopilotResponse(fallback, raw) {
+  if (!raw || typeof raw !== "object") {
+    return fallback;
+  }
+
+  const fallbackClone = {
+    improved_value: fallback.improved_value ?? null,
+    autofill_candidates: Array.isArray(fallback.autofill_candidates)
+      ? fallback.autofill_candidates.slice()
+      : [],
+    irrelevant_fields: Array.isArray(fallback.irrelevant_fields)
+      ? fallback.irrelevant_fields.slice()
+      : [],
+    next_step_teaser: fallback.next_step_teaser ?? null,
+    followUpToUser: Array.isArray(fallback.followUpToUser)
+      ? fallback.followUpToUser.slice()
+      : [],
+    suggestions: Array.isArray(fallback.suggestions) ? fallback.suggestions.slice() : [],
+    skip: Array.isArray(fallback.skip) ? fallback.skip.slice() : []
   };
 
-  const normalisedStep = stepId ?? "";
+  const improved = extractImprovedValue(raw);
+  if (improved) {
+    fallbackClone.improved_value = improved;
+  }
+
+  const autofillCandidates = extractAutofillCandidates(raw);
+  if (autofillCandidates.length > 0) {
+    fallbackClone.autofill_candidates = mergeCandidateArrays(
+      fallbackClone.autofill_candidates,
+      autofillCandidates
+    );
+  }
+
+  const irrelevantFields = extractIrrelevantFields(raw);
+  if (irrelevantFields.length > 0) {
+    fallbackClone.irrelevant_fields = mergeIrrelevantArrays(
+      fallbackClone.irrelevant_fields,
+      irrelevantFields
+    );
+  }
+
+  const nextStep =
+    typeof raw.next_step_teaser === "string"
+      ? raw.next_step_teaser
+      : typeof raw.nextStepTeaser === "string"
+      ? raw.nextStepTeaser
+      : null;
+  if (nextStep && nextStep.trim().length > 0) {
+    fallbackClone.next_step_teaser = nextStep.trim();
+  }
+
+  const followUpExtras = Array.isArray(raw.followUpToUser)
+    ? raw.followUpToUser
+    : Array.isArray(raw.follow_up_to_user)
+    ? raw.follow_up_to_user
+    : [];
+
+  fallbackClone.followUpToUser = ensureUniqueMessages([
+    ...fallbackClone.followUpToUser,
+    ...followUpExtras,
+    fallbackClone.next_step_teaser
+  ]);
+
+  fallbackClone.suggestions = convertAutofillToLegacy(fallbackClone.autofill_candidates);
+  fallbackClone.skip = convertIrrelevantToLegacy(fallbackClone.irrelevant_fields);
+
+  return fallbackClone;
+}
+
+function buildFallbackResponse({
+  stepId,
+  state,
+  marketIntel,
+  updatedFieldId,
+  updatedFieldValue,
+  emptyFieldIds = [],
+  upcomingFieldIds = []
+}) {
+  const autofillMap = new Map();
+  const irrelevantMap = new Map();
+  const followUps = [];
+  const emptyFieldSet = new Set(Array.isArray(emptyFieldIds) ? emptyFieldIds : []);
+  const upcomingFieldSet = new Set(Array.isArray(upcomingFieldIds) ? upcomingFieldIds : []);
+
+  function addAutofill(fieldId, value, { confidence = 0.5, rationale = "", source = "fallback" } = {}) {
+    const candidate = normaliseAutofillCandidate({
+      fieldId,
+      value,
+      confidence,
+      rationale,
+      source,
+      appliesToFutureStep: upcomingFieldSet.has(fieldId) && !emptyFieldSet.has(fieldId)
+    });
+    if (candidate) {
+      autofillMap.set(fieldId, candidate);
+    }
+  }
+
+  function addIrrelevant(fieldId, reason) {
+    const entry = normaliseIrrelevantField({ fieldId, reason });
+    if (entry) {
+      irrelevantMap.set(fieldId, entry);
+    }
+  }
+
+  function addFollowUp(message) {
+    if (message && typeof message === "string") {
+      followUps.push(message);
+    }
+  }
+
+  const normalizedStep = stepId ?? "";
   const title = String(getDeep(state, "core.job_title") ?? "").toLowerCase();
   const workModel = String(
     getDeep(state, "location.work_model") ?? marketIntel.location.workModel ?? ""
   ).toLowerCase();
 
-  if (["compensation-benefits", "compensation"].includes(normalisedStep)) {
+  if (normalizedStep === "role-setup") {
+    if (!valueProvidedAt(state, "core.job_family") && marketIntel.roleKey !== "general") {
+      addAutofill("core.job_family", marketIntel.roleKey, {
+        confidence: 0.55,
+        rationale: "Helps tailor benchmarking and campaign targeting from the start."
+      });
+      addFollowUp("I suggested a team category so benchmarks stay on point—feel free to tweak it.");
+    }
+    if (!valueProvidedAt(state, "core.seniority_level")) {
+      addAutofill("core.seniority_level", "mid", {
+        confidence: 0.5,
+        rationale: "Mid-level is the most common baseline for balanced pay and autonomy."
+      });
+    }
+    if (workModel === "remote") {
+      addIrrelevant("location.radius_km", "Remote roles don’t need a commute radius.");
+      addFollowUp("I’ve removed the commute radius question—remote hires don’t need it.");
+    } else if (!valueProvidedAt(state, "location.radius_km") && marketIntel.location.label) {
+      addAutofill("location.radius_km", 25, {
+        confidence: 0.42,
+        rationale: "25km radius is a safe starting point for local targeting."
+      });
+    }
+  } else if (normalizedStep === "role-story") {
+    if (!valueProvidedAt(state, "role_description.problem_being_solved")) {
+      addAutofill("role_description.problem_being_solved", `We need a steady ${getDeep(state, "core.job_title") ?? "team member"} to keep daily operations smooth and customers happy.`, {
+        confidence: 0.48,
+        rationale: "Frames the role in a way that motivates serious candidates."
+      });
+    }
+    if (!valueProvidedAt(state, "role_description.first_30_60_90_days.days_30")) {
+      addAutofill("role_description.first_30_60_90_days.days_30", "Learn our systems, shadow the team, and confidently run shorter shifts by the end of the month.", {
+        confidence: 0.46,
+        rationale: "Gives new hires a clear early win and filters in self-starters."
+      });
+    }
+    if (!valueProvidedAt(state, "team_context.reporting_structure.reports_to")) {
+      addAutofill("team_context.reporting_structure.reports_to", "Hiring Manager or Shift Lead", {
+        confidence: 0.44,
+        rationale: "Letting candidates know who has their back builds trust."
+      });
+    }
+  } else if (normalizedStep === "pay-schedule") {
     const salary = marketIntel.salaryBands;
     if (!valueProvidedAt(state, "compensation.salary_range.currency")) {
-      response.suggestions.push({
-        id: `fallback-salary-currency-${Date.now()}`,
-        fieldId: "compensation.salary_range.currency",
-        proposal: salary.currency,
+      addAutofill("compensation.salary_range.currency", salary.currency, {
         confidence: 0.62,
-        rationale: "Aligns compensation currency with market benchmarks for this role."
+        rationale: "Keeps pay transparent and aligned with local norms."
       });
     }
     if (!valueProvidedAt(state, "compensation.salary_range.min")) {
-      response.suggestions.push({
-        id: `fallback-salary-min-${Date.now()}`,
-        fieldId: "compensation.salary_range.min",
-        proposal: Math.round(salary.p50),
+      addAutofill("compensation.salary_range.min", Math.round(salary.p50), {
         confidence: 0.65,
-        rationale: `Typical offers for ${marketIntel.roleKey} roles near ${marketIntel.location.label} start around ${salary.currency} ${salary.p50}.`
+        rationale: `Benchmark starting point for ${marketIntel.roleKey} roles around ${marketIntel.location.label}.`
       });
     }
     if (!valueProvidedAt(state, "compensation.salary_range.max")) {
-      response.suggestions.push({
-        id: `fallback-salary-max-${Date.now()}`,
-        fieldId: "compensation.salary_range.max",
-        proposal: Math.round(salary.p75),
+      addAutofill("compensation.salary_range.max", Math.round(salary.p75), {
         confidence: 0.6,
-        rationale: `Upper range in ${marketIntel.location.label} reaches ${salary.currency} ${salary.p75}.`
+        rationale: `Upper range that keeps you competitive in ${marketIntel.location.label}.`
       });
     }
     if (!valueProvidedAt(state, "compensation.salary_range.period")) {
-      response.suggestions.push({
-        id: `fallback-salary-period-${Date.now()}`,
-        fieldId: "compensation.salary_range.period",
-        proposal: "month",
+      addAutofill("compensation.salary_range.period", "month", {
         confidence: 0.55,
-        rationale: "Monthly ranges make comparison easier for candidates and analytics."
+        rationale: "Monthly ranges make it easier for candidates to compare offers."
       });
     }
     if (!valueProvidedAt(state, "benefits.standout_benefits")) {
-      response.suggestions.push({
-        id: `fallback-benefits-${Date.now()}`,
-        fieldId: "benefits.standout_benefits",
-        proposal: marketIntel.benefitNorms.join(", "),
-        confidence: 0.58,
-        rationale: "Spell out benefits that nudge apply rates."
-      });
+      addAutofill(
+        "benefits.standout_benefits",
+        marketIntel.benefitNorms.join("\n"),
+        {
+          confidence: 0.58,
+          rationale: "Highlighting everyday perks boosts apply rates."
+        }
+      );
+      addFollowUp("I filled in common benefits—edit them so they reflect what you actually offer.");
     }
-  } else if (["requirements-skills", "requirements"].includes(normalisedStep)) {
+    if (title.includes("waiter") || title.includes("server")) {
+      addFollowUp("I highlighted tips and team meals since hospitality candidates care about those first.");
+    }
+  } else if (normalizedStep === "right-fit") {
     if (!valueProvidedAt(state, "requirements.hard_requirements.technical_skills.must_have")) {
-      response.suggestions.push({
-        id: `fallback-must-${Date.now()}`,
-        fieldId: "requirements.hard_requirements.technical_skills.must_have",
-        proposal: marketIntel.mustHaveExamples.join("\n"),
-        confidence: 0.62,
-        rationale: "These competencies repeatedly show up in successful hires."
-      });
+      addAutofill(
+        "requirements.hard_requirements.technical_skills.must_have",
+        marketIntel.mustHaveExamples.join("\n"),
+        {
+          confidence: 0.62,
+          rationale: "These must-haves appear in successful hires for similar roles."
+        }
+      );
     }
     if (!valueProvidedAt(state, "requirements.preferred_qualifications.skills")) {
-      response.suggestions.push({
-        id: `fallback-nice-${Date.now()}`,
-        fieldId: "requirements.preferred_qualifications.skills",
-        proposal: marketIntel.mustHaveExamples.map((item) => `Bonus: ${item}`).join("\n"),
-        confidence: 0.54,
-        rationale: "Bonus skills give the copilot more copy angles without excluding applicants."
-      });
-    }
-    if (!valueProvidedAt(state, "core.seniority_level")) {
-      response.suggestions.push({
-        id: `fallback-exp-${Date.now()}`,
-        fieldId: "core.seniority_level",
-        proposal: "mid",
-        confidence: 0.5,
-        rationale: "Mid-level is the default for most growth-stage teams."
-      });
-    }
-    if (!valueProvidedAt(state, "metadata.tags")) {
-      response.suggestions.push({
-        id: `fallback-language-${Date.now()}`,
-        fieldId: "metadata.tags",
-        proposal: marketIntel.location.country === "IL" ? "he-IL" : "en-US",
-        confidence: 0.48,
-        rationale: "Use tags to anchor asset generation prompts and routing."
-      });
-    }
-    if (!valueProvidedAt(state, "core.job_family") && marketIntel.roleKey !== "general") {
-      response.suggestions.push({
-        id: `fallback-role-${Date.now()}`,
-        fieldId: "core.job_family",
-        proposal: marketIntel.roleKey,
-        confidence: 0.55,
-        rationale: "Clear taxonomy unlocks better benchmarking downstream."
-      });
-    }
-  } else if (normalisedStep === "schedule-availability") {
-    if (!valueProvidedAt(state, "role_description.day_to_day")) {
-      response.suggestions.push({
-        id: `fallback-schedule-${Date.now()}`,
-        fieldId: "role_description.day_to_day",
-        proposal: "Sunday-Thursday, core hours 09:00-18:00",
-        confidence: 0.46,
-        rationale: "Clarify availability expectations so candidates self-qualify."
-      });
+      addAutofill(
+        "requirements.preferred_qualifications.skills",
+        marketIntel.mustHaveExamples.map((item) => `Bonus: ${item}`).join("\n"),
+        {
+          confidence: 0.53,
+          rationale: "Bonus skills let you delight high performers without excluding solid applicants."
+        }
+      );
     }
     if (
       !valueProvidedAt(state, "requirements.hard_requirements.certifications") &&
       title.includes("driver")
     ) {
-      response.suggestions.push({
-        id: `fallback-license-${Date.now()}`,
-        fieldId: "requirements.hard_requirements.certifications",
-        proposal: "Valid local driver license (Category B)",
+      addAutofill("requirements.hard_requirements.certifications", "Valid local driver license (Category B)", {
         confidence: 0.68,
         rationale: "Driving roles typically mandate verified licensing."
       });
     }
-  } else if (normalisedStep === "location-precision") {
-    if (workModel === "remote") {
-      response.skip.push({
-        fieldId: "location.radius_km",
-        reason: "Remote roles do not require a commute radius."
-      });
-    } else if (!valueProvidedAt(state, "location.radius_km")) {
-      response.suggestions.push({
-        id: `fallback-radius-${Date.now()}`,
-        fieldId: "location.radius_km",
-        proposal: 25,
-        confidence: 0.42,
-        rationale: "Start with a 25km radius for local targeting; you can refine later."
+  } else if (normalizedStep === "apply-flow") {
+    if (!valueProvidedAt(state, "application_process.apply_method")) {
+      addAutofill("application_process.apply_method", "internal_form", {
+        confidence: 0.52,
+        rationale: "Keeps everything flowing into Wizard forms unless you specify otherwise."
       });
     }
-    if (!valueProvidedAt(state, "location.geo.latitude") && marketIntel.location.city) {
-      response.followUpToUser.push("Would you like us to pin the office latitude/longitude for channel geofencing?");
+    if (!valueProvidedAt(state, "application_process.steps")) {
+      addAutofill(
+        "application_process.steps",
+        "Quick phone screen\nOn-site or video shadow\nManager conversation\nOffer + references",
+        {
+          confidence: 0.48,
+          rationale: "Setting expectations here keeps candidates engaged through your process."
+        }
+      );
     }
-  } else {
-    if (!valueProvidedAt(state, "core.job_title")) {
-      response.suggestions.push({
-        id: `fallback-title-${Date.now()}`,
-        fieldId: "core.job_title",
-        proposal: `Senior ${marketIntel.roleKey}`,
-        confidence: 0.48,
-        rationale: "Clear seniority keeps the job searchable across boards."
-      });
+    if (!valueProvidedAt(state, "application_process.total_timeline")) {
+      addAutofill(
+        "application_process.total_timeline",
+        "About 2 weeks for frontline roles, up to 4 weeks for leadership.",
+        {
+          confidence: 0.45,
+          rationale: "Timeline guidance reduces drop-off and sets honest expectations."
+        }
+      );
     }
   }
 
   if (title.includes("waiter")) {
-    response.followUpToUser.push("Do you include tips or service charge on top of base pay?");
-    if (["compensation-benefits", "compensation"].includes(normalisedStep)) {
-      response.suggestions.push({
-        id: `hospitality-benefits-${Date.now()}`,
-        fieldId: "benefits.standout_benefits",
-        proposal: "Shared service charge, team meal each shift, paid training programme",
-        confidence: 0.7,
-        rationale: "Hospitality applicants expect clarity on gratuities and daily perks."
-      });
-    }
+    addFollowUp("Want to mention pooled tips or a guaranteed service charge? That helps floor roles decide fast.");
   }
 
-  return response;
+  const improvedValue = buildImprovedValueCandidate({
+    fieldId: updatedFieldId,
+    rawValue: updatedFieldValue
+  });
+
+  const autofillCandidates = Array.from(autofillMap.values());
+  const irrelevantFields = Array.from(irrelevantMap.values());
+  const nextStepTeaser = buildNextStepTeaser(normalizedStep);
+
+  const followUpMessages = ensureUniqueMessages([
+    ...followUps,
+    nextStepTeaser
+  ]);
+
+  return {
+    improved_value: improvedValue,
+    autofill_candidates: autofillCandidates,
+    irrelevant_fields: irrelevantFields,
+    next_step_teaser: nextStepTeaser,
+    followUpToUser: followUpMessages,
+    suggestions: convertAutofillToLegacy(autofillCandidates),
+    skip: convertIrrelevantToLegacy(irrelevantFields)
+  };
 }
 
 export function wizardRouter({ firestore, logger, llmClient }) {
@@ -551,20 +957,37 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         state: mergedState
       };
 
-      let response = null;
+      const marketIntel = buildMarketIntelligence(context.state);
+
+      const fallbackResponse = buildFallbackResponse({
+        stepId: payload.currentStepId,
+        state: context.state,
+        marketIntel,
+        updatedFieldId: payload.updatedFieldId,
+        updatedFieldValue: payload.updatedFieldValue,
+        emptyFieldIds: payload.emptyFieldIds ?? [],
+        upcomingFieldIds: payload.upcomingFieldIds ?? []
+      });
+
+      let finalResponse = fallbackResponse;
+
       if (llmClient?.askSuggestions) {
-        response = await llmClient.askSuggestions(context);
-      }
-      if (!response) {
-        const marketIntel = buildMarketIntelligence(context.state);
-        response = buildFallbackResponse(context.currentStepId, context.state, marketIntel);
+        const llmPayload = {
+          ...context,
+          marketIntel,
+          updatedFieldId: payload.updatedFieldId,
+          updatedFieldValue: payload.updatedFieldValue,
+          emptyFieldIds: payload.emptyFieldIds ?? [],
+          upcomingFieldIds: payload.upcomingFieldIds ?? []
+        };
+
+        const llmRaw = await llmClient.askSuggestions(llmPayload);
+        if (llmRaw) {
+          finalResponse = mergeCopilotResponse(fallbackResponse, llmRaw);
+        }
       }
 
-      res.json({
-        suggestions: response.suggestions ?? [],
-        skip: response.skip ?? [],
-        followUpToUser: response.followUpToUser ?? []
-      });
+      res.json(finalResponse);
     })
   );
 
