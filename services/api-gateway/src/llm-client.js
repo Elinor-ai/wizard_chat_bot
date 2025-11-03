@@ -72,16 +72,19 @@ function parseJsonContent(content) {
 async function askSuggestions(context) {
   try {
     const systemPrompt =
-      "You are Wizard's recruiting copilot. Respond ONLY with valid JSON matching the schema.";
+      "You are Wizard's recruiting copilot. Respond ONLY with valid JSON that matches the required schema.";
     const userPrompt = {
       role: "user",
       content: JSON.stringify(
         {
           instructions: [
-            "Return an object with keys: suggestions (array), skip (array), followUpToUser (array).",
-            "Each suggestion must include id, fieldId, proposal, confidence (0-1), rationale.",
-            "Each skip entry must include fieldId and reason.",
-            "Keep proposal values machine readable (no units)."
+            "Return an object with keys: improved_value, autofill_candidates, irrelevant_fields, next_step_teaser, followUpToUser.",
+            "improved_value should be null or an object with { fieldId, value, rationale, confidence (0-1), source, mode } describing a polished rewrite of the field the user just edited.",
+            "autofill_candidates should be an array of objects with { fieldId, value, rationale, confidence (0-1), source } for other fields you can prefill now or on upcoming screens.",
+            "irrelevant_fields should be an array of objects with { fieldId, reason } for questions that no longer apply and should be hidden.",
+            "next_step_teaser must be a short string that previews what the user will see next and why it helps them.",
+            "followUpToUser should be an array (0-3 items) acknowledging what was autofilled or hidden, written as supportive coaching.",
+            "All fieldId values must match the nested schema paths provided in context.state."
           ],
           context
         },
@@ -103,9 +106,22 @@ async function askSuggestions(context) {
     const parsed = parseJsonContent(content);
     if (parsed && typeof parsed === "object") {
       return {
-        suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
-        skip: Array.isArray(parsed.skip) ? parsed.skip : [],
-        followUpToUser: Array.isArray(parsed.followUpToUser) ? parsed.followUpToUser : []
+        improved_value: parsed.improved_value ?? parsed.improvedValue ?? null,
+        autofill_candidates: Array.isArray(parsed.autofill_candidates ?? parsed.autofillCandidates)
+          ? parsed.autofill_candidates ?? parsed.autofillCandidates
+          : [],
+        irrelevant_fields: Array.isArray(parsed.irrelevant_fields ?? parsed.irrelevantFields)
+          ? parsed.irrelevant_fields ?? parsed.irrelevantFields
+          : [],
+        next_step_teaser:
+          typeof parsed.next_step_teaser === "string"
+            ? parsed.next_step_teaser
+            : typeof parsed.nextStepTeaser === "string"
+            ? parsed.nextStepTeaser
+            : "",
+        followUpToUser: Array.isArray(parsed.followUpToUser ?? parsed.follow_up_to_user)
+          ? parsed.followUpToUser ?? parsed.follow_up_to_user
+          : []
       };
     }
     throw new Error("Structured suggestions missing");

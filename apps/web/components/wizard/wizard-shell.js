@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WizardApi } from "../../lib/api-client";
 import { clsx } from "../../lib/cn";
 import { WizardSuggestionPanel } from "./wizard-suggestion-panel";
@@ -65,6 +65,13 @@ const SALARY_PERIOD_OPTIONS = [
   { value: "year", label: "Per year" },
 ];
 
+const SALARY_VISIBILITY_OPTIONS = [
+  { value: "show_full", label: "Show full range" },
+  { value: "show_min", label: "Show starting point" },
+  { value: "show_competitive", label: "List as “competitive pay”" },
+  { value: "hide", label: "Keep pay hidden for now" },
+];
+
 const APPLY_METHOD_OPTIONS = [
   { value: "internal_form", label: "Internal form" },
   { value: "external_link", label: "External link" },
@@ -77,74 +84,362 @@ const EXPERIENCE_LEVEL_OPTIONS = [
   { value: "senior", label: "Senior" },
 ];
 
+const JOB_FAMILY_OPTIONS = [
+  { value: "Front-of-house service", label: "Front-of-house service" },
+  { value: "Warehouse operations", label: "Warehouse operations" },
+  { value: "Resident care", label: "Resident care" },
+  { value: "Customer support", label: "Customer support" },
+  { value: "Growth marketing", label: "Growth marketing" },
+  { value: "Sales & revenue", label: "Sales & revenue" }
+];
+
+const COUNTRY_CAPSULE_OPTIONS = [
+  { value: "US", label: "United States" },
+  { value: "CA", label: "Canada" },
+  { value: "UK", label: "United Kingdom" },
+  { value: "DE", label: "Germany" },
+  { value: "AU", label: "Australia" },
+  { value: "IL", label: "Israel" }
+];
+
+const PROGRESS_TRACKING_FIELDS = [
+  "core.job_title",
+  "core.job_family",
+  "core.seniority_level",
+  "location.city",
+  "location.country",
+  "location.work_model",
+  "role_description.recruiter_input"
+];
+
 const REQUIRED_STEPS = [
   {
-    id: "role-basics",
-    title: "Role basics",
+    id: "role-setup",
+    title: "Let’s set up the role.",
+    subtitle: "Nothing is published yet. We’re just collecting the essentials.",
     fields: [
       {
         id: "core.job_title",
-        label: "Job title",
+        label: "What title will candidates recognise?",
+        helper:
+          "Plain titles get more clicks than clever ones, which means more qualified applicants for you.",
         required: true,
-        placeholder: "e.g. Senior Backend Engineer",
+        placeholder:
+          "Store Manager / Line Cook / Delivery Driver / Office Coordinator / Sales Lead",
         type: "text",
         maxLength: 120,
       },
       {
         id: "core.job_family",
-        label: "Role category / department",
+        label: "Which team or area does this role support?",
+        helper:
+          "Helps us highlight the right responsibilities and target the right talent pools.",
         required: true,
-        placeholder: "e.g. Engineering, Customer Success",
-        type: "text",
+        type: "capsule",
+        options: JOB_FAMILY_OPTIONS,
+        allowCustom: true,
+        customLabel: "Something else"
       },
-    ],
-  },
-  {
-    id: "location-model",
-    title: "Location & model",
-    fields: [
+      {
+        id: "core.seniority_level",
+        label: "What level are you hiring for?",
+        helper:
+          "Sets salary benchmarks and messaging, so you don’t waste time with the wrong seniority.",
+        required: true,
+        type: "capsule",
+        options: EXPERIENCE_LEVEL_OPTIONS,
+      },
       {
         id: "location.city",
-        label: "Primary city",
+        label: "Where will most of the work happen?",
+        helper:
+          "Pin the main city so pay ranges and job ads stay relevant for your candidates.",
         required: true,
-        placeholder: "e.g. Tel Aviv",
+        placeholder: "Austin / Haifa / Berlin / Cape Town / Manchester",
         type: "text",
       },
       {
         id: "location.country",
-        label: "Country (ISO-2)",
+        label: "Which country’s rules do we need to respect?",
+        helper:
+          "Use a two-letter country code so we load the right compliance and benefits guidance.",
         required: true,
-        placeholder: "e.g. IL",
-        type: "text",
-        maxLength: 2,
+        type: "capsule",
+        options: COUNTRY_CAPSULE_OPTIONS,
+        allowCustom: true,
+        customLabel: "Other country"
       },
       {
         id: "location.work_model",
-        label: "Work model",
+        label: "Where will they spend most shifts?",
+        helper:
+          "We’ll keep messaging honest about on-site vs. remote so you get fewer misaligned applicants.",
         required: true,
-        type: "select",
-        options: WORK_MODEL_OPTIONS,
+        type: "capsule",
+        options: WORK_MODEL_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.label
+        })),
+      },
+      {
+        id: "role_description.recruiter_input",
+        label: "What do you need this person to take care of?",
+        helper:
+          "Describe the mission in your own words—we’ll polish it so candidates feel the purpose.",
+        required: true,
+        placeholder:
+          "Keep evening service running smoothly, coach the five-person crew, and jump in wherever guests need help.",
+        type: "textarea",
+        rows: 5,
       },
     ],
   },
   {
-    id: "employment-overview",
-    title: "Employment overview",
+    id: "role-story",
+    title: "Why this role is important.",
+    subtitle: "We’ll only show what you approve before anything goes live.",
+    fields: [
+      {
+        id: "role_description.problem_being_solved",
+        label: "Why do you need this role right now?",
+        helper:
+          "Share the story you’d tell a teammate—this is what convinces great people to apply.",
+        required: true,
+        placeholder:
+          "We’re opening a second evening shift and need someone to keep service fast while the new team ramps.",
+        type: "textarea",
+        rows: 4,
+      },
+      {
+        id: "role_description.first_30_60_90_days.days_30",
+        label: "In the first month they should be able to...",
+        helper:
+          "Setting a 30-day target helps new hires ramp faster and gives them a clear win.",
+        required: false,
+        placeholder:
+          "Shadow each shift lead, learn our POS and safety routines, and run the floor with support.",
+        type: "textarea",
+        rows: 3,
+      },
+      {
+        id: "role_description.first_30_60_90_days.days_60",
+        label: "By 60 days, doing great looks like...",
+        helper:
+          "Paint the trajectory so candidates can picture themselves thriving here.",
+        required: false,
+        placeholder:
+          "Own two evening shifts a week, coach newer teammates, and keep ticket times under six minutes.",
+        type: "textarea",
+        rows: 3,
+      },
+      {
+        id: "role_description.first_30_60_90_days.days_90",
+        label: "After a few months, they should be able to...",
+        helper:
+          "Helps you attract people who love growing with a team—not just clocking in.",
+        required: false,
+        placeholder:
+          "Lead the weekend crew, flag process improvements, and keep guest satisfaction above 95%.",
+        type: "textarea",
+        rows: 3,
+      },
+      {
+        id: "team_context.reporting_structure.reports_to",
+        label: "Who will they report to or shadow most often?",
+        helper:
+          "Names or titles make the opportunity feel real and supportive.",
+        required: false,
+        placeholder:
+          "Evening Service Manager / Head Nurse / Warehouse Supervisor / VP Marketing",
+        type: "text",
+      },
+      {
+        id: "team_context.collaboration_style",
+        label: "Who will they work closely with most of the day?",
+        helper:
+          "Let candidates know the crew size and rhythm so they can picture the vibe.",
+        required: false,
+        placeholder:
+          "Six-person front-of-house pod, daily huddles with logistics, weekly syncs with marketing.",
+        type: "textarea",
+        rows: 3,
+      },
+    ],
+  },
+  {
+    id: "pay-schedule",
+    title: "Pay, schedule, and what a typical day looks like.",
+    subtitle:
+      "Transparent expectations mean fewer no-shows and faster hires. We’ll only show what you approve.",
     fields: [
       {
         id: "core.employment_type",
-        label: "Employment type",
+        label: "What type of employment is this?",
+        helper:
+          "Clarifies benefits and compliance so you’re never surprised later.",
         required: true,
+        placeholder: "Select employment type",
         type: "select",
         options: EMPLOYMENT_TYPE_OPTIONS,
       },
       {
-        id: "role_description.recruiter_input",
-        label: "Role summary",
-        required: true,
-        placeholder: "Outline mission, responsibilities, and key outcomes.",
+        id: "compensation.salary_range.currency",
+        label: "What currency should we list?",
+        helper:
+          "Keeps the salary clear for candidates and aligns with your payroll.",
+        required: false,
+        placeholder: "USD / GBP / EUR / ILS / ZAR",
+        type: "text",
+        maxLength: 3,
+      },
+      {
+        id: "compensation.salary_range.min",
+        label: "What’s a realistic starting pay?",
+        helper:
+          "Filters out mismatched applicants before they ever hit your calendar.",
+        required: false,
+        placeholder: "18 (hourly) / 3200 (monthly) / 55000 (annual)",
+        type: "number",
+        valueAs: "number",
+      },
+      {
+        id: "compensation.salary_range.max",
+        label: "What’s the top of the range you’d consider?",
+        helper:
+          "Keeps you competitive without overpaying, and signals growth to candidates.",
+        required: false,
+        placeholder: "24 (hourly) / 3800 (monthly) / 72000 (annual)",
+        type: "number",
+        valueAs: "number",
+      },
+      {
+        id: "compensation.salary_range.period",
+        label: "Is that per hour, month, or year?",
+        helper: "Choose the cadence you actually use when talking pay.",
+        required: false,
+        type: "select",
+        options: SALARY_PERIOD_OPTIONS,
+      },
+      {
+        id: "compensation.salary_range.display_strategy",
+        label: "How much of the pay range should we show in job ads?",
+        helper:
+          "Pick what candidates will see—the copilot keeps the full range for campaigns and reporting.",
+        required: false,
+        type: "select",
+        options: SALARY_VISIBILITY_OPTIONS,
+      },
+      {
+        id: "compensation.salary_range.overtime_eligible",
+        label: "Should they expect overtime pay?",
+        helper:
+          "Being upfront about overtime avoids awkward conversations after they join.",
+        required: false,
+        type: "select",
+        options: [
+          { value: "true", label: "Yes, overtime is part of the role" },
+          { value: "false", label: "No, overtime isn’t expected" },
+        ],
+        valueAs: "boolean",
+      },
+      {
+        id: "role_description.day_to_day",
+        label: "What does a typical shift or day include?",
+        helper:
+          "When people can picture the work, you get better-fit applicants and fewer early exits.",
+        required: false,
+        placeholder:
+          "Greet guests, stage orders, coach newer teammates, close out the POS, share feedback with logistics.",
         type: "textarea",
-        rows: 5,
+        rows: 4,
+        asList: true,
+      },
+      {
+        id: "compensation.bonus_structure.type",
+        label: "Do you offer bonuses we should mention?",
+        helper:
+          "Select the bonus style so we pitch it accurately—add details in the next field if needed.",
+        required: false,
+        type: "select",
+        options: [
+          { value: "performance", label: "Performance based" },
+          { value: "signing", label: "Signing bonus" },
+          { value: "annual", label: "Annual bonus" },
+          { value: "quarterly", label: "Quarterly bonus" },
+        ],
+      },
+      {
+        id: "compensation.bonus_structure.potential",
+        label: "How would you describe that bonus potential?",
+        helper:
+          "Share ranges or examples so we can sell the upside without overpromising.",
+        required: false,
+        placeholder:
+          "Up to 10% quarterly when team hits targets / $2,000 signing bonus paid over 6 months",
+        type: "textarea",
+        rows: 2,
+      },
+      {
+        id: "compensation.equity.offered",
+        label: "Any equity or profit sharing on the table?",
+        helper:
+          "Helps attract growth-minded candidates and keeps messaging compliant.",
+        required: false,
+        type: "select",
+        options: [
+          { value: "true", label: "Yes, we offer equity or profit share" },
+          { value: "false", label: "No equity or profit share" },
+        ],
+        valueAs: "boolean",
+      },
+      {
+        id: "compensation.equity.type",
+        label: "What kind of equity is it?",
+        helper:
+          "Mention the format so candidates know what to expect (options, RSUs, phantom units, etc.).",
+        required: false,
+        type: "select",
+        options: [
+          { value: "stock_options", label: "Stock options" },
+          { value: "rsu", label: "Restricted stock units (RSUs)" },
+          { value: "phantom", label: "Phantom equity / profit share" },
+          { value: "none", label: "Not applicable" },
+        ],
+      },
+      {
+        id: "compensation.equity.range",
+        label: "Any equity range or context worth noting?",
+        helper:
+          "Share the typical grant or how it vests so we can set expectations.",
+        required: false,
+        placeholder:
+          "0.05%–0.1% options with 4-year vesting / 5% profit share after probation",
+        type: "textarea",
+        rows: 2,
+      },
+      {
+        id: "benefits.standout_benefits",
+        label: "Any perks or extras worth highlighting?",
+        helper:
+          "This is where you win hearts—meals, stipends, wellness, tips, training.",
+        required: false,
+        placeholder:
+          "Shared tips each shift, paid certifications, commuter stipend, wellness days, growth budget",
+        type: "textarea",
+        rows: 3,
+        asList: true,
+      },
+      {
+        id: "requirements.hard_requirements.dealbreakers",
+        label: "Any schedule or physical deal-breakers to flag?",
+        helper:
+          "Setting expectations now keeps you from interviewing people who will say no later.",
+        required: false,
+        placeholder:
+          "Rotating weekends\nComfortable lifting 25kg\nOn-call every third week\nTravel 20% within region",
+        type: "textarea",
+        rows: 3,
+        asList: true,
       },
     ],
   },
@@ -152,223 +447,147 @@ const REQUIRED_STEPS = [
 
 const OPTIONAL_STEPS = [
   {
-    id: "requirements-skills",
-    title: "Requirements & skills",
+    id: "right-fit",
+    title: "Who’s the right fit?",
+    subtitle:
+      "This helps you avoid interviewing the wrong people and keeps your team focused.",
     fields: [
       {
         id: "requirements.hard_requirements.technical_skills.must_have",
-        label: "Must-have skills",
+        label: "What must every qualified person already have?",
+        helper:
+          "Think licenses, tools, or experience they need on day one—no second guessing.",
         required: false,
-        placeholder: "List essential qualifications, one per line.",
+        placeholder:
+          "Forklift licence\nComfort with EHR systems\nFood safety level 2\nExperience leading store opens",
         type: "textarea",
         rows: 4,
-        asList: true,
-      },
-      {
-        id: "requirements.preferred_qualifications.skills",
-        label: "Nice-to-have skills",
-        required: false,
-        placeholder: "Optional stretch skills or bonuses.",
-        type: "textarea",
-        rows: 4,
-        asList: true,
-      },
-      {
-        id: "core.seniority_level",
-        label: "Target experience level",
-        required: false,
-        type: "select",
-        options: EXPERIENCE_LEVEL_OPTIONS,
-      },
-      {
-        id: "metadata.tags",
-        label: "Primary language tag",
-        required: false,
-        placeholder: "e.g. en-US, he-IL",
-        type: "text",
-      },
-    ],
-  },
-  {
-    id: "compensation-benefits",
-    title: "Compensation & benefits",
-    fields: [
-      {
-        id: "compensation.salary_range.currency",
-        label: "Currency (ISO-4217)",
-        required: false,
-        placeholder: "e.g. USD",
-        type: "text",
-        maxLength: 3,
-      },
-      {
-        id: "compensation.salary_range.min",
-        label: "Minimum compensation",
-        required: false,
-        placeholder: "e.g. 24000",
-        type: "number",
-        valueAs: "number",
-      },
-      {
-        id: "compensation.salary_range.max",
-        label: "Maximum compensation",
-        required: false,
-        placeholder: "e.g. 31000",
-        type: "number",
-        valueAs: "number",
-      },
-      {
-        id: "compensation.salary_range.period",
-        label: "Compensation period",
-        required: false,
-        type: "select",
-        options: SALARY_PERIOD_OPTIONS,
-      },
-      {
-        id: "compensation.salary_range.overtime_eligible",
-        label: "Overtime eligible",
-        required: false,
-        type: "select",
-        options: [
-          { value: "true", label: "Yes" },
-          { value: "false", label: "No" },
-        ],
-        valueAs: "boolean",
-      },
-      {
-        id: "benefits.standout_benefits",
-        label: "Benefits",
-        required: false,
-        placeholder: "List benefits (comma separated or one per line).",
-        type: "textarea",
-        rows: 4,
-        asList: true,
-      },
-    ],
-  },
-  {
-    id: "schedule-availability",
-    title: "Schedule & logistics",
-    fields: [
-      {
-        id: "role_description.day_to_day",
-        label: "Schedule / shifts",
-        required: false,
-        placeholder: "e.g. Sunday-Thursday, core hours 09:00-18:00",
-        type: "textarea",
-        rows: 3,
         asList: true,
       },
       {
         id: "requirements.hard_requirements.certifications",
-        label: "Required licenses",
+        label: "Any licences or certifications they must hold?",
+        helper:
+          "Keeps compliance tight and saves you from late-stage surprises.",
         required: false,
-        placeholder: "List any mandatory certifications or licenses.",
+        placeholder: "CDL-B\nCNA licence\nCPR + First Aid\nSecurity clearance level 1",
         type: "textarea",
         rows: 3,
         asList: true,
       },
       {
-        id: "location.radius_km",
-        label: "Hiring radius (km)",
+        id: "requirements.hard_requirements.legal.work_authorization",
+        label: "Work authorisation or background requirements?",
+        helper:
+          "Mention work permits, background checks, or driving record needs upfront.",
         required: false,
-        placeholder: "e.g. 25",
-        type: "number",
-        valueAs: "number",
+        placeholder:
+          "Eligible to work in Australia\nClean driving record\nAble to pass background + drug screen",
+        type: "textarea",
+        rows: 3,
+        asList: true,
+      },
+      {
+        id: "requirements.hard_requirements.legal.other_notes",
+        label: "Anything else they should know before applying?",
+        helper:
+          "Probation periods, union membership, or other callouts go here.",
+        required: false,
+        placeholder: "90-day probation period\nUnion dues after first month",
+        type: "textarea",
+        rows: 3,
+      },
+      {
+        id: "requirements.preferred_qualifications.skills",
+        label: "Nice-to-haves that make someone shine?",
+        helper:
+          "We’ll pitch these as bonus points so you attract the overachievers without scaring others off.",
+        required: false,
+        placeholder:
+          "Speaks Spanish or French\nExperience with Salesforce\nComfort presenting to leadership",
+        type: "textarea",
+        rows: 4,
+        asList: true,
       },
     ],
   },
   {
-    id: "application-flow",
-    title: "Application flow",
+    id: "apply-flow",
+    title: "How should people apply (and what happens next)?",
+    subtitle:
+      "We’ll never publish without your approval. This simply keeps candidates confident.",
     fields: [
       {
         id: "application_process.apply_method",
-        label: "How should candidates apply?",
+        label: "Where should great applicants apply?",
+        helper:
+          "Pick the path you prefer—your copilot routes qualified leads straight to you.",
         required: false,
         type: "select",
         options: APPLY_METHOD_OPTIONS,
       },
       {
         id: "application_process.internal_form_id",
-        label: "Internal form ID",
+        label: "Internal form or ATS reference (optional)",
+        helper:
+          "Drop an identifier or link so we sync seamlessly with your existing process.",
         required: false,
-        placeholder: "Reference to your internal form (optional).",
+        placeholder: "greenhouse_job_872 / forms.gle/your-form / Notion intake link",
         type: "text",
       },
       {
         id: "application_process.external_url",
-        label: "External apply URL",
+        label: "External apply link (optional)",
+        helper:
+          "We only share this after you’ve approved the hiring pack.",
         required: false,
-        placeholder: "https://careers.company.com/jobs/backend-senior",
-        type: "text",
-      },
-    ],
-  },
-  {
-    id: "brand-voice",
-    title: "Brand & tone",
-    fields: [
-      {
-        id: "company_context.branding.logo_url",
-        label: "Logo URL",
-        required: false,
-        placeholder: "https://cdn.company.com/logo.svg",
+        placeholder:
+          "https://company.com/careers/store-manager or https://indeed.com/job/123",
         type: "text",
       },
       {
-        id: "company_context.branding.color",
-        label: "Primary brand color",
+        id: "application_process.steps",
+        label: "What happens after they apply?",
+        helper:
+          "List the steps or interview stages so candidates know you have a plan.",
         required: false,
-        placeholder: "#4338ca",
-        type: "text",
-      },
-      {
-        id: "metadata.llm_generation_hints.tone",
-        label: "Voice & tone guidance",
-        required: false,
-        placeholder: "e.g. Confident, data-driven, people-first.",
+        placeholder:
+          "Phone screen → On-site shadow → Manager interview → Offer call",
         type: "textarea",
         rows: 3,
+        asList: true,
       },
       {
-        id: "core.industry",
-        label: "Industry",
+        id: "application_process.total_timeline",
+        label: "How long does the whole process usually take?",
+        helper:
+          "Setting expectations up front keeps candidates engaged and reduces drop-off.",
         required: false,
-        placeholder: "e.g. Technology, Hospitality",
+        placeholder:
+          "1 week for frontline roles / 3 weeks for leadership / Fast-track for seasonal hires",
+        type: "textarea",
+        rows: 2,
+      },
+      {
+        id: "application_process.start_date.target",
+        label: "When would you ideally like them to start?",
+        helper:
+          "Concrete dates or just \"ASAP\" both work—this helps you forecast staffing.",
+        required: false,
+        placeholder:
+          "Within 2 weeks / 1 November 2024 / Before holiday peak / ASAP",
         type: "text",
       },
       {
-        id: "company_context.dei_commitment",
-        label: "Compliance notes / legal copy",
+        id: "application_process.start_date.flexibility",
+        label: "How flexible is that start date?",
+        helper:
+          "Tell us if there’s wiggle room so we can frame urgency the right way.",
         required: false,
-        placeholder: "Add equal opportunity statements or legal requirements.",
+        placeholder:
+          "Can start earlier for the right person / Firm date because of training / Flexible within the month",
         type: "textarea",
-        rows: 3,
-      },
-    ],
-  },
-  {
-    id: "location-precision",
-    title: "Location precision",
-    fields: [
-      {
-        id: "location.geo.latitude",
-        label: "Latitude",
-        required: false,
-        placeholder: "e.g. 32.0853",
-        type: "number",
-        valueAs: "number",
-        step: "any",
-      },
-      {
-        id: "location.geo.longitude",
-        label: "Longitude",
-        required: false,
-        placeholder: "e.g. 34.7818",
-        type: "number",
-        valueAs: "number",
-        step: "any",
+        rows: 2,
       },
     ],
   },
@@ -400,9 +619,14 @@ function isFieldValueProvided(value, field) {
   return value !== undefined && value !== null;
 }
 
-function isStepComplete(step, data) {
-  const requiredFields = step.fields.filter((field) => field.required);
-  const optionalFields = step.fields.filter((field) => !field.required);
+function isStepComplete(step, data, hidden = {}) {
+  const isHidden = (fieldId) => Boolean(getDeep(hidden, fieldId));
+  const requiredFields = step.fields.filter(
+    (field) => field.required && !isHidden(field.id)
+  );
+  const optionalFields = step.fields.filter(
+    (field) => !field.required && !isHidden(field.id)
+  );
 
   if (requiredFields.length > 0) {
     return requiredFields.every((field) =>
@@ -416,7 +640,63 @@ function isStepComplete(step, data) {
     );
   }
 
-  return false;
+  return step.fields.length > 0;
+}
+
+function normalizeValueForField(field, proposal) {
+  if (!field) return proposal;
+
+  if (field.asList) {
+    if (Array.isArray(proposal)) {
+      return proposal;
+    }
+    if (typeof proposal === "string") {
+      const entries = proposal
+        .split(/\n|,/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+      return entries.length > 0 ? entries : undefined;
+    }
+    if (proposal === null || proposal === undefined) {
+      return undefined;
+    }
+    return [String(proposal)];
+  }
+
+  if (field.valueAs === "boolean") {
+    if (typeof proposal === "boolean") return proposal;
+    if (typeof proposal === "string") {
+      if (proposal.toLowerCase() === "true") return true;
+      if (proposal.toLowerCase() === "false") return false;
+    }
+    return Boolean(proposal);
+  }
+
+  if (field.type === "number" || field.valueAs === "number") {
+    if (proposal === "" || proposal === null || proposal === undefined) {
+      return undefined;
+    }
+    if (typeof proposal === "number") return proposal;
+    if (typeof proposal === "string" && proposal.trim().length > 0) {
+      const numeric = Number(proposal);
+      return Number.isNaN(numeric) ? undefined : numeric;
+    }
+    return undefined;
+  }
+
+  if (field.id === "location.country" && typeof proposal === "string") {
+    return proposal.toUpperCase().slice(0, 2);
+  }
+
+  if (typeof proposal === "string" || typeof proposal === "number") {
+    return proposal;
+  }
+
+  if (proposal === null || proposal === undefined) {
+    return undefined;
+  }
+
+  return proposal;
 }
 
 export function WizardShell() {
@@ -438,7 +718,12 @@ export function WizardShell() {
   ]);
   const [isChatting, setIsChatting] = useState(false);
   const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
-  const [skippedFields, setSkippedFields] = useState({});
+  const [hiddenFields, setHiddenFields] = useState({});
+  const [autofilledFields, setAutofilledFields] = useState({});
+  const [copilotNextTeaser, setCopilotNextTeaser] = useState("");
+  const suggestionDebounceRef = useRef(null);
+  const stateRef = useRef(state);
+  const [customCapsuleActive, setCustomCapsuleActive] = useState({});
 
   const steps = useMemo(
     () =>
@@ -448,9 +733,13 @@ export function WizardShell() {
 
   const currentStep = steps[currentStepIndex];
 
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
   const allRequiredStepsCompleteInState = useMemo(
-    () => REQUIRED_STEPS.every((step) => isStepComplete(step, state)),
-    [state]
+    () => REQUIRED_STEPS.every((step) => isStepComplete(step, state, hiddenFields)),
+    [hiddenFields, state]
   );
 
   const isCurrentStepRequired = currentStepIndex < REQUIRED_STEPS.length;
@@ -458,16 +747,17 @@ export function WizardShell() {
   const currentRequiredStepCompleteInState = useMemo(() => {
     if (!currentStep) return false;
     if (!isCurrentStepRequired) return true;
-    return isStepComplete(currentStep, state);
-  }, [currentStep, isCurrentStepRequired, state]);
+    return isStepComplete(currentStep, state, hiddenFields);
+  }, [currentStep, hiddenFields, isCurrentStepRequired, state]);
 
   const stepMetrics = useMemo(() => {
     return steps.map((step) => {
+      const isHidden = (fieldId) => Boolean(getDeep(hiddenFields, fieldId));
       const requiredFieldsInStep = step.fields.filter(
-        (field) => field.required
+        (field) => field.required && !isHidden(field.id)
       );
       const optionalFieldsInStep = step.fields.filter(
-        (field) => !field.required
+        (field) => !field.required && !isHidden(field.id)
       );
       const requiredCompletedCount = requiredFieldsInStep.reduce(
         (count, field) =>
@@ -502,44 +792,38 @@ export function WizardShell() {
         stepComplete,
       };
     });
-  }, [committedState, steps]);
+  }, [committedState, hiddenFields, steps]);
+
+  const progressCompletedCount = useMemo(() => {
+    return PROGRESS_TRACKING_FIELDS.reduce((count, fieldId) => {
+      const def = findFieldDefinition(fieldId);
+      return count + (isFieldValueProvided(getDeep(state, fieldId), def) ? 1 : 0);
+    }, 0);
+  }, [state]);
+
+  const totalProgressFields = PROGRESS_TRACKING_FIELDS.length;
+  const progressPercent =
+    totalProgressFields === 0
+      ? 0
+      : Math.round((progressCompletedCount / totalProgressFields) * 100);
+
+  const capsuleClassName = useCallback(
+    (isActive) =>
+      clsx(
+        "px-5 py-2.5 rounded-full border-2 text-sm font-semibold transition-all duration-150",
+        isActive
+          ? "border-[#667eea] bg-[#667eea] text-white shadow-sm shadow-[#667eea]/50"
+          : "border-[#e5e7eb] bg-white text-[#374151] hover:border-[#667eea] hover:bg-[#f5f7ff] hover:-translate-y-0.5"
+      ),
+    []
+  );
 
   const showOptionalDecision =
     !includeOptional && currentStepIndex === REQUIRED_STEPS.length - 1;
   const isLastStep = currentStepIndex === steps.length - 1;
   const totalSteps = steps.length;
 
-  const requiredStepsCompleted = useMemo(
-    () =>
-      REQUIRED_STEPS.reduce(
-        (count, step) => count + (isStepComplete(step, committedState) ? 1 : 0),
-        0
-      ),
-    [committedState]
-  );
-
-  const requiredProgress =
-    REQUIRED_STEPS.length === 0
-      ? 0
-      : Math.round((requiredStepsCompleted / REQUIRED_STEPS.length) * 100);
-
-  const optionalStepsCompleted = useMemo(
-    () =>
-      OPTIONAL_STEPS.reduce(
-        (count, step) => count + (isStepComplete(step, committedState) ? 1 : 0),
-        0
-      ),
-    [committedState]
-  );
-
-  const optionalProgress =
-    OPTIONAL_STEPS.length === 0
-      ? 0
-      : Math.round((optionalStepsCompleted / OPTIONAL_STEPS.length) * 100);
-
-  const showOptionalProgress = includeOptional || optionalStepsCompleted > 0;
-
-  const persistMutation = useMutation({
+    const persistMutation = useMutation({
     mutationFn: ({ state: draftState, userId, jobId, intent, currentStepId }) =>
       WizardApi.persistDraft(draftState, {
         userId,
@@ -568,45 +852,26 @@ export function WizardShell() {
     if (steps.length === 0) return;
     const highestCompletedIndex = steps.reduce(
       (max, step, index) =>
-        isStepComplete(step, committedState) ? Math.max(max, index) : max,
+        isStepComplete(step, committedState, hiddenFields)
+          ? Math.max(max, index)
+          : max,
       0
     );
     setMaxVisitedIndex((prev) => {
       const target = Math.max(prev, highestCompletedIndex, currentStepIndex);
       return target === prev ? prev : target;
     });
-  }, [committedState, currentStepIndex, steps]);
+  }, [committedState, currentStepIndex, hiddenFields, steps]);
 
   useEffect(() => {
     if (includeOptional) return;
     const hasOptionalData = OPTIONAL_STEPS.some((step) =>
-      isStepComplete(step, committedState)
+      isStepComplete(step, committedState, hiddenFields)
     );
     if (hasOptionalData) {
       setIncludeOptional(true);
     }
-  }, [committedState, includeOptional]);
-
-  const onFieldChange = useCallback((fieldId, value) => {
-    setState((prev) => {
-      const next = deepClone(prev);
-      if (value === "" || value === null || value === undefined) {
-        setDeep(next, fieldId, undefined);
-      } else {
-        setDeep(next, fieldId, value);
-      }
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    setSkippedFields({});
-    setAssistantMessages((prev) =>
-      prev.filter(
-        (message) => !["suggestion", "followUp", "skip"].includes(message.kind)
-      )
-    );
-  }, [currentStepIndex]);
+  }, [committedState, hiddenFields, includeOptional]);
 
   const announceAuthRequired = useCallback(() => {
     setAssistantMessages((prev) => [
@@ -621,7 +886,13 @@ export function WizardShell() {
   }, []);
 
   const fetchSuggestionsForStep = useCallback(
-    async (stepId = currentStep?.id, intentOverrides = {}, jobIdOverride) => {
+    async ({
+      stepId = currentStep?.id,
+      intentOverrides = {},
+      jobIdOverride,
+      updatedFieldId,
+      updatedValue
+    } = {}) => {
       if (!user || !stepId) {
         if (!user) {
           announceAuthRequired();
@@ -634,67 +905,215 @@ export function WizardShell() {
         return;
       }
 
+      const workingState = stateRef.current ?? {};
+      const targetStep = steps.find((step) => step.id === stepId) ?? null;
+      const emptyFieldIds = [];
+      if (targetStep) {
+        for (const field of targetStep.fields) {
+          const value = getDeep(workingState, field.id);
+          if (!isFieldValueProvided(value, field)) {
+            emptyFieldIds.push(field.id);
+          }
+        }
+      }
+
+      const stepIndex = steps.findIndex((step) => step.id === stepId);
+      const upcomingFieldIds =
+        stepIndex === -1
+          ? []
+          : steps
+              .slice(stepIndex + 1)
+              .flatMap((step) => step.fields.map((field) => field.id));
+
       setIsFetchingSuggestions(true);
       try {
         const response = await WizardApi.fetchSuggestions(
           {
-            state,
+            state: workingState,
             currentStepId: stepId,
             intent: { includeOptional, ...intentOverrides },
+            updatedFieldId,
+            updatedFieldValue: updatedValue,
+            emptyFieldIds,
+            upcomingFieldIds,
           },
           { userId: user.id, jobId: effectiveJobId }
         );
 
-        const skipMap = {};
-        (response.skip ?? []).forEach((item) => {
+        const hiddenMap = {};
+        (response.irrelevantFields ?? []).forEach((item) => {
           if (item?.fieldId) {
-            setDeep(skipMap, item.fieldId, item.reason);
+            setDeep(
+              hiddenMap,
+              item.fieldId,
+              item.reason ?? "Not needed based on what you’ve already shared."
+            );
           }
         });
-        setSkippedFields(skipMap);
+        setHiddenFields(hiddenMap);
+        if ((response.irrelevantFields ?? []).length > 0) {
+          setAutofilledFields((prev) => {
+            const next = deepClone(prev);
+            (response.irrelevantFields ?? []).forEach((item) => {
+              if (item?.fieldId) {
+                setDeep(next, item.fieldId, undefined);
+              }
+            });
+            return next;
+          });
+        }
+
+        const autofillCandidates = response.autofillCandidates ?? [];
+        setCopilotNextTeaser(response.nextStepTeaser ?? "");
+
+        const pendingAutofillUpdates = [];
+        autofillCandidates.forEach((candidate) => {
+          if (!candidate?.fieldId) return;
+          if (getDeep(hiddenMap, candidate.fieldId)) return;
+
+          const fieldDefinition = findFieldDefinition(candidate.fieldId);
+          const currentValue = getDeep(workingState, candidate.fieldId);
+          const normalized = normalizeValueForField(fieldDefinition, candidate.value);
+
+          if (
+            normalized !== undefined &&
+            !isFieldValueProvided(currentValue, fieldDefinition)
+          ) {
+            pendingAutofillUpdates.push({
+              fieldId: candidate.fieldId,
+              value: normalized
+            });
+          }
+        });
+
+        if (pendingAutofillUpdates.length > 0) {
+          setState((prev) => {
+            const next = deepClone(prev);
+            pendingAutofillUpdates.forEach(({ fieldId, value }) => {
+              setDeep(next, fieldId, value);
+            });
+            return next;
+          });
+        }
+
+        if (pendingAutofillUpdates.length > 0) {
+          setAutofilledFields((prev) => {
+            const next = deepClone(prev);
+            pendingAutofillUpdates.forEach(({ fieldId }) => {
+              const candidate = autofillCandidates.find(
+                (item) => item?.fieldId === fieldId
+              );
+              setDeep(next, fieldId, {
+                rationale:
+                  candidate?.rationale ??
+                  "Suggested so candidates understand the opportunity immediately.",
+                confidence: candidate?.confidence ?? 0.5,
+                suggestedAt: Date.now(),
+                source: candidate?.source ?? "copilot"
+              });
+            });
+            return next;
+          });
+        }
 
         setAssistantMessages((prev) => {
           const base = prev.filter(
             (message) =>
-              !["suggestion", "followUp", "skip"].includes(message.kind)
+              !["suggestion", "followUp", "skip", "improved"].includes(
+                message.kind
+              )
           );
 
-          const suggestionMessages = (response.suggestions ?? []).map(
-            (suggestion) => ({
-              id: suggestion.id,
+          const suggestionMessages = (response.autofillCandidates ?? []).map(
+            (candidate, index) => ({
+              id: `autofill-${candidate.fieldId}-${Date.now()}-${index}`,
               role: "assistant",
               kind: "suggestion",
               content:
-                typeof suggestion.proposal === "string" ||
-                typeof suggestion.proposal === "number"
-                  ? String(suggestion.proposal)
-                  : JSON.stringify(suggestion.proposal),
-              meta: suggestion,
+                typeof candidate.value === "string" ||
+                typeof candidate.value === "number"
+                  ? String(candidate.value)
+                  : JSON.stringify(candidate.value),
+              meta: {
+                fieldId: candidate.fieldId,
+                confidence: candidate.confidence ?? 0.5,
+                rationale:
+                  candidate.rationale ??
+                  "Suggested by your copilot so you can approve in one click.",
+                value: candidate.value,
+                mode: "autofill",
+              },
             })
           );
 
-          const followUps = (response.followUpToUser ?? []).map(
-            (text, index) => ({
-              id: `follow-up-${Date.now()}-${index}`,
-              role: "assistant",
-              kind: "followUp",
-              content: text,
-            })
-          );
+          const improvedMessages =
+            response.improvedValue && response.improvedValue.fieldId
+              ? [
+                  {
+                    id: `improved-${response.improvedValue.fieldId}-${Date.now()}`,
+                    role: "assistant",
+                    kind: "suggestion",
+                    content:
+                      typeof response.improvedValue.value === "string"
+                        ? response.improvedValue.value
+                        : JSON.stringify(response.improvedValue.value),
+                    meta: {
+                      fieldId: response.improvedValue.fieldId,
+                      confidence: response.improvedValue.confidence ?? 0.6,
+                      rationale:
+                        response.improvedValue.rationale ??
+                        "Reworded for clarity and candidate appeal.",
+                      value: response.improvedValue.value,
+                      mode: response.improvedValue.mode ?? "rewrite",
+                    },
+                  },
+                ]
+              : [];
 
-          const skipMessages = (response.skip ?? []).map((item, index) => ({
-            id: `skip-${item.fieldId}-${index}`,
+          const followUpsRaw = [
+            ...(response.followUps ?? []),
+            response.nextStepTeaser ?? "",
+          ];
+          const followUpUnique = [];
+          const followUpSeen = new Set();
+          for (const text of followUpsRaw) {
+            if (!text || typeof text !== "string") continue;
+            const trimmed = text.trim();
+            if (!trimmed || followUpSeen.has(trimmed)) continue;
+            followUpSeen.add(trimmed);
+            followUpUnique.push(trimmed);
+          }
+
+          const followUps = followUpUnique.map((text, index) => ({
+            id: `follow-up-${Date.now()}-${index}`,
             role: "assistant",
-            kind: "skip",
-            content: `Skipped ${item.fieldId}: ${item.reason}`,
-            meta: item,
+            kind: "followUp",
+            content: text,
           }));
+
+          const hiddenMessages = (response.irrelevantFields ?? []).map(
+            (item, index) => {
+              const fieldDef = findFieldDefinition(item.fieldId);
+              const friendlyLabel = fieldDef?.label ?? item.fieldId;
+              const explanation =
+                item.reason ??
+                "Not relevant for this role, so we tucked it away for you.";
+              return {
+                id: `hidden-${item.fieldId}-${Date.now()}-${index}`,
+                role: "assistant",
+                kind: "skip",
+                content: `I’ve removed “${friendlyLabel}” — ${explanation}`,
+                meta: { ...item, friendlyLabel }
+              };
+            }
+          );
 
           return [
             ...base,
+            ...improvedMessages,
             ...suggestionMessages,
             ...followUps,
-            ...skipMessages,
+            ...hiddenMessages,
           ];
         });
       } catch (error) {
@@ -711,15 +1130,67 @@ export function WizardShell() {
         setIsFetchingSuggestions(false);
       }
     },
-    [
-      announceAuthRequired,
-      currentStep?.id,
-      draftId,
-      includeOptional,
-      state,
-      user,
-    ]
+    [announceAuthRequired, currentStep?.id, draftId, includeOptional, steps, user]
   );
+
+
+  const scheduleRealtimeSuggestions = useCallback(
+    (fieldId, value) => {
+      if (!currentStep?.id) return;
+      if (suggestionDebounceRef.current) {
+        clearTimeout(suggestionDebounceRef.current);
+      }
+      suggestionDebounceRef.current = setTimeout(() => {
+        fetchSuggestionsForStep({
+          stepId: currentStep.id,
+          updatedFieldId: fieldId,
+          updatedValue: value,
+        });
+      }, 450);
+    },
+    [currentStep?.id, fetchSuggestionsForStep]
+  );
+
+  const onFieldChange = useCallback(
+    (fieldId, value) => {
+      setState((prev) => {
+        const next = deepClone(prev);
+        if (value === "" || value === null || value === undefined) {
+          setDeep(next, fieldId, undefined);
+        } else {
+          setDeep(next, fieldId, value);
+        }
+        return next;
+      });
+
+      setAutofilledFields((prev) => {
+        const next = deepClone(prev);
+        setDeep(next, fieldId, undefined);
+        return next;
+      });
+
+      scheduleRealtimeSuggestions(fieldId, value);
+    },
+    [scheduleRealtimeSuggestions]
+  );
+
+  useEffect(() => {
+    setHiddenFields({});
+    setAutofilledFields({});
+    setCopilotNextTeaser("");
+    if (suggestionDebounceRef.current) {
+      clearTimeout(suggestionDebounceRef.current);
+      suggestionDebounceRef.current = null;
+    }
+    setAssistantMessages((prev) =>
+      prev.filter(
+        (message) =>
+          !["suggestion", "followUp", "skip", "improved"].includes(
+            message.kind
+          )
+      )
+    );
+  }, [currentStepIndex]);
 
   const persistCurrentDraft = useCallback(
     async (intentOverrides = {}, stepId = currentStep?.id) => {
@@ -798,11 +1269,11 @@ export function WizardShell() {
     const nextStep = steps[nextIndex] ?? steps[steps.length - 1];
 
     goToStep(nextIndex);
-    await fetchSuggestionsForStep(
-      nextStep?.id ?? stepId,
-      result.intent,
-      result.savedId
-    );
+    await fetchSuggestionsForStep({
+      stepId: nextStep?.id ?? stepId,
+      intentOverrides: result.intent,
+      jobIdOverride: result.savedId,
+    });
   };
 
   const handleBack = async () => {
@@ -819,11 +1290,11 @@ export function WizardShell() {
     const previousIndex = currentStepIndex - 1;
     const previousStep = steps[previousIndex] ?? steps[0];
     goToStep(previousIndex);
-    await fetchSuggestionsForStep(
-      previousStep?.id ?? stepId,
-      result.intent,
-      result.savedId
-    );
+    await fetchSuggestionsForStep({
+      stepId: previousStep?.id ?? stepId,
+      intentOverrides: result.intent,
+      jobIdOverride: result.savedId,
+    });
   };
 
   const handleSubmit = async (submissionIntent = {}) => {
@@ -866,7 +1337,11 @@ export function WizardShell() {
       },
     ]);
 
-    await fetchSuggestionsForStep(stepId, result.intent, result.savedId);
+    await fetchSuggestionsForStep({
+      stepId,
+      intentOverrides: result.intent,
+      jobIdOverride: result.savedId,
+    });
   };
 
   const handleAddOptional = async () => {
@@ -896,64 +1371,24 @@ export function WizardShell() {
     const optionalFlowSteps = [...REQUIRED_STEPS, ...OPTIONAL_STEPS];
     const nextStep = optionalFlowSteps[nextIndex];
     goToStep(nextIndex);
-    await fetchSuggestionsForStep(
-      nextStep?.id ?? "compensation-benefits",
-      nextIntent,
-      result.savedId
-    );
+    await fetchSuggestionsForStep({
+      stepId: nextStep?.id ?? "pay-schedule",
+      intentOverrides: nextIntent,
+      jobIdOverride: result.savedId,
+    });
   };
 
-  const handleAcceptSuggestion = async (suggestion) => {
-    if (!user || !draftId) {
-      announceAuthRequired();
-      return;
-    }
+  const handleAcceptSuggestion = useCallback(
+    async (suggestion) => {
+      if (!user || !draftId) {
+        announceAuthRequired();
+        return;
+      }
 
     const fieldDef = findFieldDefinition(suggestion.fieldId);
-    const proposal = suggestion.proposal;
-    let value;
-
-    if (fieldDef?.asList) {
-      if (Array.isArray(proposal)) {
-        value = proposal;
-      } else if (typeof proposal === "string") {
-        const entries = proposal
-          .split(/\n|,/)
-          .map((part) => part.trim())
-          .filter(Boolean);
-        value = entries.length > 0 ? entries : undefined;
-      } else if (proposal === null || proposal === undefined) {
-        value = undefined;
-      } else {
-        value = [String(proposal)];
-      }
-    } else if (fieldDef?.valueAs === "boolean") {
-      if (typeof proposal === "boolean") {
-        value = proposal;
-      } else if (typeof proposal === "string") {
-        value = proposal === "true";
-      } else {
-        value = Boolean(proposal);
-      }
-    } else if (fieldDef?.type === "number" || fieldDef?.valueAs === "number") {
-      if (typeof proposal === "number") {
-        value = proposal;
-      } else if (
-        typeof proposal === "string" &&
-        proposal.trim().length > 0 &&
-        !Number.isNaN(Number(proposal))
-      ) {
-        value = Number(proposal);
-      } else {
-        value = undefined;
-      }
-    } else if (typeof proposal === "string" || typeof proposal === "number") {
-      value = proposal;
-    } else if (proposal === null || proposal === undefined) {
-      value = undefined;
-    } else {
-      value = JSON.stringify(proposal);
-    }
+    const proposal =
+      suggestion.value !== undefined ? suggestion.value : suggestion.proposal;
+    const value = normalizeValueForField(fieldDef, proposal);
 
     onFieldChange(suggestion.fieldId, value);
 
@@ -975,19 +1410,46 @@ export function WizardShell() {
         }
         return next;
       });
-      await fetchSuggestionsForStep(currentStep?.id);
-    } catch (error) {
-      setAssistantMessages((prev) => [
-        ...prev,
-        {
-          id: `merge-error-${Date.now()}`,
-          role: "assistant",
-          kind: "error",
-          content: error.message ?? "Failed to merge the suggestion.",
-        },
-      ]);
-    }
-  };
+      setAutofilledFields((prev) => {
+        const next = deepClone(prev);
+        setDeep(next, suggestion.fieldId, undefined);
+        return next;
+      });
+      await fetchSuggestionsForStep({
+        stepId: currentStep?.id,
+        updatedFieldId: suggestion.fieldId,
+        updatedValue: value,
+      });
+      } catch (error) {
+        setAssistantMessages((prev) => [
+          ...prev,
+          {
+            id: `merge-error-${Date.now()}`,
+            role: "assistant",
+            kind: "error",
+            content: error.message ?? "Failed to merge the suggestion.",
+          },
+        ]);
+      }
+    },
+    [announceAuthRequired, committedState, draftId, fetchSuggestionsForStep, onFieldChange, user]
+  );
+
+  const handleSuggestionToggle = useCallback(
+    async (meta, accepted) => {
+      if (!meta?.fieldId) {
+        return;
+      }
+      if (accepted) {
+        await handleAcceptSuggestion(meta);
+        return;
+      }
+
+      const fallback = getDeep(committedState, meta.fieldId);
+      onFieldChange(meta.fieldId, fallback ?? undefined);
+    },
+    [committedState, handleAcceptSuggestion, onFieldChange]
+  );
 
   const handleStepNavigation = useCallback(
     async (index) => {
@@ -1032,11 +1494,11 @@ export function WizardShell() {
       }
 
       goToStep(index);
-      await fetchSuggestionsForStep(
-        targetStep.id,
-        result.intent,
-        result.savedId
-      );
+      await fetchSuggestionsForStep({
+        stepId: targetStep.id,
+        intentOverrides: result.intent,
+        jobIdOverride: result.savedId,
+      });
     },
     [
       currentStep?.id,
@@ -1156,70 +1618,73 @@ export function WizardShell() {
           })}
         </nav>
 
-        <div className="space-y-2 rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-          <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-            <span>
-              Step {currentStepIndex + 1} of {totalSteps}
+        <div className="space-y-3 rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-neutral-800">
+              {progressCompletedCount} of {totalProgressFields} complete
             </span>
-            <span>Required flow {requiredProgress}%</span>
+            <span className="text-xs font-medium text-primary-500">
+              {progressPercent}% done
+            </span>
           </div>
-          <div className="h-2 w-full rounded-full bg-neutral-200">
+          <div className="h-1.5 w-full rounded-full bg-neutral-200">
             <div
-              className="h-2 rounded-full bg-primary-500 transition-all"
-              style={{ width: `${requiredProgress}%` }}
+              className="h-full rounded-full bg-gradient-to-r from-[#667eea] to-[#764ba2] transition-all duration-200"
+              style={{ width: `${Math.min(100, Math.max(progressPercent, progressCompletedCount > 0 ? 6 : 0))}%` }}
             />
           </div>
-          {REQUIRED_STEPS.length > 0 ? (
-            <p className="text-[11px] font-medium text-neutral-400">
-              {requiredStepsCompleted} / {REQUIRED_STEPS.length} required
-              screens complete
-            </p>
-          ) : null}
-
-          {showOptionalProgress ? (
-            <div className="space-y-1 rounded-xl border border-dashed border-primary-100 bg-white/80 p-3">
-              <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-primary-500">
-                <span>Optional flow</span>
-                <span>{optionalProgress}%</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-primary-100">
-                <div
-                  className="h-2 rounded-full bg-primary-500 transition-all"
-                  style={{ width: `${optionalProgress}%` }}
-                />
-              </div>
-              {OPTIONAL_STEPS.length > 0 ? (
-                <p className="text-[11px] font-medium text-neutral-400">
-                  {optionalStepsCompleted} / {OPTIONAL_STEPS.length} optional
-                  screens with saved input
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+          <p className="text-xs text-neutral-500">
+            We autosave as you go. Skip anything that doesn’t apply—you can always come back.
+          </p>
         </div>
+
+        {currentStep ? (
+          <div className="space-y-2 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+            <h1 className="text-xl font-semibold text-neutral-800">
+              {currentStep.title}
+            </h1>
+            {currentStep.subtitle ? (
+              <p className="text-sm text-neutral-500">
+                {currentStep.subtitle}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <form className="grid gap-4">
           {currentStep.fields.map((field) => {
-            const skipReason = getDeep(skippedFields, field.id);
+            const hiddenReason = getDeep(hiddenFields, field.id);
             const rawValue = getDeep(state, field.id);
+            const highlightMeta = getDeep(autofilledFields, field.id);
+            const hasRawValue = isFieldValueProvided(rawValue, field);
+            const effectiveValue = rawValue;
             const isListField = field.asList === true;
+            const isSuggestedValue = Boolean(highlightMeta);
             let inputValue;
+
+            if (hiddenReason) {
+              return null;
+            }
 
             if (field.valueAs === "boolean") {
               inputValue =
-                rawValue === true ? "true" : rawValue === false ? "false" : "";
+                effectiveValue === true
+                  ? "true"
+                  : effectiveValue === false
+                  ? "false"
+                  : "";
             } else if (field.type === "number" || field.valueAs === "number") {
-              inputValue = rawValue ?? "";
+              inputValue = effectiveValue ?? "";
             } else if (isListField) {
-              if (Array.isArray(rawValue)) {
-                inputValue = rawValue.join("\n");
-              } else if (typeof rawValue === "string") {
-                inputValue = rawValue;
+              if (Array.isArray(effectiveValue)) {
+                inputValue = effectiveValue.join("\n");
+              } else if (typeof effectiveValue === "string") {
+                inputValue = effectiveValue;
               } else {
                 inputValue = "";
               }
             } else {
-              inputValue = rawValue ?? "";
+              inputValue = effectiveValue ?? "";
             }
 
             const handleChange = (event) => {
@@ -1269,7 +1734,7 @@ export function WizardShell() {
 
             const sharedInputClasses = clsx(
               "rounded-xl border border-neutral-200 px-4 py-3 text-sm text-neutral-700 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100",
-              skipReason ? "bg-neutral-100 text-neutral-400" : ""
+              isSuggestedValue ? "border-primary-300 bg-primary-50" : ""
             );
 
             return (
@@ -1283,14 +1748,105 @@ export function WizardShell() {
                     <span className="ml-1 text-primary-600">*</span>
                   ) : null}
                 </span>
+                {field.helper ? (
+                  <span className="text-xs font-normal text-neutral-500">
+                    {field.helper}
+                  </span>
+                ) : null}
+                {isSuggestedValue ? (
+                  <span className="text-xs font-semibold uppercase tracking-wide text-primary-500">
+                    Suggested by your copilot
+                  </span>
+                ) : null}
+                {isSuggestedValue && highlightMeta?.rationale ? (
+                  <span className="text-xs text-primary-400">
+                    {highlightMeta.rationale}
+                  </span>
+                ) : null}
 
-                {field.type === "select" ? (
+                {field.type === "capsule" ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-3">
+                      {(field.options ?? []).map((option) => {
+                        const optionValue = option.value;
+                        const isActive = effectiveValue === optionValue;
+                        return (
+                          <button
+                            type="button"
+                            key={optionValue}
+                            className={capsuleClassName(isActive)}
+                            onClick={() => {
+                              setCustomCapsuleActive((prev) => ({
+                                ...prev,
+                                [field.id]: false
+                              }));
+                              const nextValue =
+                                field.id === "location.country"
+                                  ? optionValue.toUpperCase()
+                                  : optionValue;
+                              onFieldChange(field.id, nextValue);
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                      {field.allowCustom ? (
+                        <button
+                          type="button"
+                          className={capsuleClassName(
+                            Boolean(customCapsuleActive[field.id]) ||
+                              (effectiveValue &&
+                                !(field.options ?? []).some(
+                                  (option) => option.value === effectiveValue
+                                ))
+                          )}
+                          onClick={() => {
+                            setCustomCapsuleActive((prev) => ({
+                              ...prev,
+                              [field.id]: true
+                            }));
+                            if (
+                              (field.options ?? []).some(
+                                (option) => option.value === effectiveValue
+                              )
+                            ) {
+                              onFieldChange(field.id, "");
+                            }
+                          }}
+                        >
+                          {field.customLabel ?? "Other"}
+                        </button>
+                      ) : null}
+                    </div>
+                    {field.allowCustom &&
+                    (customCapsuleActive[field.id] ||
+                      (effectiveValue &&
+                        !(field.options ?? []).some(
+                          (option) => option.value === effectiveValue
+                        ))) ? (
+                      <input
+                        className="w-full rounded-xl border border-neutral-200 px-4 py-3 text-sm text-neutral-700 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
+                        placeholder={field.placeholder ?? "Type to customise"}
+                        value={effectiveValue ?? ""}
+                        onChange={(event) => {
+                          const nextValue =
+                            field.id === "location.country"
+                              ? event.target.value.toUpperCase().slice(0, 2)
+                              : event.target.value;
+                          onFieldChange(field.id, nextValue);
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {field.type === "capsule" ? null : field.type === "select" ? (
                   <select
                     className={clsx(sharedInputClasses, "cursor-pointer")}
                     value={inputValue}
                     onChange={handleChange}
-                    disabled={Boolean(skipReason)}
-                    title={skipReason ? `Skipped: ${skipReason}` : undefined}
+                    disabled={false}
                   >
                     <option value="">
                       {field.placeholder ?? "Select an option"}
@@ -1308,8 +1864,7 @@ export function WizardShell() {
                     value={inputValue}
                     onChange={handleChange}
                     rows={field.rows ?? 3}
-                    disabled={Boolean(skipReason)}
-                    title={skipReason ? `Skipped: ${skipReason}` : undefined}
+                    disabled={false}
                   />
                 ) : (
                   <input
@@ -1324,17 +1879,10 @@ export function WizardShell() {
                     onChange={handleChange}
                     maxLength={field.maxLength}
                     step={field.step}
-                    disabled={Boolean(skipReason)}
-                    title={skipReason ? `Skipped: ${skipReason}` : undefined}
+                    disabled={false}
                     autoComplete="off"
                   />
                 )}
-
-                {skipReason ? (
-                  <span className="text-xs font-medium text-amber-600">
-                    Skipped: {skipReason}
-                  </span>
-                ) : null}
               </label>
             );
           })}
@@ -1343,9 +1891,8 @@ export function WizardShell() {
         {showOptionalDecision ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-200 bg-primary-50/50 p-4 text-sm">
             <p className="text-neutral-600">
-              Optional screens cover compensation, application flow, branding,
-              and precise location targeting. Add them now to unlock richer
-              enrichment and downstream automations?
+              Optional questions unlock richer campaigns and smarter screening,
+              but you can skip them and finish whenever you’re ready.
             </p>
             <div className="flex gap-3">
               <button
@@ -1356,7 +1903,7 @@ export function WizardShell() {
                 }
                 className="rounded-full border border-primary-500 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-primary-100 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
               >
-                Add optional flow
+                Add optional questions
               </button>
               <button
                 type="button"
@@ -1371,7 +1918,7 @@ export function WizardShell() {
                 }
                 className="rounded-full bg-primary-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
               >
-                Generate now
+                Skip optional questions
               </button>
             </div>
           </div>
@@ -1386,25 +1933,30 @@ export function WizardShell() {
               Back
             </button>
             {isLastStep ? (
-              <button
-                type="button"
-                onClick={() =>
-                  handleSubmit({
-                    includeOptional: true,
-                    optionalCompleted: true,
-                  })
-                }
-                disabled={
-                  persistMutation.isPending ||
-                  (currentStepIndex < REQUIRED_STEPS.length &&
-                    !currentRequiredStepCompleteInState)
-                }
-                className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-              >
-                {persistMutation.isPending
-                  ? "Saving…"
-                  : "Submit for Generation"}
-              </button>
+              <div className="flex flex-col items-end gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSubmit({
+                      includeOptional: true,
+                      optionalCompleted: true,
+                    })
+                  }
+                  disabled={
+                    persistMutation.isPending ||
+                    (currentStepIndex < REQUIRED_STEPS.length &&
+                      !currentRequiredStepCompleteInState)
+                  }
+                  className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                >
+                  {persistMutation.isPending
+                    ? "Saving..."
+                    : "Generate my hiring pack"}
+                </button>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+                  We’ll never publish without your approval.
+                </p>
+              </div>
             ) : (
               <button
                 type="button"
@@ -1416,7 +1968,7 @@ export function WizardShell() {
                 }
                 className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
               >
-                Next
+                Save and continue
               </button>
             )}
           </div>
@@ -1426,11 +1978,13 @@ export function WizardShell() {
       <WizardSuggestionPanel
         state={state}
         messages={assistantMessages}
-        onRefresh={() => fetchSuggestionsForStep(currentStep?.id)}
+        onRefresh={() => fetchSuggestionsForStep({ stepId: currentStep?.id })}
         onSendMessage={handleSendMessage}
         onAcceptSuggestion={handleAcceptSuggestion}
+        onToggleSuggestion={handleSuggestionToggle}
         isLoading={isFetchingSuggestions}
         isSending={isChatting}
+        nextStepTeaser={copilotNextTeaser}
       />
     </div>
   );

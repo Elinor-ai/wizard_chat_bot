@@ -59,6 +59,18 @@ export const JobSchemaV2 = z.object({
       days_90: z.string().optional()
     })
   }),
+  team_context: z
+    .object({
+      reporting_structure: z
+        .object({
+          reports_to: z.string().optional(),
+          direct_reports: z.number().optional(),
+          dotted_line: z.array(z.string()).default([])
+        })
+        .optional(),
+      collaboration_style: z.string().optional()
+    })
+    .optional(),
   compensation: z
     .object({
       salary_range: z
@@ -109,12 +121,20 @@ export const JobSchemaV2 = z.object({
               must_have: z.array(z.string()).default([])
             })
             .optional(),
-          certifications: z.array(z.string()).default([])
+          certifications: z.array(z.string()).default([]),
+          dealbreakers: z.array(z.string()).default([]),
+          legal: z
+            .object({
+              work_authorization: z.array(z.string()).default([]),
+              other_notes: z.string().optional()
+            })
+            .optional()
         })
         .optional(),
       preferred_qualifications: z
         .object({
-          skills: z.array(z.string()).default([])
+          skills: z.array(z.string()).default([]),
+          experiences: z.array(z.string()).default([])
         })
         .optional()
     })
@@ -123,7 +143,15 @@ export const JobSchemaV2 = z.object({
     .object({
       apply_method: z.string().optional(),
       internal_form_id: z.string().optional(),
-      external_url: z.string().optional()
+      external_url: z.string().optional(),
+      steps: z.array(z.string()).default([]),
+      total_timeline: z.string().optional(),
+      start_date: z
+        .object({
+          target: z.string().optional(),
+          flexibility: z.string().optional()
+        })
+        .optional()
     })
     .optional(),
   company_context: z

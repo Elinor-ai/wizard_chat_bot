@@ -25,11 +25,73 @@ const skipSchema = z.object({
   reason: z.string()
 });
 
-const suggestionResponseSchema = z.object({
-  suggestions: z.array(suggestionSchema).default([]),
-  skip: z.array(skipSchema).default([]),
-  followUpToUser: z.array(z.string()).default([])
-});
+const improvedValueSchema = z
+  .object({
+    fieldId: z.string(),
+    value: valueSchema,
+    rationale: z.string().optional(),
+    confidence: z.number().optional(),
+    source: z.string().optional(),
+    mode: z.string().optional()
+  })
+  .passthrough();
+
+const autofillCandidateSchema = z
+  .object({
+    fieldId: z.string(),
+    value: valueSchema,
+    rationale: z.string().optional(),
+    confidence: z.number().optional(),
+    source: z.string().optional(),
+    appliesToFutureStep: z.boolean().optional()
+  })
+  .passthrough();
+
+const irrelevantFieldSchema = z
+  .object({
+    fieldId: z.string(),
+    reason: z.string().optional()
+  })
+  .passthrough();
+
+const copilotSuggestionResponseSchema = z
+  .object({
+    improved_value: improvedValueSchema.nullable().optional(),
+    improvedValue: improvedValueSchema.nullable().optional(),
+    autofill_candidates: z.array(autofillCandidateSchema).optional(),
+    autofillCandidates: z.array(autofillCandidateSchema).optional(),
+    irrelevant_fields: z.array(irrelevantFieldSchema).optional(),
+    irrelevantFields: z.array(irrelevantFieldSchema).optional(),
+    next_step_teaser: z.string().optional(),
+    nextStepTeaser: z.string().optional(),
+    followUpToUser: z.array(z.string()).optional(),
+    follow_up_to_user: z.array(z.string()).optional(),
+    suggestions: z.array(suggestionSchema).optional(),
+    skip: z.array(skipSchema).optional()
+  })
+  .transform((data) => {
+    const improvedValue = data.improved_value ?? data.improvedValue ?? null;
+    const autofillCandidates =
+      data.autofill_candidates ?? data.autofillCandidates ?? [];
+    const irrelevantFields =
+      data.irrelevant_fields ?? data.irrelevantFields ?? [];
+    const nextStepTeaser =
+      data.next_step_teaser ?? data.nextStepTeaser ?? "";
+    const followUps =
+      data.followUpToUser ?? data.follow_up_to_user ?? [];
+    const suggestions = data.suggestions ?? [];
+    const skip = data.skip ?? [];
+
+    return {
+      improvedValue,
+      autofillCandidates,
+      irrelevantFields,
+      nextStepTeaser,
+      followUps,
+      suggestions,
+      skip
+    };
+  });
 
 const persistResponseSchema = z.object({
   draftId: z.string(),
@@ -157,7 +219,7 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return suggestionResponseSchema.parse(data);
+    return copilotSuggestionResponseSchema.parse(data);
   },
 
   async persistDraft(state, options = {}) {
