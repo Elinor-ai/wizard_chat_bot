@@ -723,6 +723,7 @@ export function WizardShell() {
   const [copilotNextTeaser, setCopilotNextTeaser] = useState("");
   const suggestionDebounceRef = useRef(null);
   const stateRef = useRef(state);
+  const previousFieldValuesRef = useRef({});
   const [customCapsuleActive, setCustomCapsuleActive] = useState({});
 
   const steps = useMemo(
@@ -966,50 +967,43 @@ export function WizardShell() {
         const autofillCandidates = response.autofillCandidates ?? [];
         setCopilotNextTeaser(response.nextStepTeaser ?? "");
 
-        const pendingAutofillUpdates = [];
+        const freshSuggestions = [];
         autofillCandidates.forEach((candidate) => {
           if (!candidate?.fieldId) return;
           if (getDeep(hiddenMap, candidate.fieldId)) return;
 
           const fieldDefinition = findFieldDefinition(candidate.fieldId);
-          const currentValue = getDeep(workingState, candidate.fieldId);
           const normalized = normalizeValueForField(fieldDefinition, candidate.value);
 
-          if (
-            normalized !== undefined &&
-            !isFieldValueProvided(currentValue, fieldDefinition)
-          ) {
-            pendingAutofillUpdates.push({
+          if (normalized !== undefined) {
+            freshSuggestions.push({
               fieldId: candidate.fieldId,
-              value: normalized
+              value: normalized,
+              rationale:
+                candidate?.rationale ??
+                "Suggested so candidates understand the opportunity immediately.",
+              confidence: candidate?.confidence ?? 0.5,
+              source: candidate?.source ?? "copilot",
             });
           }
         });
 
-        if (pendingAutofillUpdates.length > 0) {
-          setState((prev) => {
-            const next = deepClone(prev);
-            pendingAutofillUpdates.forEach(({ fieldId, value }) => {
-              setDeep(next, fieldId, value);
-            });
-            return next;
-          });
-        }
-
-        if (pendingAutofillUpdates.length > 0) {
+        if (freshSuggestions.length > 0) {
           setAutofilledFields((prev) => {
             const next = deepClone(prev);
-            pendingAutofillUpdates.forEach(({ fieldId }) => {
-              const candidate = autofillCandidates.find(
-                (item) => item?.fieldId === fieldId
-              );
-              setDeep(next, fieldId, {
-                rationale:
-                  candidate?.rationale ??
-                  "Suggested so candidates understand the opportunity immediately.",
-                confidence: candidate?.confidence ?? 0.5,
+            freshSuggestions.forEach((suggestion) => {
+              const existing = getDeep(next, suggestion.fieldId);
+              if (existing?.accepted) {
+                return;
+              }
+              setDeep(next, suggestion.fieldId, {
+                ...existing,
+                value: suggestion.value,
+                rationale: suggestion.rationale,
+                confidence: suggestion.confidence,
+                source: suggestion.source,
+                accepted: false,
                 suggestedAt: Date.now(),
-                source: candidate?.source ?? "copilot"
               });
             });
             return next;
@@ -1152,7 +1146,11 @@ export function WizardShell() {
   );
 
   const onFieldChange = useCallback(
-    (fieldId, value) => {
+    (fieldId, value, options = {}) => {
+      const {
+        preserveSuggestionMeta = false,
+        skipRealtime = false,
+      } = options;
       setState((prev) => {
         const next = deepClone(prev);
         if (value === "" || value === null || value === undefined) {
@@ -1165,11 +1163,23 @@ export function WizardShell() {
 
       setAutofilledFields((prev) => {
         const next = deepClone(prev);
-        setDeep(next, fieldId, undefined);
+        if (preserveSuggestionMeta) {
+          const existing = getDeep(next, fieldId);
+          if (existing) {
+            setDeep(next, fieldId, {
+              ...existing,
+              lastTouchedAt: Date.now(),
+            });
+          }
+        } else {
+          setDeep(next, fieldId, undefined);
+        }
         return next;
       });
 
-      scheduleRealtimeSuggestions(fieldId, value);
+      if (!skipRealtime) {
+        scheduleRealtimeSuggestions(fieldId, value);
+      }
     },
     [scheduleRealtimeSuggestions]
   );
@@ -1390,7 +1400,34 @@ export function WizardShell() {
       suggestion.value !== undefined ? suggestion.value : suggestion.proposal;
     const value = normalizeValueForField(fieldDef, proposal);
 
-    onFieldChange(suggestion.fieldId, value);
+    const currentValue = getDeep(stateRef.current ?? {}, suggestion.fieldId);
+    setDeep(previousFieldValuesRef.current, suggestion.fieldId, {
+      __stored: true,
+      value: currentValue,
+    });
+
+    onFieldChange(suggestion.fieldId, value, {
+      preserveSuggestionMeta: true,
+      skipRealtime: true,
+    });
+
+    setAutofilledFields((prev) => {
+      const next = deepClone(prev);
+      const existing = getDeep(next, suggestion.fieldId) ?? {};
+      setDeep(next, suggestion.fieldId, {
+        ...existing,
+        accepted: true,
+        value,
+        rationale:
+          suggestion.rationale ??
+          existing.rationale ??
+          "Suggested so candidates understand the opportunity immediately.",
+        confidence:
+          suggestion.confidence ?? existing.confidence ?? 0.5,
+        appliedAt: Date.now(),
+      });
+      return next;
+    });
 
     try {
       await WizardApi.mergeSuggestion(
@@ -1410,17 +1447,41 @@ export function WizardShell() {
         }
         return next;
       });
-      setAutofilledFields((prev) => {
-        const next = deepClone(prev);
-        setDeep(next, suggestion.fieldId, undefined);
-        return next;
-      });
       await fetchSuggestionsForStep({
         stepId: currentStep?.id,
         updatedFieldId: suggestion.fieldId,
         updatedValue: value,
       });
       } catch (error) {
+        const storedOriginalValue = getDeep(
+          previousFieldValuesRef.current,
+          suggestion.fieldId
+        );
+        const fallbackValue =
+          storedOriginalValue && storedOriginalValue.__stored
+            ? storedOriginalValue.value
+            : getDeep(committedState, suggestion.fieldId);
+
+        onFieldChange(suggestion.fieldId, fallbackValue ?? undefined, {
+          preserveSuggestionMeta: false,
+          skipRealtime: true,
+        });
+
+        setAutofilledFields((prev) => {
+          const next = deepClone(prev);
+          const existing = getDeep(next, suggestion.fieldId);
+          if (existing) {
+            setDeep(next, suggestion.fieldId, {
+              ...existing,
+              accepted: false,
+              lastRejectedAt: Date.now(),
+            });
+          }
+          return next;
+        });
+
+        setDeep(previousFieldValuesRef.current, suggestion.fieldId, undefined);
+
         setAssistantMessages((prev) => [
           ...prev,
           {
@@ -1445,10 +1506,48 @@ export function WizardShell() {
         return;
       }
 
-      const fallback = getDeep(committedState, meta.fieldId);
-      onFieldChange(meta.fieldId, fallback ?? undefined);
+      const previousEntry = getDeep(
+        previousFieldValuesRef.current,
+        meta.fieldId
+      );
+      const fallback =
+        previousEntry && previousEntry.__stored
+          ? previousEntry.value
+          : getDeep(committedState, meta.fieldId);
+
+      onFieldChange(meta.fieldId, fallback ?? undefined, {
+        preserveSuggestionMeta: false,
+        skipRealtime: true,
+      });
+
+      setAutofilledFields((prev) => {
+        const next = deepClone(prev);
+        const existing = getDeep(next, meta.fieldId);
+        if (existing) {
+          setDeep(next, meta.fieldId, {
+            ...existing,
+            accepted: false,
+            lastRejectedAt: Date.now(),
+          });
+        }
+        return next;
+      });
+
+      setDeep(previousFieldValuesRef.current, meta.fieldId, undefined);
+
+      await fetchSuggestionsForStep({
+        stepId: currentStep?.id,
+        updatedFieldId: meta.fieldId,
+        updatedValue: fallback ?? undefined,
+      });
     },
-    [committedState, handleAcceptSuggestion, onFieldChange]
+    [
+      committedState,
+      currentStep?.id,
+      fetchSuggestionsForStep,
+      handleAcceptSuggestion,
+      onFieldChange,
+    ]
   );
 
   const handleStepNavigation = useCallback(
@@ -1656,10 +1755,9 @@ export function WizardShell() {
             const hiddenReason = getDeep(hiddenFields, field.id);
             const rawValue = getDeep(state, field.id);
             const highlightMeta = getDeep(autofilledFields, field.id);
-            const hasRawValue = isFieldValueProvided(rawValue, field);
             const effectiveValue = rawValue;
             const isListField = field.asList === true;
-            const isSuggestedValue = Boolean(highlightMeta);
+            const isSuggestedValue = Boolean(highlightMeta?.accepted);
             let inputValue;
 
             if (hiddenReason) {

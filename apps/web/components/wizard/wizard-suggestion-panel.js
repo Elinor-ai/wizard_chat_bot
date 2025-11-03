@@ -20,7 +20,7 @@ export function WizardSuggestionPanel({
       const next = {};
       messages.forEach((message) => {
         if (message.kind === "suggestion") {
-          next[message.id] = prev[message.id] ?? true;
+          next[message.id] = prev[message.id] ?? false;
         }
       });
       return next;
@@ -101,7 +101,7 @@ export function WizardSuggestionPanel({
                       <input
                         type="checkbox"
                         className="h-[18px] w-[18px] rounded border border-primary-400 text-primary-600 focus:ring-primary-500"
-                        checked={acceptedMap[message.id] ?? true}
+                        checked={acceptedMap[message.id] ?? false}
                         onChange={(event) => {
                           const isChecked = event.target.checked;
                           setAcceptedMap((prev) => ({
@@ -115,13 +115,23 @@ export function WizardSuggestionPanel({
                           }
                         }}
                       />
-                      <span>{acceptedMap[message.id] ? "Looks good" : "Skip this suggestion"}</span>
+                      <span>
+                        {acceptedMap[message.id]
+                          ? "Looks good"
+                          : "Skip this suggestion"}
+                      </span>
                     </label>
                     <div className="flex items-center gap-3 text-base">
                       <button
                         type="button"
                         className="transition hover:scale-110"
-                        onClick={() => onAcceptSuggestion(message.meta)}
+                        onClick={() => {
+                          setAcceptedMap((prev) => ({
+                            ...prev,
+                            [message.id]: true
+                          }));
+                          onAcceptSuggestion(message.meta);
+                        }}
                         title="Apply again"
                       >
                         🔄
