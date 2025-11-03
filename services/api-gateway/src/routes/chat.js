@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { wrapAsync, httpError } from "@wizard/utils";
+import { JobSchema } from "@wizard/core";
 
 const chatRequestSchema = z.object({
   jobId: z.string().optional(),
@@ -8,7 +9,7 @@ const chatRequestSchema = z.object({
   intent: z.record(z.string(), z.unknown()).optional()
 });
 
-const DRAFT_COLLECTION = "jobsDraft";
+const JOB_COLLECTION = "jobs";
 
 function requireUserId(req) {
   const userId = req.headers["x-user-id"];
@@ -29,9 +30,12 @@ export function chatRouter({ firestore, llmClient, logger }) {
 
       let draftState = {};
       if (payload.jobId) {
-        const draft = await firestore.getDocument(DRAFT_COLLECTION, payload.jobId);
-        if (draft?.state) {
-          draftState = draft.state;
+        const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+        if (job) {
+          const parsed = JobSchema.safeParse(job);
+          if (parsed.success) {
+            draftState = parsed.data;
+          }
         }
       }
 

@@ -104,7 +104,12 @@ function extractCampaigns(jobs = []) {
     (job.campaigns ?? []).map((campaign) => ({
       campaignId: campaign.campaignId,
       jobId: job.id,
-      jobTitle: job.confirmed?.title ?? "Untitled",
+      jobTitle:
+        typeof job.roleTitle === "string" && job.roleTitle.trim().length > 0
+          ? job.roleTitle.trim()
+          : typeof job.companyName === "string" && job.companyName.trim().length > 0
+          ? `${job.companyName.trim()} role`
+          : "Untitled role",
       channel: campaign.channel,
       status: campaign.status,
       budget: campaign.budget ?? 0,
@@ -157,7 +162,12 @@ function extractActivity(jobs = []) {
   const events = [];
 
   jobs.forEach((job) => {
-    const jobTitle = job.confirmed?.title ?? "Untitled role";
+    const jobTitle =
+      typeof job.roleTitle === "string" && job.roleTitle.trim().length > 0
+        ? job.roleTitle.trim()
+        : typeof job.companyName === "string" && job.companyName.trim().length > 0
+        ? `${job.companyName.trim()} role`
+        : "Untitled role";
 
     (job.stateMachine?.history ?? []).forEach((transition, index) => {
       events.push({

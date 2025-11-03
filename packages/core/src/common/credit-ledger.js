@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TimestampSchema } from "./common.js";
+import { TimestampSchema } from "./zod.js";
 
 export const CreditLedgerEntrySchema = z.object({
   id: z.string().uuid(),

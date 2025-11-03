@@ -93,10 +93,24 @@ const copilotSuggestionResponseSchema = z
     };
   });
 
-const persistResponseSchema = z.object({
-  draftId: z.string(),
-  status: z.string()
-});
+const persistResponseSchema = z
+  .object({
+    jobId: z.string().optional(),
+    draftId: z.string().optional(),
+    status: z.string(),
+    state: z.string().optional()
+  })
+  .transform((data) => {
+    const jobId = data.jobId ?? data.draftId;
+    if (!jobId) {
+      throw new Error("Response missing jobId");
+    }
+    return {
+      jobId,
+      status: data.status,
+      state: data.state ?? null
+    };
+  });
 
 const mergeResponseSchema = z.object({
   status: z.string()
@@ -222,7 +236,7 @@ export const WizardApi = {
     return copilotSuggestionResponseSchema.parse(data);
   },
 
-  async persistDraft(state, options = {}) {
+  async persistJob(state, options = {}) {
     const normalizedJobId =
       options.jobId === null || options.jobId === undefined ? undefined : options.jobId;
     const response = await fetch(`${API_BASE_URL}/wizard/draft`, {

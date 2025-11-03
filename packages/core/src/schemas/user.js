@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NonNegativeNumber, TimestampSchema } from "./common.js";
+import { NonNegativeNumber, TimestampSchema } from "../common/zod.js";
 
 export const UserRoleEnum = z.enum(["owner", "admin", "member"]);
 export const AuthProviderEnum = z.enum(["password", "google"]);

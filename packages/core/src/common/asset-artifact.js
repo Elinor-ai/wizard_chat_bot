@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TimestampSchema } from "./common.js";
+import { TimestampSchema } from "./zod.js";
 import { AssetVersionSchema } from "./asset-version.js";
 
 export const JobAssetSchema = z.object({

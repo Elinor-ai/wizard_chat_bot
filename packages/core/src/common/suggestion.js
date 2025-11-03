@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TimestampSchema } from "./common.js";
+import { TimestampSchema } from "./zod.js";
 
 export const SuggestionSchema = z.object({
   id: z.string().uuid(),

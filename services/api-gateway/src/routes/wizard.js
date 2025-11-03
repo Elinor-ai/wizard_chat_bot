@@ -2,11 +2,38 @@ import { Router } from "express";
 import { z } from "zod";
 import { v4 as uuid } from "uuid";
 import { wrapAsync, httpError } from "@wizard/utils";
-import { JobSchemaV2 } from "@wizard/core";
+import { JobSchema, JobSuggestionSchema, deriveJobStatusFromState } from "@wizard/core";
 
-const DRAFT_COLLECTION = "jobsDraft";
+const JOB_COLLECTION = "jobs";
+const SUGGESTION_COLLECTION = "jobSuggestions";
 
 const looseObjectSchema = z.object({}).catchall(z.unknown());
+
+const ALLOWED_INTAKE_KEYS = [
+  "roleTitle",
+  "companyName",
+  "location",
+  "zipCode",
+  "industry",
+  "seniorityLevel",
+  "employmentType",
+  "workModel",
+  "jobDescription",
+  "coreDuties",
+  "mustHaves",
+  "benefits",
+  "schedule",
+  "compensation"
+];
+
+const REQUIRED_FIELD_PATHS = [
+  "roleTitle",
+  "companyName",
+  "location",
+  "seniorityLevel",
+  "employmentType",
+  "jobDescription"
+];
 
 const draftRequestSchema = z.object({
   jobId: z.string().optional(),
@@ -117,65 +144,498 @@ function setDeep(target, path, value) {
   }
 }
 
-function createBaseDraft({ draftId, userId, nowMs }) {
-  return {
-    schema_version: "2",
-    core: {
-      job_id: draftId,
-      company_id: userId,
-      job_title: "",
-      job_title_variations: [],
-      industry: "",
-      sub_industry: "",
-      job_family: "",
-      seniority_level: "mid"
+function createBaseJob({ jobId, userId, now }) {
+  return JobSchema.parse({
+    id: jobId,
+    ownerUserId: userId,
+    orgId: null,
+    status: "draft",
+    stateMachine: {
+      currentState: "DRAFT",
+      previousState: null,
+      history: [],
+      requiredComplete: false,
+      optionalComplete: false,
+      lastTransitionAt: now,
+      lockedByRequestId: null
     },
-    location: {},
-    role_description: {
-      recruiter_input: "",
-      tldr_pitch: "",
-      day_to_day: [],
-      problem_being_solved: "",
-      impact_metrics: {},
-      responsibilities: {
-        core: [],
-        growth: [],
-        collaborative: []
-      },
-      first_30_60_90_days: {}
-    },
+    roleTitle: "",
+    companyName: "",
+    location: "",
+    zipCode: undefined,
+    industry: undefined,
+    seniorityLevel: "entry",
+    employmentType: "full_time",
+    workModel: undefined,
+    jobDescription: "",
+    coreDuties: [],
+    mustHaves: [],
+    benefits: [],
+    schedule: { days: [], shiftTimes: [] },
     compensation: {},
-    benefits: {
-      standout_benefits: []
-    },
-    requirements: {},
-    application_process: {},
-    company_context: {},
-    metadata: {
-      created_at: nowMs,
-      updated_at: nowMs,
-      created_by: userId,
-      extraction_source: "manual_form",
-      tags: [],
-      approval_status: "draft"
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null
+  });
+}
+
+function mergeIntakeIntoJob(job, incomingState = {}, { now }) {
+  const nextJob = deepClone(job);
+
+  for (const key of ALLOWED_INTAKE_KEYS) {
+    if (!(key in incomingState)) {
+      continue;
     }
+    const incomingValue = incomingState[key];
+    const existingValue = nextJob[key];
+
+    if (isPlainObject(incomingValue) && isPlainObject(existingValue)) {
+      nextJob[key] = deepMerge(existingValue, incomingValue);
+    } else {
+      nextJob[key] = incomingValue;
+    }
+  }
+
+  nextJob.updatedAt = now;
+  return nextJob;
+}
+
+function computeRequiredProgress(jobState) {
+  const total = REQUIRED_FIELD_PATHS.length;
+  let completed = 0;
+
+  for (const fieldPath of REQUIRED_FIELD_PATHS) {
+    if (valueProvidedAt(jobState, fieldPath)) {
+      completed += 1;
+    }
+  }
+
+  return {
+    total,
+    completed,
+    allComplete: completed === total,
+    started: completed > 0
   };
 }
 
-function ensureMetadata(nextDraft, { userId, nowMs }) {
-  const metadata = isPlainObject(nextDraft.metadata) ? { ...nextDraft.metadata } : {};
-  metadata.created_at =
-    typeof metadata.created_at === "number" ? metadata.created_at : nowMs;
-  metadata.updated_at = nowMs;
-  metadata.created_by = metadata.created_by || userId;
-  metadata.extraction_source = metadata.extraction_source || "manual_form";
-  metadata.approval_status = metadata.approval_status || "draft";
-  metadata.tags = Array.isArray(metadata.tags)
-    ? metadata.tags
-    : typeof metadata.tags === "string" && metadata.tags.trim().length > 0
-    ? [metadata.tags.trim()]
+function applyRequiredProgress(job, progress, now) {
+  const nextJob = deepClone(job);
+  const machine = normalizeStateMachine(nextJob.stateMachine, now);
+
+  machine.history = Array.isArray(machine.history) ? machine.history : [];
+  machine.requiredComplete = progress.allComplete;
+
+  if (progress.allComplete) {
+    if (machine.currentState === "DRAFT") {
+      machine.history.push({
+        from: "DRAFT",
+        to: "REQUIRED_IN_PROGRESS",
+        at: now,
+        reason: "Started filling required fields"
+      });
+      machine.currentState = "REQUIRED_IN_PROGRESS";
+    }
+    if (machine.currentState === "REQUIRED_IN_PROGRESS") {
+      machine.history.push({
+        from: "REQUIRED_IN_PROGRESS",
+        to: "REQUIRED_COMPLETE",
+        at: now,
+        reason: "All required fields complete"
+      });
+      machine.currentState = "REQUIRED_COMPLETE";
+    }
+  } else if (progress.started && machine.currentState === "DRAFT") {
+    machine.history.push({
+      from: "DRAFT",
+      to: "REQUIRED_IN_PROGRESS",
+      at: now,
+      reason: "Started filling required fields"
+    });
+    machine.currentState = "REQUIRED_IN_PROGRESS";
+  }
+
+  machine.lastTransitionAt = now;
+  machine.previousState = machine.history.at(-1)?.from ?? machine.previousState ?? null;
+
+  const optionalTouched =
+    valueProvidedAt(nextJob, "workModel") ||
+    valueProvidedAt(nextJob, "industry") ||
+    valueProvidedAt(nextJob, "zipCode") ||
+    valueProvidedAt(nextJob, "compensation.currency") ||
+    valueProvidedAt(nextJob, "compensation.salary.min") ||
+    valueProvidedAt(nextJob, "compensation.salary.max") ||
+    valueProvidedAt(nextJob, "schedule.days") ||
+    valueProvidedAt(nextJob, "schedule.shiftTimes") ||
+    valueProvidedAt(nextJob, "benefits") ||
+    valueProvidedAt(nextJob, "coreDuties") ||
+    valueProvidedAt(nextJob, "mustHaves");
+
+  if (optionalTouched) {
+    machine.optionalComplete = true;
+    if (machine.currentState === "REQUIRED_COMPLETE") {
+      machine.history.push({
+        from: "REQUIRED_COMPLETE",
+        to: "OPTIONAL_IN_PROGRESS",
+        at: now,
+        reason: "Optional context added"
+      });
+      machine.currentState = "OPTIONAL_IN_PROGRESS";
+    } else if (machine.currentState === "OPTIONAL_IN_PROGRESS") {
+      machine.history.push({
+        from: "OPTIONAL_IN_PROGRESS",
+        to: "OPTIONAL_COMPLETE",
+        at: now,
+        reason: "Optional context enriched"
+      });
+      machine.currentState = "OPTIONAL_COMPLETE";
+    }
+  }
+
+  nextJob.stateMachine = machine;
+  nextJob.status = deriveJobStatusFromState(machine.currentState);
+  return nextJob;
+}
+
+function parseLocation(job = {}) {
+  const locationRaw = typeof job.location === "string" ? job.location.trim() : "";
+  const zip = typeof job.zipCode === "string" ? job.zipCode.trim() : "";
+  const workModel = job.workModel ?? "on_site";
+
+  const label =
+    locationRaw.length > 0
+      ? locationRaw
+      : workModel === "remote"
+      ? "Remote"
+      : "On-site";
+
+  return {
+    label,
+    zip,
+    workModel
+  };
+}
+
+function normaliseKey(value, fallback = "general") {
+  if (!value) return fallback;
+  return String(value).trim().toLowerCase() || fallback;
+}
+
+function buildMarketIntelligence(job = {}) {
+  const roleKey = normaliseKey(job.roleTitle);
+  const industryKey = normaliseKey(job.industry);
+
+  const LOOKUP = {
+    general: {
+      salary: { min: 38000, max: 52000, currency: "USD" },
+      benefits: ["Health insurance", "Paid time off", "Learning stipend"],
+      duties: [
+        "Own the daily rhythm so everything runs on-time.",
+        "Coach teammates through tricky situations with calm confidence.",
+        "Spot and surface improvements that keep customers thrilled."
+      ],
+      mustHaves: [
+        "Reliable communicator who follows through without micromanagement.",
+        "Comfortable working with modern productivity tools.",
+        "Able to adapt quickly when priorities shift."
+      ]
+    },
+    hospitality: {
+      salary: { min: 24000, max: 32000, currency: "USD" },
+      benefits: ["Staff meals", "Tip pooling", "Flexible scheduling"],
+      duties: [
+        "Lead the floor with energy and attention to detail.",
+        "Train new teammates on service standards and safety rituals.",
+        "Anticipate guest needs before they even ask."
+      ],
+      mustHaves: [
+        "Warm, people-first style that turns guests into regulars.",
+        "Experience juggling multiple tables or stations calmly.",
+        "Food safety or hospitality certification preferred."
+      ]
+    },
+    engineering: {
+      salary: { min: 95000, max: 140000, currency: "USD" },
+      benefits: ["Stock options", "Flexible remote culture", "Wellness budget"],
+      duties: [
+        "Design and ship features that improve the customer experience.",
+        "Collaborate with product and design on clear technical handoffs.",
+        "Review code and mentor teammates to raise the engineering bar."
+      ],
+      mustHaves: [
+        "3+ years building production-grade applications.",
+        "Comfortable owning features end-to-end in an agile environment.",
+        "Experience with cloud-native tooling and CI/CD flows."
+      ]
+    }
+  };
+
+  const profile =
+    LOOKUP[roleKey] ??
+    LOOKUP[industryKey] ??
+    LOOKUP.general;
+
+  return {
+    roleKey,
+    salary: profile.salary,
+    benefits: profile.benefits,
+    duties: profile.duties,
+    mustHaves: profile.mustHaves
+  };
+}
+
+function normalizeStateMachine(rawState, now) {
+  const fallback = {
+    currentState: "DRAFT",
+    previousState: null,
+    history: [],
+    requiredComplete: false,
+    optionalComplete: false,
+    lastTransitionAt: now,
+    lockedByRequestId: null
+  };
+
+  if (!isPlainObject(rawState)) {
+    return fallback;
+  }
+
+  return {
+    currentState: typeof rawState.currentState === "string" ? rawState.currentState : fallback.currentState,
+    previousState: rawState.previousState ?? fallback.previousState,
+    history: Array.isArray(rawState.history) ? rawState.history.slice() : [],
+    requiredComplete:
+      typeof rawState.requiredComplete === "boolean"
+        ? rawState.requiredComplete
+        : Boolean(rawState.required_complete ?? fallback.requiredComplete),
+    optionalComplete:
+      typeof rawState.optionalComplete === "boolean"
+        ? rawState.optionalComplete
+        : Boolean(rawState.optional_complete ?? fallback.optionalComplete),
+    lastTransitionAt: rawState.lastTransitionAt ?? rawState.last_transition_at ?? now,
+    lockedByRequestId: rawState.lockedByRequestId ?? rawState.locked_by_request_id ?? null
+  };
+}
+
+
+function collectVariants(finalResponse, now) {
+  const variantsByField = new Map();
+
+  const addVariant = (fieldId, value, defaults = {}) => {
+    if (!fieldId || value === undefined) {
+      return;
+    }
+    const bucket = variantsByField.get(fieldId) ?? [];
+    bucket.push({
+      id: defaults.id ?? `sugg_${uuid()}`,
+      value,
+      confidence:
+        typeof defaults.confidence === "number" && defaults.confidence >= 0 && defaults.confidence <= 1
+          ? defaults.confidence
+          : 0.5,
+      rationale: defaults.rationale,
+      source: defaults.source
+    });
+    variantsByField.set(fieldId, bucket);
+  };
+
+  const improved = finalResponse.improved_value ?? finalResponse.improvedValue;
+  if (improved?.fieldId && improved.value !== undefined) {
+    addVariant(improved.fieldId, improved.value, {
+      id: improved.id ?? `improved_${uuid()}`,
+      confidence: improved.confidence ?? 0.6,
+      rationale: improved.rationale,
+      source: improved.source ?? "copilot"
+    });
+  }
+
+  const autofillCandidates = Array.isArray(finalResponse.autofill_candidates)
+    ? finalResponse.autofill_candidates
+    : Array.isArray(finalResponse.autofillCandidates)
+    ? finalResponse.autofillCandidates
     : [];
-  nextDraft.metadata = metadata;
+  for (const candidate of autofillCandidates) {
+    if (!candidate?.fieldId) continue;
+    addVariant(candidate.fieldId, candidate.value, {
+      id: candidate.id ?? `autofill_${uuid()}`,
+      confidence: candidate.confidence ?? 0.5,
+      rationale: candidate.rationale,
+      source: candidate.source ?? "copilot"
+    });
+  }
+
+  const legacySuggestions = Array.isArray(finalResponse.suggestions)
+    ? finalResponse.suggestions
+    : [];
+  for (const suggestion of legacySuggestions) {
+    if (!suggestion?.fieldId) continue;
+    const value =
+      suggestion.value ?? suggestion.proposal ?? suggestion.text ?? suggestion;
+    addVariant(suggestion.fieldId, value, {
+      id: suggestion.id ?? `legacy_${uuid()}`,
+      confidence: suggestion.confidence ?? 0.5,
+      rationale: suggestion.rationale,
+      source: suggestion.source ?? "legacy"
+    });
+  }
+
+  return variantsByField;
+}
+
+function buildSuggestionTree(variantsByField, now) {
+  const tree = {};
+
+  for (const [fieldId, variants] of variantsByField.entries()) {
+    if (!fieldId || !Array.isArray(variants) || variants.length === 0) continue;
+
+    const parts = fieldId.split(".");
+    let cursor = tree;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const segment = parts[index];
+      if (!isPlainObject(cursor[segment])) {
+        cursor[segment] = {};
+      }
+      cursor = cursor[segment];
+    }
+    const leafKey = parts[parts.length - 1];
+    cursor[leafKey] = {
+      variants: variants.map((variant) => ({
+        id: variant.id ?? `sugg_${uuid()}`,
+        value: variant.value,
+        confidence:
+          typeof variant.confidence === "number"
+            ? Math.min(Math.max(variant.confidence, 0), 1)
+            : 0.5,
+        rationale: variant.rationale,
+        source: variant.source
+      })),
+      updatedAt: now
+    };
+  }
+
+  return tree;
+}
+
+async function persistJobSuggestions({
+  firestore,
+  jobId,
+  logger,
+  finalResponse,
+  now
+}) {
+  const variantsByField = collectVariants(finalResponse, now);
+  const fields = buildSuggestionTree(variantsByField, now);
+
+  const skipRaw = [
+    ...(Array.isArray(finalResponse.skip) ? finalResponse.skip : []),
+    ...(Array.isArray(finalResponse.irrelevant_fields) ? finalResponse.irrelevant_fields : [])
+  ];
+  const skip = skipRaw
+    .map((entry) => normaliseIrrelevantField(entry))
+    .filter(Boolean);
+
+  const followUpRaw = Array.isArray(finalResponse.followUpToUser)
+    ? finalResponse.followUpToUser
+    : Array.isArray(finalResponse.follow_up_to_user)
+    ? finalResponse.follow_up_to_user
+    : [];
+  const followUpToUser = ensureUniqueMessages(followUpRaw);
+
+  const payload = JobSuggestionSchema.parse({
+    id: jobId,
+    jobId,
+    schema_version: "2",
+    fields,
+    followUpToUser,
+    skip,
+    nextStepTeaser:
+      finalResponse.next_step_teaser ??
+      finalResponse.nextStepTeaser ??
+      undefined,
+    updatedAt: now
+  });
+
+  await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
+  logger.info(
+    { jobId, suggestions: variantsByField.size, skip: skip.length },
+    "Persisted LLM suggestions"
+  );
+}
+
+function clearSuggestionField(tree, fieldPath) {
+  if (!fieldPath || !isPlainObject(tree)) {
+    return false;
+  }
+
+  const parts = fieldPath.split(".");
+  const stack = [];
+  let cursor = tree;
+
+  for (const part of parts) {
+    if (!isPlainObject(cursor)) {
+      return false;
+    }
+    stack.push({ parent: cursor, key: part });
+    cursor = cursor[part];
+    if (cursor === undefined) {
+      return false;
+    }
+  }
+
+  const last = stack.pop();
+  if (!last) {
+    return false;
+  }
+  const { parent, key } = last;
+  if (!isPlainObject(parent) || parent[key] === undefined) {
+    return false;
+  }
+
+  delete parent[key];
+
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    const { parent: ancestor, key: ancestorKey } = stack[index];
+    if (!isPlainObject(ancestor[ancestorKey])) {
+      break;
+    }
+    if (Object.keys(ancestor[ancestorKey]).length === 0) {
+      delete ancestor[ancestorKey];
+    } else {
+      break;
+    }
+  }
+  return true;
+}
+
+async function acknowledgeSuggestionField({
+  firestore,
+  jobId,
+  fieldId,
+  logger,
+  now
+}) {
+  const existing = await firestore.getDocument(SUGGESTION_COLLECTION, jobId);
+  if (!existing || !isPlainObject(existing.fields)) {
+    return;
+  }
+
+  const fieldsClone = deepClone(existing.fields ?? {});
+  const removed = clearSuggestionField(fieldsClone, fieldId);
+  if (!removed) {
+    return;
+  }
+
+  const payload = JobSuggestionSchema.parse({
+    id: jobId,
+    jobId,
+    schema_version: existing.schema_version ?? "2",
+    fields: fieldsClone,
+    followUpToUser: Array.isArray(existing.followUpToUser) ? existing.followUpToUser : [],
+    skip: Array.isArray(existing.skip) ? existing.skip : [],
+    nextStepTeaser: existing.nextStepTeaser,
+    updatedAt: now
+  });
+
+  await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
+  logger.info({ jobId, fieldId }, "Suggestion removed after merge");
 }
 
 function valueProvided(value) {
@@ -192,150 +652,6 @@ function valueProvidedAt(state, path) {
   return valueProvided(getDeep(state, path));
 }
 
-function parseLocation(state = {}) {
-  const city = getDeep(state, "location.city");
-  const country = getDeep(state, "location.country");
-  const radiusRaw = getDeep(state, "location.radius_km");
-  const workModelRaw = getDeep(state, "location.work_model");
-  const geoCandidate = getDeep(state, "location.geo");
-  const geoLat = getDeep(state, "location.geo.latitude");
-  const geoLng = getDeep(state, "location.geo.longitude");
-
-  let geo = null;
-  if (
-    isPlainObject(geoCandidate) &&
-    geoCandidate.latitude !== undefined &&
-    geoCandidate.longitude !== undefined
-  ) {
-    geo = {
-      latitude: Number(geoCandidate.latitude),
-      longitude: Number(geoCandidate.longitude)
-    };
-  } else if (geoLat !== undefined && geoLng !== undefined) {
-    geo = {
-      latitude: Number(geoLat),
-      longitude: Number(geoLng)
-    };
-  }
-
-  const normalizedWorkModel =
-    typeof workModelRaw === "string" && workModelRaw.trim().length > 0
-      ? workModelRaw.trim().toLowerCase()
-      : undefined;
-  const remoteFlag = normalizedWorkModel === "remote";
-
-  const normalizedCity =
-    typeof city === "string" && city.trim().length > 0
-      ? city.trim()
-      : remoteFlag
-      ? "Remote"
-      : undefined;
-
-  const normalizedCountry =
-    typeof country === "string" && country.trim().length > 0
-      ? country.trim().slice(0, 2).toUpperCase()
-      : remoteFlag
-      ? "US"
-      : undefined;
-
-  const radiusKm =
-    radiusRaw === undefined || radiusRaw === null || radiusRaw === ""
-      ? undefined
-      : Number(radiusRaw);
-
-  const label =
-    [normalizedCity, normalizedCountry].filter(Boolean).join(", ") ||
-    (remoteFlag ? "Remote" : "Unknown");
-
-  return {
-    geo,
-    city: normalizedCity ?? null,
-    country: normalizedCountry ?? null,
-    radiusKm,
-    workModel: remoteFlag ? "remote" : normalizedWorkModel ?? "on_site",
-    label
-  };
-}
-
-function normaliseKey(value, fallback = "general") {
-  if (!value) return fallback;
-  return String(value).trim().toLowerCase() || fallback;
-}
-
-function buildMarketIntelligence(state = {}) {
-  const locationParsed = parseLocation(state);
-  const locationKey = normaliseKey(locationParsed.city ?? locationParsed.label ?? "remote", "remote");
-  const roleKey = normaliseKey(getDeep(state, "core.job_family"), "general");
-  const ROLE_MARKET_BENCHMARKS = {
-    general: {
-      salary: { mid: 70000, high: 90000, currency: "USD" },
-      mustHaves: ["Proven track record of reliability", "Ability to collaborate across functions"],
-      benefits: ["Health insurance", "401(k) with match", "Paid time off"],
-      locations: { remote: 1, default: 1 },
-      notes: "Balanced expectations across most customer-facing roles."
-    },
-    engineering: {
-      salary: { mid: 145000, high: 172000, currency: "USD" },
-      mustHaves: [
-        "Experience building distributed systems",
-        "Exposure to TypeScript/JavaScript backends",
-        "Comfort with event-driven architectures"
-      ],
-      benefits: ["Equity refreshers", "Learning stipend", "Comprehensive health coverage"],
-      locations: { remote: 1, "san francisco": 1.25, "new york": 1.1, default: 1 },
-      notes: "Engineering talent markets reward clarity on scope and growth."
-    },
-    hospitality: {
-      salary: { mid: 2300, high: 2700, currency: "GBP" },
-      mustHaves: ["Customer-first mindset", "POS familiarity", "Weekend availability"],
-      benefits: ["Shift meals", "Paid holidays", "Pension contributions"],
-      locations: { remote: 1, london: 1.05, default: 1 },
-      notes: "Hospitality roles benefit from clarity on tips and team culture."
-    }
-  };
-
-  const roleIntel = ROLE_MARKET_BENCHMARKS[roleKey] ?? ROLE_MARKET_BENCHMARKS.general;
-  const locationMultiplier =
-    roleIntel.locations?.[locationKey] ??
-    roleIntel.locations?.[locationParsed.city?.toLowerCase?.() ?? ""] ??
-    roleIntel.locations?.default ??
-    1;
-
-  const mid = Math.round(roleIntel.salary.mid * locationMultiplier);
-  const high = Math.round(roleIntel.salary.high * locationMultiplier);
-
-  return {
-    roleKey,
-    location: {
-      city: locationParsed.city,
-      country: locationParsed.country,
-      label: locationParsed.label ?? "Remote",
-      workModel: locationParsed.workModel ?? "remote",
-      multiplier: locationMultiplier
-    },
-    salaryBands: {
-      p50: mid,
-      p75: high,
-      currency: roleIntel.salary.currency
-    },
-    mustHaveExamples: roleIntel.mustHaves,
-    benefitNorms: roleIntel.benefits,
-    hiringNotes: roleIntel.notes
-  };
-}
-
-const STEP_TEASERS = {
-  "role-setup": "Next we’ll capture why this role matters so the story resonates with great candidates.",
-  "role-story": "Next we’ll cover pay, schedules, and day-to-day details so only people who can actually do the work reach out.",
-  "pay-schedule": "Next we’ll define who’s the right fit so you avoid interview churn.",
-  "right-fit": "Next we’ll map how applicants move through your process so everything routes cleanly.",
-  "apply-flow": "You’re at the finish line—approve when ready and we’ll generate the full hiring pack."
-};
-
-function buildNextStepTeaser(stepId) {
-  return STEP_TEASERS[stepId] ?? "Keep going—each answer trains your hiring copilot to do more for you.";
-}
-
 function normaliseTextSpacing(value) {
   return value
     .split("\n")
@@ -343,6 +659,20 @@ function normaliseTextSpacing(value) {
     .join("\n")
     .replace(/\s+\n/g, "\n")
     .trim();
+}
+
+const STEP_TEASERS = {
+  "role-basics": "Next we’ll confirm the level and format so candidates know if it’s a match.",
+  "role-details": "Great. Now let’s bring the role to life with a tight description.",
+  "job-story": "Ready for extras? We’ll sprinkle in comp, schedules, and selling points.",
+  "work-style": "Perfect. Want to clarify location details or how the role operates day-to-day?",
+  compensation: "Dial in the offer so the right people lean in.",
+  schedule: "Set expectations about the rhythm of the workday.",
+  extras: "Almost done—let’s capture finishing touches that help you stand out."
+};
+
+function buildNextStepTeaser(stepId) {
+  return STEP_TEASERS[stepId] ?? "Keep going—each answer trains your hiring copilot to do more for you.";
 }
 
 function capitaliseFirst(input) {
@@ -725,154 +1055,91 @@ function buildFallbackResponse({
   }
 
   const normalizedStep = stepId ?? "";
-  const title = String(getDeep(state, "core.job_title") ?? "").toLowerCase();
-  const workModel = String(
-    getDeep(state, "location.work_model") ?? marketIntel.location.workModel ?? ""
-  ).toLowerCase();
+  const roleTitle = typeof state.roleTitle === "string" ? state.roleTitle.trim() : "";
 
-  if (normalizedStep === "role-setup") {
-    if (!valueProvidedAt(state, "core.job_family") && marketIntel.roleKey !== "general") {
-      addAutofill("core.job_family", marketIntel.roleKey, {
+  if (normalizedStep === "work-style") {
+    const locationMeta = parseLocation(state);
+
+    if (!valueProvidedAt(state, "workModel")) {
+      const inferredModel =
+        locationMeta.workModel ??
+        (typeof state.location === "string" && state.location.toLowerCase().includes("remote")
+          ? "remote"
+          : "on_site");
+      addAutofill("workModel", inferredModel, {
         confidence: 0.55,
-        rationale: "Helps tailor benchmarking and campaign targeting from the start."
+        rationale: "Keeps candidates aligned on whether they’ll be on-site, hybrid, or remote."
       });
-      addFollowUp("I suggested a team category so benchmarks stay on point—feel free to tweak it.");
     }
-    if (!valueProvidedAt(state, "core.seniority_level")) {
-      addAutofill("core.seniority_level", "mid", {
+
+    if (!valueProvidedAt(state, "industry") && marketIntel.roleKey !== "general") {
+      addAutofill("industry", marketIntel.roleKey.replace(/\b\w/g, (char) => char.toUpperCase()), {
+        confidence: 0.45,
+        rationale: "Helps your copilot tailor suggestions to the right talent pool."
+      });
+    }
+
+    if (!valueProvidedAt(state, "zipCode") && locationMeta.zip) {
+      addAutofill("zipCode", locationMeta.zip, {
         confidence: 0.5,
-        rationale: "Mid-level is the most common baseline for balanced pay and autonomy."
+        rationale: "Zip codes sharpen salary suggestions and ad targeting."
       });
     }
-    if (workModel === "remote") {
-      addIrrelevant("location.radius_km", "Remote roles don’t need a commute radius.");
-      addFollowUp("I’ve removed the commute radius question—remote hires don’t need it.");
-    } else if (!valueProvidedAt(state, "location.radius_km") && marketIntel.location.label) {
-      addAutofill("location.radius_km", 25, {
-        confidence: 0.42,
-        rationale: "25km radius is a safe starting point for local targeting."
-      });
-    }
-  } else if (normalizedStep === "role-story") {
-    if (!valueProvidedAt(state, "role_description.problem_being_solved")) {
-      addAutofill("role_description.problem_being_solved", `We need a steady ${getDeep(state, "core.job_title") ?? "team member"} to keep daily operations smooth and customers happy.`, {
-        confidence: 0.48,
-        rationale: "Frames the role in a way that motivates serious candidates."
-      });
-    }
-    if (!valueProvidedAt(state, "role_description.first_30_60_90_days.days_30")) {
-      addAutofill("role_description.first_30_60_90_days.days_30", "Learn our systems, shadow the team, and confidently run shorter shifts by the end of the month.", {
-        confidence: 0.46,
-        rationale: "Gives new hires a clear early win and filters in self-starters."
-      });
-    }
-    if (!valueProvidedAt(state, "team_context.reporting_structure.reports_to")) {
-      addAutofill("team_context.reporting_structure.reports_to", "Hiring Manager or Shift Lead", {
-        confidence: 0.44,
-        rationale: "Letting candidates know who has their back builds trust."
-      });
-    }
-  } else if (normalizedStep === "pay-schedule") {
-    const salary = marketIntel.salaryBands;
-    if (!valueProvidedAt(state, "compensation.salary_range.currency")) {
-      addAutofill("compensation.salary_range.currency", salary.currency, {
-        confidence: 0.62,
-        rationale: "Keeps pay transparent and aligned with local norms."
-      });
-    }
-    if (!valueProvidedAt(state, "compensation.salary_range.min")) {
-      addAutofill("compensation.salary_range.min", Math.round(salary.p50), {
-        confidence: 0.65,
-        rationale: `Benchmark starting point for ${marketIntel.roleKey} roles around ${marketIntel.location.label}.`
-      });
-    }
-    if (!valueProvidedAt(state, "compensation.salary_range.max")) {
-      addAutofill("compensation.salary_range.max", Math.round(salary.p75), {
+  } else if (normalizedStep === "compensation") {
+    if (!valueProvidedAt(state, "compensation.currency") && marketIntel.salary?.currency) {
+      addAutofill("compensation.currency", marketIntel.salary.currency, {
         confidence: 0.6,
-        rationale: `Upper range that keeps you competitive in ${marketIntel.location.label}.`
+        rationale: "Sets expectations up front so candidates can compare offers quickly."
       });
     }
-    if (!valueProvidedAt(state, "compensation.salary_range.period")) {
-      addAutofill("compensation.salary_range.period", "month", {
+    if (!valueProvidedAt(state, "compensation.salary.min") && marketIntel.salary?.min) {
+      addAutofill("compensation.salary.min", marketIntel.salary.min, {
+        confidence: 0.62,
+        rationale: "Baseline pulled from fresh market data for similar roles."
+      });
+    }
+    if (!valueProvidedAt(state, "compensation.salary.max") && marketIntel.salary?.max) {
+      addAutofill("compensation.salary.max", marketIntel.salary.max, {
+        confidence: 0.6,
+        rationale: "Upper range to stay competitive without overspending."
+      });
+    }
+  } else if (normalizedStep === "schedule") {
+    if (!valueProvidedAt(state, "schedule.days")) {
+      addAutofill("schedule.days", "Monday\nTuesday\nWednesday\nThursday\nFriday", {
+        confidence: 0.45,
+        rationale: "Default weekday coverage—you can trim or extend as needed."
+      });
+    }
+    if (!valueProvidedAt(state, "schedule.shiftTimes")) {
+      addAutofill("schedule.shiftTimes", "08:00 - 16:00\n16:00 - 00:00", {
+        confidence: 0.4,
+        rationale: "Example shift blocks so candidates see the rhythm."
+      });
+    }
+  } else if (normalizedStep === "extras") {
+    if (!valueProvidedAt(state, "benefits") && Array.isArray(marketIntel.benefits)) {
+      addAutofill("benefits", marketIntel.benefits.join("\n"), {
         confidence: 0.55,
-        rationale: "Monthly ranges make it easier for candidates to compare offers."
+        rationale: "Common perks candidates expect to see for this kind of role."
       });
     }
-    if (!valueProvidedAt(state, "benefits.standout_benefits")) {
-      addAutofill(
-        "benefits.standout_benefits",
-        marketIntel.benefitNorms.join("\n"),
-        {
-          confidence: 0.58,
-          rationale: "Highlighting everyday perks boosts apply rates."
-        }
-      );
-      addFollowUp("I filled in common benefits—edit them so they reflect what you actually offer.");
-    }
-    if (title.includes("waiter") || title.includes("server")) {
-      addFollowUp("I highlighted tips and team meals since hospitality candidates care about those first.");
-    }
-  } else if (normalizedStep === "right-fit") {
-    if (!valueProvidedAt(state, "requirements.hard_requirements.technical_skills.must_have")) {
-      addAutofill(
-        "requirements.hard_requirements.technical_skills.must_have",
-        marketIntel.mustHaveExamples.join("\n"),
-        {
-          confidence: 0.62,
-          rationale: "These must-haves appear in successful hires for similar roles."
-        }
-      );
-    }
-    if (!valueProvidedAt(state, "requirements.preferred_qualifications.skills")) {
-      addAutofill(
-        "requirements.preferred_qualifications.skills",
-        marketIntel.mustHaveExamples.map((item) => `Bonus: ${item}`).join("\n"),
-        {
-          confidence: 0.53,
-          rationale: "Bonus skills let you delight high performers without excluding solid applicants."
-        }
-      );
-    }
-    if (
-      !valueProvidedAt(state, "requirements.hard_requirements.certifications") &&
-      title.includes("driver")
-    ) {
-      addAutofill("requirements.hard_requirements.certifications", "Valid local driver license (Category B)", {
-        confidence: 0.68,
-        rationale: "Driving roles typically mandate verified licensing."
+    if (!valueProvidedAt(state, "coreDuties") && Array.isArray(marketIntel.duties)) {
+      addAutofill("coreDuties", marketIntel.duties.join("\n"), {
+        confidence: 0.58,
+        rationale: "Gives applicants a vivid snapshot of the day-to-day."
       });
     }
-  } else if (normalizedStep === "apply-flow") {
-    if (!valueProvidedAt(state, "application_process.apply_method")) {
-      addAutofill("application_process.apply_method", "internal_form", {
-        confidence: 0.52,
-        rationale: "Keeps everything flowing into Wizard forms unless you specify otherwise."
+    if (!valueProvidedAt(state, "mustHaves") && Array.isArray(marketIntel.mustHaves)) {
+      addAutofill("mustHaves", marketIntel.mustHaves.join("\n"), {
+        confidence: 0.6,
+        rationale: "Keeps the screening criteria tight without sounding robotic."
       });
-    }
-    if (!valueProvidedAt(state, "application_process.steps")) {
-      addAutofill(
-        "application_process.steps",
-        "Quick phone screen\nOn-site or video shadow\nManager conversation\nOffer + references",
-        {
-          confidence: 0.48,
-          rationale: "Setting expectations here keeps candidates engaged through your process."
-        }
-      );
-    }
-    if (!valueProvidedAt(state, "application_process.total_timeline")) {
-      addAutofill(
-        "application_process.total_timeline",
-        "About 2 weeks for frontline roles, up to 4 weeks for leadership.",
-        {
-          confidence: 0.45,
-          rationale: "Timeline guidance reduces drop-off and sets honest expectations."
-        }
-      );
     }
   }
 
-  if (title.includes("waiter")) {
-    addFollowUp("Want to mention pooled tips or a guaranteed service charge? That helps floor roles decide fast.");
+  if (!roleTitle && normalizedStep === "extras") {
+    addFollowUp("Want me to weave in culture or growth notes? Drop a hint and I’ll polish the wording.");
   }
 
   const improvedValue = buildImprovedValueCandidate({
@@ -909,52 +1176,96 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       const userId = requireUserId(req);
       const payload = draftRequestSchema.parse(req.body ?? {});
 
-      const draftId = payload.jobId ?? `draft_${uuid()}`;
+      const jobId = payload.jobId ?? `job_${uuid()}`;
       const now = new Date();
-      const nowMs = now.getTime();
+      const existing = await firestore.getDocument(JOB_COLLECTION, jobId);
 
-      const existing = await firestore.getDocument(DRAFT_COLLECTION, draftId);
-      const baseState = existing?.state
-        ? deepClone(existing.state)
-        : createBaseDraft({ draftId, userId, nowMs });
+      let baseJob;
+      if (existing) {
+        const parsed = JobSchema.safeParse(existing);
+        if (parsed.success) {
+          baseJob = parsed.data;
+        } else {
+          logger.warn(
+            { jobId, issues: parsed.error.issues },
+            "Existing job failed schema validation; reinitialising base job"
+          );
+          baseJob = createBaseJob({
+            jobId,
+            userId: existing.ownerUserId ?? userId,
+            now
+          });
+        }
+      } else {
+        baseJob = createBaseJob({ jobId, userId, now });
+      }
 
-      const withIncoming = deepMerge(baseState, payload.state ?? {});
-      ensureMetadata(withIncoming, { userId, nowMs });
+      const mergedJob = mergeIntakeIntoJob(baseJob, payload.state ?? {}, { userId, now });
+      const progress = computeRequiredProgress(mergedJob);
+      const jobWithProgress = applyRequiredProgress(mergedJob, progress, now);
+      const validatedJob = JobSchema.parse(jobWithProgress);
 
-      const parsedDraft = JobSchemaV2.parse(withIncoming);
+      const savedJob = await firestore.saveDocument(JOB_COLLECTION, jobId, validatedJob);
 
-      await firestore.saveDocument(DRAFT_COLLECTION, draftId, {
-        jobId: draftId,
-        userId,
-        state: parsedDraft,
-        currentStepId: payload.currentStepId,
-        intent: payload.intent ?? {},
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now
+      logger.info(
+        {
+          jobId,
+          userId,
+          step: payload.currentStepId,
+          state: savedJob.stateMachine?.currentState
+        },
+        "Job persisted"
+      );
+
+      res.json({
+        jobId,
+        status: savedJob.status,
+        state: savedJob.stateMachine?.currentState ?? "DRAFT"
       });
-
-      logger.info({ draftId, userId, step: payload.currentStepId }, "Draft persisted");
-
-      res.json({ draftId, status: "saved" });
     })
   );
 
   router.post(
     "/suggestions",
     wrapAsync(async (req, res) => {
-      requireUserId(req);
+      const userId = requireUserId(req);
       const payload = suggestionsRequestSchema.parse(req.body ?? {});
 
-      const draft = await firestore.getDocument(DRAFT_COLLECTION, payload.jobId);
-      const baseState = draft?.state ? deepClone(draft.state) : {};
-      const mergedState = deepMerge(baseState, payload.state ?? {});
-      const locationMeta = parseLocation(mergedState);
+      const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+      if (!job) {
+        throw httpError(404, "Job not found");
+      }
+
+      const parsedJob = JobSchema.parse(job);
+      const now = new Date();
+      const mergedJob = mergeIntakeIntoJob(parsedJob, payload.state ?? {}, { userId, now });
+      const progress = computeRequiredProgress(mergedJob);
+
+      if (!progress.allComplete) {
+        logger.info(
+          { jobId: payload.jobId, currentStepId: payload.currentStepId },
+          "Suggestions requested before required intake completed"
+        );
+        return res.json({
+          improved_value: null,
+          autofill_candidates: [],
+          irrelevant_fields: [],
+          next_step_teaser: buildNextStepTeaser(payload.currentStepId),
+          followUpToUser: [
+            "Finish the required setup first so I can tailor the optional fields for you."
+          ],
+          suggestions: [],
+          skip: []
+        });
+      }
+
+      const locationMeta = parseLocation(mergedJob);
 
       const context = {
-        jobTitle: getDeep(mergedState, "core.job_title") ?? "",
+        jobTitle: typeof mergedJob.roleTitle === "string" ? mergedJob.roleTitle : "",
         location: locationMeta.label,
         currentStepId: payload.currentStepId,
-        state: mergedState
+        state: mergedJob
       };
 
       const marketIntel = buildMarketIntelligence(context.state);
@@ -987,6 +1298,14 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         }
       }
 
+      await persistJobSuggestions({
+        firestore,
+        jobId: payload.jobId,
+        logger,
+        finalResponse,
+        now
+      });
+
       res.json(finalResponse);
     })
   );
@@ -997,34 +1316,29 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       const userId = requireUserId(req);
       const payload = mergeRequestSchema.parse(req.body ?? {});
 
-      const draft = await firestore.getDocument(DRAFT_COLLECTION, payload.jobId);
-      if (!draft) {
-        throw httpError(404, "Draft not found");
+      const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+      if (!job) {
+        throw httpError(404, "Job not found");
       }
 
+      const parsedJob = JobSchema.parse(job);
       const now = new Date();
-      const nowMs = now.getTime();
-      const nextState = deepClone(draft.state ?? {});
+      const nextJob = deepClone(parsedJob);
 
-      setDeep(nextState, payload.fieldId, payload.value);
+      setDeep(nextJob, payload.fieldId, payload.value);
+      nextJob.updatedAt = now;
 
-      const metadataOwner =
-        getDeep(nextState, "metadata.created_by") ??
-        getDeep(draft.state ?? {}, "metadata.created_by") ??
-        userId;
-      ensureMetadata(nextState, { userId: metadataOwner, nowMs });
+      const progress = computeRequiredProgress(nextJob);
+      const jobWithProgress = applyRequiredProgress(nextJob, progress, now);
+      const validatedJob = JobSchema.parse(jobWithProgress);
 
-      const parsedState = JobSchemaV2.parse(nextState);
-
-      await firestore.saveDocument(DRAFT_COLLECTION, payload.jobId, {
-        jobId: draft.jobId ?? payload.jobId,
-        userId: draft.userId ?? userId,
-        state: parsedState,
-        currentStepId: draft.currentStepId,
-        intent: draft.intent ?? {},
-        createdAt: draft.createdAt ?? now,
-        updatedAt: now,
-        lastMergedBy: userId
+      await firestore.saveDocument(JOB_COLLECTION, payload.jobId, validatedJob);
+      await acknowledgeSuggestionField({
+        firestore,
+        jobId: payload.jobId,
+        fieldId: payload.fieldId,
+        logger,
+        now
       });
 
       res.json({ status: "ok" });

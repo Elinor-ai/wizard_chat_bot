@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NonNegativeNumber } from "./common.js";
+import { NonNegativeNumber } from "./zod.js";
 
 export const LlmSuggestionBucketSchema = z.object({
   salaryRanges: z

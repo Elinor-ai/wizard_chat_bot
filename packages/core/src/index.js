@@ -1,4 +1,4 @@
-export { NonNegativeNumber, TimestampSchema, NullableString } from "./schemas/common.js";
+export { NonNegativeNumber, TimestampSchema, NullableString } from "./common/zod.js";
 
 export {
   JobCreationStateEnum,
@@ -7,17 +7,17 @@ export {
   deriveJobStatusFromState,
   DeterministicStateMachine,
   createJobCreationStateMachine
-} from "./schemas/job-states.js";
+} from "./schemas/job.js";
 
-export { SuggestionSchema } from "./schemas/suggestion.js";
-export { PromptSchema } from "./schemas/prompt.js";
-export { ChatMessageSchema, ChatThreadSchema } from "./schemas/chat.js";
-export { LlmSuggestionBucketSchema, EMPTY_SUGGESTIONS } from "./schemas/llm-suggestions.js";
-export { AssetVersionSchema } from "./schemas/asset-version.js";
-export { JobAssetSchema } from "./schemas/asset-artifact.js";
-export { CampaignSchema } from "./schemas/campaign.js";
-export { CreditLedgerEntrySchema } from "./schemas/credit-ledger.js";
-export { EventEnvelopeSchema } from "./schemas/event-envelope.js";
+export { SuggestionSchema } from "./common/suggestion.js";
+export { PromptSchema } from "./common/prompt.js";
+export { ChatMessageSchema, ChatThreadSchema } from "./common/chat.js";
+export { LlmSuggestionBucketSchema, EMPTY_SUGGESTIONS } from "./common/llm-suggestions.js";
+export { AssetVersionSchema } from "./common/asset-version.js";
+export { JobAssetSchema } from "./common/asset-artifact.js";
+export { CampaignSchema } from "./common/campaign.js";
+export { CreditLedgerEntrySchema } from "./common/credit-ledger.js";
+export { EventEnvelopeSchema } from "./common/event-envelope.js";
 export {
   UserSchema,
   UserRoleEnum,
@@ -30,13 +30,10 @@ export {
   JobStatusEnum,
   WorkModelEnum,
   EmploymentTypeEnum,
-  ScheduleEnum,
-  SalaryPeriodEnum,
-  ApplyMethodEnum,
   ExperienceLevelEnum
 } from "./schemas/job.js";
-export { JobSchemaV2, JobDraftV2 } from "./schemas/job-v2.js";
-export { JobStepSchema } from "./schemas/job-step.js";
-export { JobVersionSchema } from "./schemas/job-version.js";
+export { JobStepSchema } from "./common/job-step.js";
+export { JobVersionSchema } from "./common/job-version.js";
+export { JobSuggestionSchema } from "./schemas/job-suggestion.js";
 
 export { JobRecord } from "./job-record.js";

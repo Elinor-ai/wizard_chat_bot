@@ -18,9 +18,15 @@ export function assetsRouter({ firestore, logger }) {
 
       const assets = jobs.flatMap((job) => {
         const jobAssets = job.assets ?? [];
+        const jobTitle =
+          typeof job.roleTitle === "string" && job.roleTitle.trim().length > 0
+            ? job.roleTitle.trim()
+            : typeof job.companyName === "string" && job.companyName.trim().length > 0
+            ? `${job.companyName.trim()} role`
+            : "Untitled role";
         return jobAssets.map((asset) => ({
           jobId: job.id,
-          jobTitle: job.confirmed?.title ?? "Untitled",
+          jobTitle,
           ...asset,
           latestVersion: asset.versions?.[asset.versions.length - 1] ?? null
         }));

@@ -182,7 +182,7 @@ export function WizardSuggestionPanel({
       </div>
 
       <footer className="rounded-2xl border border-primary-200 bg-white/70 p-4 text-[11px] text-neutral-500">
-        <p className="font-semibold text-neutral-700">Current draft snapshot</p>
+        <p className="font-semibold text-neutral-700">Current job snapshot</p>
         <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-all rounded-xl bg-neutral-100 p-3 text-[10px] text-neutral-600">
 {JSON.stringify(state, null, 2)}
         </pre>

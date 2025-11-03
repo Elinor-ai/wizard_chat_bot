@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NonNegativeNumber, TimestampSchema } from "./common.js";
+import { NonNegativeNumber, TimestampSchema } from "./zod.js";
 
 export const CampaignSchema = z.object({
   id: z.string().uuid(),

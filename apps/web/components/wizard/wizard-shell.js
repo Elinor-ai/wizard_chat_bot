@@ -48,549 +48,253 @@ function deepClone(value) {
 const WORK_MODEL_OPTIONS = [
   { value: "on_site", label: "On-site" },
   { value: "hybrid", label: "Hybrid" },
-  { value: "remote", label: "Remote" },
+  { value: "remote", label: "Remote" }
 ];
 
 const EMPLOYMENT_TYPE_OPTIONS = [
   { value: "full_time", label: "Full-time" },
   { value: "part_time", label: "Part-time" },
   { value: "contract", label: "Contract" },
-  { value: "temp", label: "Temporary" },
-  { value: "intern", label: "Internship" },
-];
-
-const SALARY_PERIOD_OPTIONS = [
-  { value: "hour", label: "Per hour" },
-  { value: "month", label: "Per month" },
-  { value: "year", label: "Per year" },
-];
-
-const SALARY_VISIBILITY_OPTIONS = [
-  { value: "show_full", label: "Show full range" },
-  { value: "show_min", label: "Show starting point" },
-  { value: "show_competitive", label: "List as “competitive pay”" },
-  { value: "hide", label: "Keep pay hidden for now" },
-];
-
-const APPLY_METHOD_OPTIONS = [
-  { value: "internal_form", label: "Internal form" },
-  { value: "external_link", label: "External link" },
-  { value: "both", label: "Internal form + external link" },
+  { value: "temporary", label: "Temporary" },
+  { value: "seasonal", label: "Seasonal" },
+  { value: "intern", label: "Internship" }
 ];
 
 const EXPERIENCE_LEVEL_OPTIONS = [
   { value: "entry", label: "Entry level" },
   { value: "mid", label: "Mid level" },
   { value: "senior", label: "Senior" },
-];
-
-const JOB_FAMILY_OPTIONS = [
-  { value: "Front-of-house service", label: "Front-of-house service" },
-  { value: "Warehouse operations", label: "Warehouse operations" },
-  { value: "Resident care", label: "Resident care" },
-  { value: "Customer support", label: "Customer support" },
-  { value: "Growth marketing", label: "Growth marketing" },
-  { value: "Sales & revenue", label: "Sales & revenue" }
-];
-
-const COUNTRY_CAPSULE_OPTIONS = [
-  { value: "US", label: "United States" },
-  { value: "CA", label: "Canada" },
-  { value: "UK", label: "United Kingdom" },
-  { value: "DE", label: "Germany" },
-  { value: "AU", label: "Australia" },
-  { value: "IL", label: "Israel" }
+  { value: "lead", label: "Lead" },
+  { value: "executive", label: "Executive" }
 ];
 
 const PROGRESS_TRACKING_FIELDS = [
-  "core.job_title",
-  "core.job_family",
-  "core.seniority_level",
-  "location.city",
-  "location.country",
-  "location.work_model",
-  "role_description.recruiter_input"
+  "roleTitle",
+  "companyName",
+  "location",
+  "seniorityLevel",
+  "employmentType",
+  "jobDescription"
+];
+
+const REQUIRED_FIELD_IDS = [
+  "roleTitle",
+  "companyName",
+  "location",
+  "seniorityLevel",
+  "employmentType",
+  "jobDescription"
 ];
 
 const REQUIRED_STEPS = [
   {
-    id: "role-setup",
-    title: "Let’s set up the role.",
-    subtitle: "Nothing is published yet. We’re just collecting the essentials.",
+    id: "role-basics",
+    title: "Let’s capture the headline details.",
+    subtitle: "Nothing is published yet—we’re collecting the essentials.",
     fields: [
       {
-        id: "core.job_title",
-        label: "What title will candidates recognise?",
-        helper:
-          "Plain titles get more clicks than clever ones, which means more qualified applicants for you.",
+        id: "roleTitle",
+        label: "What role title will candidates recognise?",
+        helper: "Plain titles win more clicks than clever ones, so keep it simple.",
         required: true,
-        placeholder:
-          "Store Manager / Line Cook / Delivery Driver / Office Coordinator / Sales Lead",
+        placeholder: "Assistant Manager / Operations Lead / Sushi Chef / Product Designer",
         type: "text",
-        maxLength: 120,
+        maxLength: 120
       },
       {
-        id: "core.job_family",
-        label: "Which team or area does this role support?",
-        helper:
-          "Helps us highlight the right responsibilities and target the right talent pools.",
+        id: "companyName",
+        label: "Who will they be working for?",
+        helper: "Helps us ground the story in your brand from the very first sentence.",
         required: true,
-        type: "capsule",
-        options: JOB_FAMILY_OPTIONS,
-        allowCustom: true,
-        customLabel: "Something else"
+        placeholder: "Acme Kitchens / Flow Logistics / Studio W",
+        type: "text",
+        maxLength: 120
       },
       {
-        id: "core.seniority_level",
-        label: "What level are you hiring for?",
-        helper:
-          "Sets salary benchmarks and messaging, so you don’t waste time with the wrong seniority.",
-        required: true,
-        type: "capsule",
-        options: EXPERIENCE_LEVEL_OPTIONS,
-      },
-      {
-        id: "location.city",
+        id: "location",
         label: "Where will most of the work happen?",
-        helper:
-          "Pin the main city so pay ranges and job ads stay relevant for your candidates.",
+        helper: "City, region, or \"Remote\"—whatever helps candidates picture the commute.",
         required: true,
-        placeholder: "Austin / Haifa / Berlin / Cape Town / Manchester",
-        type: "text",
-      },
-      {
-        id: "location.country",
-        label: "Which country’s rules do we need to respect?",
-        helper:
-          "Use a two-letter country code so we load the right compliance and benefits guidance.",
-        required: true,
-        type: "capsule",
-        options: COUNTRY_CAPSULE_OPTIONS,
-        allowCustom: true,
-        customLabel: "Other country"
-      },
-      {
-        id: "location.work_model",
-        label: "Where will they spend most shifts?",
-        helper:
-          "We’ll keep messaging honest about on-site vs. remote so you get fewer misaligned applicants.",
-        required: true,
-        type: "capsule",
-        options: WORK_MODEL_OPTIONS.map((option) => ({
-          value: option.value,
-          label: option.label
-        })),
-      },
-      {
-        id: "role_description.recruiter_input",
-        label: "What do you need this person to take care of?",
-        helper:
-          "Describe the mission in your own words—we’ll polish it so candidates feel the purpose.",
-        required: true,
-        placeholder:
-          "Keep evening service running smoothly, coach the five-person crew, and jump in wherever guests need help.",
-        type: "textarea",
-        rows: 5,
-      },
-    ],
+        placeholder: "Austin, TX / Remote across EU / Tel Aviv HQ",
+        type: "text"
+      }
+    ]
   },
   {
-    id: "role-story",
-    title: "Why this role is important.",
-    subtitle: "We’ll only show what you approve before anything goes live.",
+    id: "role-details",
+    title: "Set the level and format.",
+    subtitle: "We’ll use this to tailor compensation ranges and messaging.",
     fields: [
       {
-        id: "role_description.problem_being_solved",
-        label: "Why do you need this role right now?",
-        helper:
-          "Share the story you’d tell a teammate—this is what convinces great people to apply.",
+        id: "seniorityLevel",
+        label: "What level are you hiring for?",
+        helper: "Sets expectations so the right folks lean in—and the wrong ones bow out.",
         required: true,
-        placeholder:
-          "We’re opening a second evening shift and need someone to keep service fast while the new team ramps.",
-        type: "textarea",
-        rows: 4,
+        type: "capsule",
+        options: EXPERIENCE_LEVEL_OPTIONS
       },
       {
-        id: "role_description.first_30_60_90_days.days_30",
-        label: "In the first month they should be able to...",
-        helper:
-          "Setting a 30-day target helps new hires ramp faster and gives them a clear win.",
-        required: false,
-        placeholder:
-          "Shadow each shift lead, learn our POS and safety routines, and run the floor with support.",
-        type: "textarea",
-        rows: 3,
-      },
-      {
-        id: "role_description.first_30_60_90_days.days_60",
-        label: "By 60 days, doing great looks like...",
-        helper:
-          "Paint the trajectory so candidates can picture themselves thriving here.",
-        required: false,
-        placeholder:
-          "Own two evening shifts a week, coach newer teammates, and keep ticket times under six minutes.",
-        type: "textarea",
-        rows: 3,
-      },
-      {
-        id: "role_description.first_30_60_90_days.days_90",
-        label: "After a few months, they should be able to...",
-        helper:
-          "Helps you attract people who love growing with a team—not just clocking in.",
-        required: false,
-        placeholder:
-          "Lead the weekend crew, flag process improvements, and keep guest satisfaction above 95%.",
-        type: "textarea",
-        rows: 3,
-      },
-      {
-        id: "team_context.reporting_structure.reports_to",
-        label: "Who will they report to or shadow most often?",
-        helper:
-          "Names or titles make the opportunity feel real and supportive.",
-        required: false,
-        placeholder:
-          "Evening Service Manager / Head Nurse / Warehouse Supervisor / VP Marketing",
-        type: "text",
-      },
-      {
-        id: "team_context.collaboration_style",
-        label: "Who will they work closely with most of the day?",
-        helper:
-          "Let candidates know the crew size and rhythm so they can picture the vibe.",
-        required: false,
-        placeholder:
-          "Six-person front-of-house pod, daily huddles with logistics, weekly syncs with marketing.",
-        type: "textarea",
-        rows: 3,
-      },
-    ],
+        id: "employmentType",
+        label: "How is the role scoped?",
+        helper: "Keeps everything compliant and transparent from the start.",
+        required: true,
+        type: "capsule",
+        options: EMPLOYMENT_TYPE_OPTIONS
+      }
+    ]
   },
   {
-    id: "pay-schedule",
-    title: "Pay, schedule, and what a typical day looks like.",
-    subtitle:
-      "Transparent expectations mean fewer no-shows and faster hires. We’ll only show what you approve.",
+    id: "job-story",
+    title: "Tell the story in your own words.",
+    subtitle: "We’ll polish the copy, but your voice sets the tone.",
     fields: [
       {
-        id: "core.employment_type",
-        label: "What type of employment is this?",
-        helper:
-          "Clarifies benefits and compliance so you’re never surprised later.",
+        id: "jobDescription",
+        label: "What’s the mission for this hire?",
+        helper: "Write like you’re DM’ing a teammate—why this role matters and what success looks like.",
         required: true,
-        placeholder: "Select employment type",
-        type: "select",
-        options: EMPLOYMENT_TYPE_OPTIONS,
-      },
-      {
-        id: "compensation.salary_range.currency",
-        label: "What currency should we list?",
-        helper:
-          "Keeps the salary clear for candidates and aligns with your payroll.",
-        required: false,
-        placeholder: "USD / GBP / EUR / ILS / ZAR",
-        type: "text",
-        maxLength: 3,
-      },
-      {
-        id: "compensation.salary_range.min",
-        label: "What’s a realistic starting pay?",
-        helper:
-          "Filters out mismatched applicants before they ever hit your calendar.",
-        required: false,
-        placeholder: "18 (hourly) / 3200 (monthly) / 55000 (annual)",
-        type: "number",
-        valueAs: "number",
-      },
-      {
-        id: "compensation.salary_range.max",
-        label: "What’s the top of the range you’d consider?",
-        helper:
-          "Keeps you competitive without overpaying, and signals growth to candidates.",
-        required: false,
-        placeholder: "24 (hourly) / 3800 (monthly) / 72000 (annual)",
-        type: "number",
-        valueAs: "number",
-      },
-      {
-        id: "compensation.salary_range.period",
-        label: "Is that per hour, month, or year?",
-        helper: "Choose the cadence you actually use when talking pay.",
-        required: false,
-        type: "select",
-        options: SALARY_PERIOD_OPTIONS,
-      },
-      {
-        id: "compensation.salary_range.display_strategy",
-        label: "How much of the pay range should we show in job ads?",
-        helper:
-          "Pick what candidates will see—the copilot keeps the full range for campaigns and reporting.",
-        required: false,
-        type: "select",
-        options: SALARY_VISIBILITY_OPTIONS,
-      },
-      {
-        id: "compensation.salary_range.overtime_eligible",
-        label: "Should they expect overtime pay?",
-        helper:
-          "Being upfront about overtime avoids awkward conversations after they join.",
-        required: false,
-        type: "select",
-        options: [
-          { value: "true", label: "Yes, overtime is part of the role" },
-          { value: "false", label: "No, overtime isn’t expected" },
-        ],
-        valueAs: "boolean",
-      },
-      {
-        id: "role_description.day_to_day",
-        label: "What does a typical shift or day include?",
-        helper:
-          "When people can picture the work, you get better-fit applicants and fewer early exits.",
-        required: false,
         placeholder:
-          "Greet guests, stage orders, coach newer teammates, close out the POS, share feedback with logistics.",
+          "Lead the evening service, coach a 6-person crew, and keep guest experiences seamless even on peak nights.",
         type: "textarea",
-        rows: 4,
-        asList: true,
-      },
-      {
-        id: "compensation.bonus_structure.type",
-        label: "Do you offer bonuses we should mention?",
-        helper:
-          "Select the bonus style so we pitch it accurately—add details in the next field if needed.",
-        required: false,
-        type: "select",
-        options: [
-          { value: "performance", label: "Performance based" },
-          { value: "signing", label: "Signing bonus" },
-          { value: "annual", label: "Annual bonus" },
-          { value: "quarterly", label: "Quarterly bonus" },
-        ],
-      },
-      {
-        id: "compensation.bonus_structure.potential",
-        label: "How would you describe that bonus potential?",
-        helper:
-          "Share ranges or examples so we can sell the upside without overpromising.",
-        required: false,
-        placeholder:
-          "Up to 10% quarterly when team hits targets / $2,000 signing bonus paid over 6 months",
-        type: "textarea",
-        rows: 2,
-      },
-      {
-        id: "compensation.equity.offered",
-        label: "Any equity or profit sharing on the table?",
-        helper:
-          "Helps attract growth-minded candidates and keeps messaging compliant.",
-        required: false,
-        type: "select",
-        options: [
-          { value: "true", label: "Yes, we offer equity or profit share" },
-          { value: "false", label: "No equity or profit share" },
-        ],
-        valueAs: "boolean",
-      },
-      {
-        id: "compensation.equity.type",
-        label: "What kind of equity is it?",
-        helper:
-          "Mention the format so candidates know what to expect (options, RSUs, phantom units, etc.).",
-        required: false,
-        type: "select",
-        options: [
-          { value: "stock_options", label: "Stock options" },
-          { value: "rsu", label: "Restricted stock units (RSUs)" },
-          { value: "phantom", label: "Phantom equity / profit share" },
-          { value: "none", label: "Not applicable" },
-        ],
-      },
-      {
-        id: "compensation.equity.range",
-        label: "Any equity range or context worth noting?",
-        helper:
-          "Share the typical grant or how it vests so we can set expectations.",
-        required: false,
-        placeholder:
-          "0.05%–0.1% options with 4-year vesting / 5% profit share after probation",
-        type: "textarea",
-        rows: 2,
-      },
-      {
-        id: "benefits.standout_benefits",
-        label: "Any perks or extras worth highlighting?",
-        helper:
-          "This is where you win hearts—meals, stipends, wellness, tips, training.",
-        required: false,
-        placeholder:
-          "Shared tips each shift, paid certifications, commuter stipend, wellness days, growth budget",
-        type: "textarea",
-        rows: 3,
-        asList: true,
-      },
-      {
-        id: "requirements.hard_requirements.dealbreakers",
-        label: "Any schedule or physical deal-breakers to flag?",
-        helper:
-          "Setting expectations now keeps you from interviewing people who will say no later.",
-        required: false,
-        placeholder:
-          "Rotating weekends\nComfortable lifting 25kg\nOn-call every third week\nTravel 20% within region",
-        type: "textarea",
-        rows: 3,
-        asList: true,
-      },
-    ],
-  },
+        rows: 6
+      }
+    ]
+  }
 ];
 
 const OPTIONAL_STEPS = [
   {
-    id: "right-fit",
-    title: "Who’s the right fit?",
-    subtitle:
-      "This helps you avoid interviewing the wrong people and keeps your team focused.",
+    id: "work-style",
+    title: "Clarify how the work happens.",
+    subtitle: "Add context so candidates can picture the environment.",
     fields: [
       {
-        id: "requirements.hard_requirements.technical_skills.must_have",
-        label: "What must every qualified person already have?",
-        helper:
-          "Think licenses, tools, or experience they need on day one—no second guessing.",
+        id: "workModel",
+        label: "Where will they spend most days?",
+        helper: "Clear expectations on hybrid/remote beats surprises halfway through interviews.",
         required: false,
-        placeholder:
-          "Forklift licence\nComfort with EHR systems\nFood safety level 2\nExperience leading store opens",
-        type: "textarea",
-        rows: 4,
-        asList: true,
+        type: "capsule",
+        options: WORK_MODEL_OPTIONS
       },
       {
-        id: "requirements.hard_requirements.certifications",
-        label: "Any licences or certifications they must hold?",
-        helper:
-          "Keeps compliance tight and saves you from late-stage surprises.",
+        id: "industry",
+        label: "Which industry or team best describes this role?",
+        helper: "Optional, but helps us suggest tailored benefits and must-haves.",
         required: false,
-        placeholder: "CDL-B\nCNA licence\nCPR + First Aid\nSecurity clearance level 1",
-        type: "textarea",
-        rows: 3,
-        asList: true,
+        placeholder: "Hospitality / Logistics / AI SaaS / Healthcare clinic",
+        type: "text"
       },
       {
-        id: "requirements.hard_requirements.legal.work_authorization",
-        label: "Work authorisation or background requirements?",
-        helper:
-          "Mention work permits, background checks, or driving record needs upfront.",
+        id: "zipCode",
+        label: "Do you want to add a ZIP or postal code?",
+        helper: "Helpful for hyper-local salary benchmarks and targeting.",
         required: false,
-        placeholder:
-          "Eligible to work in Australia\nClean driving record\nAble to pass background + drug screen",
-        type: "textarea",
-        rows: 3,
-        asList: true,
-      },
-      {
-        id: "requirements.hard_requirements.legal.other_notes",
-        label: "Anything else they should know before applying?",
-        helper:
-          "Probation periods, union membership, or other callouts go here.",
-        required: false,
-        placeholder: "90-day probation period\nUnion dues after first month",
-        type: "textarea",
-        rows: 3,
-      },
-      {
-        id: "requirements.preferred_qualifications.skills",
-        label: "Nice-to-haves that make someone shine?",
-        helper:
-          "We’ll pitch these as bonus points so you attract the overachievers without scaring others off.",
-        required: false,
-        placeholder:
-          "Speaks Spanish or French\nExperience with Salesforce\nComfort presenting to leadership",
-        type: "textarea",
-        rows: 4,
-        asList: true,
-      },
-    ],
+        placeholder: "78701 / 94107 / 100-0001",
+        type: "text",
+        maxLength: 12
+      }
+    ]
   },
   {
-    id: "apply-flow",
-    title: "How should people apply (and what happens next)?",
-    subtitle:
-      "We’ll never publish without your approval. This simply keeps candidates confident.",
+    id: "compensation",
+    title: "Dial in compensation.",
+    subtitle: "Keep it transparent so the right people raise their hand.",
     fields: [
       {
-        id: "application_process.apply_method",
-        label: "Where should great applicants apply?",
-        helper:
-          "Pick the path you prefer—your copilot routes qualified leads straight to you.",
+        id: "compensation.currency",
+        label: "What currency should we display?",
+        helper: "USD, EUR, GBP, ILS—you name it.",
         required: false,
-        type: "select",
-        options: APPLY_METHOD_OPTIONS,
-      },
-      {
-        id: "application_process.internal_form_id",
-        label: "Internal form or ATS reference (optional)",
-        helper:
-          "Drop an identifier or link so we sync seamlessly with your existing process.",
-        required: false,
-        placeholder: "greenhouse_job_872 / forms.gle/your-form / Notion intake link",
+        placeholder: "USD / GBP / EUR / ILS",
         type: "text",
+        maxLength: 6
       },
       {
-        id: "application_process.external_url",
-        label: "External apply link (optional)",
-        helper:
-          "We only share this after you’ve approved the hiring pack.",
+        id: "compensation.salary.min",
+        label: "What’s a realistic starting point?",
+        helper: "Listing a floor keeps expectations aligned from day one.",
         required: false,
-        placeholder:
-          "https://company.com/careers/store-manager or https://indeed.com/job/123",
-        type: "text",
+        placeholder: "48000 / 22 (hourly) / 3200 (monthly)",
+        type: "number",
+        valueAs: "number"
       },
       {
-        id: "application_process.steps",
-        label: "What happens after they apply?",
-        helper:
-          "List the steps or interview stages so candidates know you have a plan.",
+        id: "compensation.salary.max",
+        label: "And what’s the top end of the range?",
+        helper: "Signals growth without locking you into overpaying.",
         required: false,
-        placeholder:
-          "Phone screen → On-site shadow → Manager interview → Offer call",
+        placeholder: "56000 / 28 (hourly) / 4200 (monthly)",
+        type: "number",
+        valueAs: "number"
+      }
+    ]
+  },
+  {
+    id: "schedule",
+    title: "Map the rhythm of the workweek.",
+    subtitle: "Clarity here dramatically reduces no-shows.",
+    fields: [
+      {
+        id: "schedule.days",
+        label: "Which days are in rotation?",
+        helper: "List each one—candidates appreciate the transparency.",
+        required: false,
+        placeholder: "Monday\nTuesday\nWednesday\nThursday\nFriday",
         type: "textarea",
         rows: 3,
-        asList: true,
+        asList: true
       },
       {
-        id: "application_process.total_timeline",
-        label: "How long does the whole process usually take?",
-        helper:
-          "Setting expectations up front keeps candidates engaged and reduces drop-off.",
+        id: "schedule.shiftTimes",
+        label: "Any shift windows worth calling out?",
+        helper: "Ex: 08:00-16:00, 16:00-00:00, or simply “Flexible core hours”.",
         required: false,
-        placeholder:
-          "1 week for frontline roles / 3 weeks for leadership / Fast-track for seasonal hires",
+        placeholder: "08:00 - 16:00\n16:00 - 00:00",
         type: "textarea",
-        rows: 2,
-      },
-      {
-        id: "application_process.start_date.target",
-        label: "When would you ideally like them to start?",
-        helper:
-          "Concrete dates or just \"ASAP\" both work—this helps you forecast staffing.",
-        required: false,
-        placeholder:
-          "Within 2 weeks / 1 November 2024 / Before holiday peak / ASAP",
-        type: "text",
-      },
-      {
-        id: "application_process.start_date.flexibility",
-        label: "How flexible is that start date?",
-        helper:
-          "Tell us if there’s wiggle room so we can frame urgency the right way.",
-        required: false,
-        placeholder:
-          "Can start earlier for the right person / Firm date because of training / Flexible within the month",
-        type: "textarea",
-        rows: 2,
-      },
-    ],
+        rows: 3,
+        asList: true
+      }
+    ]
   },
+  {
+    id: "extras",
+    title: "Add the finishing touches.",
+    subtitle: "This is where you hook the right-fit candidates.",
+    fields: [
+      {
+        id: "benefits",
+        label: "Any benefits or perks worth highlighting?",
+        helper: "List each on its own line—treat it like your highlight reel.",
+        required: false,
+        placeholder: "Health insurance from day one\nPaid parental leave\nQuarterly team retreats",
+        type: "textarea",
+        rows: 4,
+        asList: true
+      },
+      {
+        id: "coreDuties",
+        label: "What will they own day-to-day?",
+        helper: "Quick bullet points make it easy to scan.",
+        required: false,
+        placeholder:
+          "Lead daily standups and unblock the team\nReview and ship features every sprint\nCoach junior teammates through code reviews",
+        type: "textarea",
+        rows: 4,
+        asList: true
+      },
+      {
+        id: "mustHaves",
+        label: "Non-negotiables or dealbreakers?",
+        helper: "Be honest so you attract the right humans.",
+        required: false,
+        placeholder:
+          "Comfortable owning customer-critical projects\nAble to collaborate across time zones\nExperience with modern analytics tooling",
+        type: "textarea",
+        rows: 3,
+        asList: true
+      }
+    ]
+  }
 ];
 
 function findFieldDefinition(fieldId) {
@@ -684,10 +388,6 @@ function normalizeValueForField(field, proposal) {
     return undefined;
   }
 
-  if (field.id === "location.country" && typeof proposal === "string") {
-    return proposal.toUpperCase().slice(0, 2);
-  }
-
   if (typeof proposal === "string" || typeof proposal === "number") {
     return proposal;
   }
@@ -703,7 +403,7 @@ export function WizardShell() {
   const { user } = useUser();
   const [state, setState] = useState({});
   const [committedState, setCommittedState] = useState({});
-  const [draftId, setDraftId] = useState(null);
+  const [jobId, setJobId] = useState(null);
   const [includeOptional, setIncludeOptional] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [maxVisitedIndex, setMaxVisitedIndex] = useState(0);
@@ -824,14 +524,14 @@ export function WizardShell() {
   const isLastStep = currentStepIndex === steps.length - 1;
   const totalSteps = steps.length;
 
-    const persistMutation = useMutation({
-    mutationFn: ({ state: draftState, userId, jobId, intent, currentStepId }) =>
-      WizardApi.persistDraft(draftState, {
+  const persistMutation = useMutation({
+    mutationFn: ({ state: jobState, userId, jobId: jobIdInput, intent, currentStepId }) =>
+      WizardApi.persistJob(jobState, {
         userId,
-        jobId,
+        jobId: jobIdInput,
         intent,
-        currentStepId,
-      }),
+        currentStepId
+      })
   });
 
   const goToStep = useCallback((nextIndex) => {
@@ -881,7 +581,7 @@ export function WizardShell() {
         id: `auth-${Date.now()}`,
         role: "assistant",
         kind: "error",
-        content: "Please sign in to continue working on this draft.",
+        content: "Please sign in to continue working on this job.",
       },
     ]);
   }, []);
@@ -901,7 +601,7 @@ export function WizardShell() {
         return;
       }
 
-      const effectiveJobId = jobIdOverride ?? draftId;
+      const effectiveJobId = jobIdOverride ?? jobId;
       if (!effectiveJobId) {
         return;
       }
@@ -925,6 +625,20 @@ export function WizardShell() {
           : steps
               .slice(stepIndex + 1)
               .flatMap((step) => step.fields.map((field) => field.id));
+
+      const isOptionalStep = OPTIONAL_STEPS.some((step) => step.id === stepId);
+      if (!isOptionalStep) {
+        return;
+      }
+
+      const requiredComplete = REQUIRED_FIELD_IDS.every((fieldId) => {
+        const fieldDefinition = findFieldDefinition(fieldId);
+        return isFieldValueProvided(getDeep(workingState, fieldId), fieldDefinition);
+      });
+
+      if (!requiredComplete) {
+        return;
+      }
 
       setIsFetchingSuggestions(true);
       try {
@@ -1124,13 +838,17 @@ export function WizardShell() {
         setIsFetchingSuggestions(false);
       }
     },
-    [announceAuthRequired, currentStep?.id, draftId, includeOptional, steps, user]
+    [announceAuthRequired, currentStep?.id, jobId, includeOptional, steps, user]
   );
 
 
   const scheduleRealtimeSuggestions = useCallback(
     (fieldId, value) => {
       if (!currentStep?.id) return;
+      const isOptionalStep = OPTIONAL_STEPS.some((step) => step.id === currentStep.id);
+      if (!isOptionalStep) {
+        return;
+      }
       if (suggestionDebounceRef.current) {
         clearTimeout(suggestionDebounceRef.current);
       }
@@ -1215,18 +933,18 @@ export function WizardShell() {
         const response = await persistMutation.mutateAsync({
           state,
           userId: user.id,
-          jobId: draftId,
+          jobId,
           intent,
           currentStepId: stepId,
         });
 
-        if (response?.draftId) {
-          setDraftId(response.draftId);
+        if (response?.jobId) {
+          setJobId(response.jobId);
         }
 
         setCommittedState(() => deepClone(state));
 
-        return { savedId: response?.draftId ?? draftId, intent };
+        return { savedId: response?.jobId ?? jobId, intent };
       } catch (error) {
         setAssistantMessages((prev) => [
           ...prev,
@@ -1234,7 +952,7 @@ export function WizardShell() {
             id: `persist-error-${Date.now()}`,
             role: "assistant",
             kind: "error",
-            content: error.message ?? "Failed to save the draft.",
+            content: error.message ?? "Failed to save the job.",
           },
         ]);
         return null;
@@ -1243,7 +961,7 @@ export function WizardShell() {
     [
       announceAuthRequired,
       currentStep?.id,
-      draftId,
+      jobId,
       includeOptional,
       persistMutation,
       state,
@@ -1382,7 +1100,7 @@ export function WizardShell() {
     const nextStep = optionalFlowSteps[nextIndex];
     goToStep(nextIndex);
     await fetchSuggestionsForStep({
-      stepId: nextStep?.id ?? "pay-schedule",
+      stepId: nextStep?.id ?? "compensation",
       intentOverrides: nextIntent,
       jobIdOverride: result.savedId,
     });
@@ -1390,7 +1108,7 @@ export function WizardShell() {
 
   const handleAcceptSuggestion = useCallback(
     async (suggestion) => {
-      if (!user || !draftId) {
+      if (!user || !jobId) {
         announceAuthRequired();
         return;
       }
@@ -1432,7 +1150,7 @@ export function WizardShell() {
     try {
       await WizardApi.mergeSuggestion(
         {
-          jobId: draftId,
+          jobId,
           fieldId: suggestion.fieldId,
           value,
         },
@@ -1493,7 +1211,7 @@ export function WizardShell() {
         ]);
       }
     },
-    [announceAuthRequired, committedState, draftId, fetchSuggestionsForStep, onFieldChange, user]
+    [announceAuthRequired, committedState, jobId, fetchSuggestionsForStep, onFieldChange, user]
   );
 
   const handleSuggestionToggle = useCallback(
@@ -1634,7 +1352,7 @@ export function WizardShell() {
     try {
       const response = await WizardApi.sendChatMessage(
         {
-          jobId: draftId ?? undefined,
+          jobId: jobId ?? undefined,
           userMessage: trimmed,
           intent: { currentStepId: currentStep?.id },
         },
@@ -1670,7 +1388,7 @@ export function WizardShell() {
     return (
       <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-neutral-600 shadow-sm shadow-neutral-100">
         Please sign in to build a job brief. Once authenticated, your wizard
-        drafts will be saved to Firestore and synced across the console.
+        progress will be saved to Firestore and synced across the console.
       </div>
     );
   }
@@ -1822,11 +1540,6 @@ export function WizardShell() {
                 return;
               }
 
-              if (field.id === "location.country") {
-                onFieldChange(field.id, value.toUpperCase().slice(0, 2));
-                return;
-              }
-
               onFieldChange(field.id, value);
             };
 
@@ -1878,11 +1591,7 @@ export function WizardShell() {
                                 ...prev,
                                 [field.id]: false
                               }));
-                              const nextValue =
-                                field.id === "location.country"
-                                  ? optionValue.toUpperCase()
-                                  : optionValue;
-                              onFieldChange(field.id, nextValue);
+                              onFieldChange(field.id, optionValue);
                             }}
                           >
                             {option.label}
@@ -1928,11 +1637,7 @@ export function WizardShell() {
                         placeholder={field.placeholder ?? "Type to customise"}
                         value={effectiveValue ?? ""}
                         onChange={(event) => {
-                          const nextValue =
-                            field.id === "location.country"
-                              ? event.target.value.toUpperCase().slice(0, 2)
-                              : event.target.value;
-                          onFieldChange(field.id, nextValue);
+                          onFieldChange(field.id, event.target.value);
                         }}
                       />
                     ) : null}
