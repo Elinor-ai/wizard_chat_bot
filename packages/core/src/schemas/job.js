@@ -70,24 +70,23 @@ export const EmploymentTypeEnum = z.enum(["full_time", "part_time", "contract", 
 
 export const ExperienceLevelEnum = z.enum(["entry", "mid", "senior", "lead", "executive"]);
 
-const ScheduleSchema = z
+const ConfirmedJobDetailsSchema = z
   .object({
-    days: z.array(z.string()).default([]),
-    shiftTimes: z.array(z.string()).default([])
-  })
-  .default({ days: [], shiftTimes: [] });
-
-const CompensationSchema = z
-  .object({
-    currency: z.string().optional(),
-    salary: z
-      .object({
-        min: z.number().optional(),
-        max: z.number().optional(),
-        exact: z.number().optional(),
-        notes: z.string().optional()
-      })
-      .optional()
+    roleTitle: z.string().optional(),
+    companyName: z.string().optional(),
+    location: z.string().optional(),
+    zipCode: z.string().optional(),
+    industry: z.string().optional(),
+    seniorityLevel: ExperienceLevelEnum.optional(),
+    employmentType: EmploymentTypeEnum.optional(),
+    workModel: WorkModelEnum.optional(),
+    jobDescription: z.string().optional(),
+    coreDuties: z.array(z.string()).optional(),
+    mustHaves: z.array(z.string()).optional(),
+    benefits: z.array(z.string()).optional(),
+    salary: z.string().optional(),
+    salaryPeriod: z.string().optional(),
+    currency: z.string().optional()
   })
   .default({});
 
@@ -121,15 +120,17 @@ export const JobSchema = z.object({
   location: z.string().default(""),
   zipCode: z.string().optional(),
   industry: z.string().optional(),
-  seniorityLevel: ExperienceLevelEnum.default("entry"),
-  employmentType: EmploymentTypeEnum.default("full_time"),
+  seniorityLevel: ExperienceLevelEnum.optional(),
+  employmentType: EmploymentTypeEnum.optional(),
   workModel: WorkModelEnum.optional(),
   jobDescription: z.string().default(""),
   coreDuties: z.array(z.string()).default([]),
   mustHaves: z.array(z.string()).default([]),
   benefits: z.array(z.string()).default([]),
-  schedule: ScheduleSchema,
-  compensation: CompensationSchema,
+  salary: z.string().optional(),
+  salaryPeriod: z.string().optional(),
+  currency: z.string().optional(),
+  confirmed: ConfirmedJobDetailsSchema,
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
   archivedAt: TimestampSchema.nullable().optional()

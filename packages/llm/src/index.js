@@ -141,7 +141,7 @@ export class LLMOrchestrator {
 
     if (taskType === "wizard.channel.recommend") {
       const role = payload?.confirmed?.roleCategory ?? "multi-role teams";
-      const location = payload?.confirmed?.location?.city ?? "priority markets";
+      const location = payload?.confirmed?.location ?? "priority markets";
       return {
         content: {
           recommendations: [
@@ -260,14 +260,31 @@ function generateStepSuggestions(state = {}, stepId, marketIntel = {}) {
   };
 
   if (stepId === "compensation") {
-    if (!hasValue(state.salaryRange) && marketIntel.salaryBands) {
-      const salary = marketIntel.salaryBands;
+    if (!hasValue(state.salary) && marketIntel.salary) {
       suggestions.push({
         id: createSuggestionId(),
-        fieldId: "salaryRange",
-        proposal: `$${salary.p50.toLocaleString()} - $${salary.p75.toLocaleString()} ${salary.currency}`,
+        fieldId: "salary",
+        proposal: marketIntel.salary,
         rationale: `Benchmarked compensation for ${marketIntel.roleKey ?? "this role"} in ${marketIntel.location?.label ?? "your market"}.`,
         confidence: 0.74
+      });
+    }
+    if (!hasValue(state.salaryPeriod) && marketIntel.salaryPeriod) {
+      suggestions.push({
+        id: createSuggestionId(),
+        fieldId: "salaryPeriod",
+        proposal: marketIntel.salaryPeriod,
+        rationale: "Sets expectations for how pay is calculated for this role.",
+        confidence: 0.6
+      });
+    }
+    if (!hasValue(state.currency) && marketIntel.currency) {
+      suggestions.push({
+        id: createSuggestionId(),
+        fieldId: "currency",
+        proposal: marketIntel.currency,
+        rationale: "Matches regional norms surfaced from benchmark data.",
+        confidence: 0.65
       });
     }
     if (!hasValue(state.benefits) && Array.isArray(marketIntel.benefitNorms)) {

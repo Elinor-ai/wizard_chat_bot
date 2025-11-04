@@ -63,8 +63,7 @@ export function WizardSuggestionPanel({
       <div className="flex-1 space-y-3 overflow-y-auto pr-1">
         {messages.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-primary-200 bg-white/60 p-4 text-xs text-primary-500">
-            Provide more context to unlock targeted recommendations for salary,
-            benefits, and interview flow.
+            Complete the fields on this screen and I’ll suggest polished values tailored to each of them.
           </p>
         ) : (
           messages.map((message) => (
@@ -153,7 +152,7 @@ export function WizardSuggestionPanel({
 
               {message.kind === "error" ? (
                 <p className="mt-2 text-xs text-red-500">
-                  Something went wrong. Please retry.
+                  {message.content ?? "Something went wrong. Please retry."}
                 </p>
               ) : null}
             </article>
