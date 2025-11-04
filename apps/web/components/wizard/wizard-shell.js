@@ -297,6 +297,17 @@ const OPTIONAL_STEPS = [
   }
 ];
 
+const OPTIONAL_STEP_BANNERS = {
+  "work-style":
+    "💡 Candidates are 2.8× more likely to apply when they understand your remote policy and team structure",
+  compensation:
+    "💡 Jobs with salary ranges get 72% more applications and reduce back-and-forth by 3 days on average",
+  schedule:
+    "💡 Clarity on hours and flexibility increases match quality by 54% and reduces mis-aligned applications",
+  extras:
+    "💡 Clear application instructions and timeline reduce candidate drop-off by 41% and speed up hiring",
+};
+
 function findFieldDefinition(fieldId) {
   for (const step of [...REQUIRED_STEPS, ...OPTIONAL_STEPS]) {
     const match = step.fields.find((field) => field.id === fieldId);
@@ -422,9 +433,13 @@ export function WizardShell() {
   const [autofilledFields, setAutofilledFields] = useState({});
   const [copilotNextTeaser, setCopilotNextTeaser] = useState("");
   const suggestionDebounceRef = useRef(null);
+  const persistDraftDebounceRef = useRef(null);
   const stateRef = useRef(state);
   const previousFieldValuesRef = useRef({});
   const [customCapsuleActive, setCustomCapsuleActive] = useState({});
+  const [hasSeenUnlock, setHasSeenUnlock] = useState(false);
+  const [unlockAction, setUnlockAction] = useState(null);
+  const [unlockScreenLoggedFor, setUnlockScreenLoggedFor] = useState(null);
 
   const steps = useMemo(
     () =>
@@ -433,6 +448,10 @@ export function WizardShell() {
   );
 
   const currentStep = steps[currentStepIndex];
+  const currentOptionalBanner = useMemo(() => {
+    if (!currentStep) return null;
+    return OPTIONAL_STEP_BANNERS[currentStep.id] ?? null;
+  }, [currentStep]);
 
   useEffect(() => {
     stateRef.current = state;
@@ -508,6 +527,30 @@ export function WizardShell() {
       ? 0
       : Math.round((progressCompletedCount / totalProgressFields) * 100);
 
+  const optionalSectionStatus = useMemo(() => {
+    return OPTIONAL_STEPS.map((step) => {
+      const visibleFields = step.fields.filter(
+        (field) => !getDeep(hiddenFields, field.id)
+      );
+      const completed = visibleFields.every((field) =>
+        isFieldValueProvided(getDeep(state, field.id), field)
+      );
+      return {
+        id: step.id,
+        completed,
+      };
+    });
+  }, [hiddenFields, state]);
+
+  const optionalSectionsCompleted = useMemo(
+    () => optionalSectionStatus.filter((section) => section.completed).length,
+    [optionalSectionStatus]
+  );
+
+  const optionalProgressPct = OPTIONAL_STEPS.length
+    ? Math.round((optionalSectionsCompleted / OPTIONAL_STEPS.length) * 100)
+    : 0;
+
   const capsuleClassName = useCallback(
     (isActive) =>
       clsx(
@@ -519,20 +562,32 @@ export function WizardShell() {
     []
   );
 
-  const showOptionalDecision =
-    !includeOptional && currentStepIndex === REQUIRED_STEPS.length - 1;
-  const isLastStep = currentStepIndex === steps.length - 1;
-  const totalSteps = steps.length;
+  const shouldShowUnlockScreen = useMemo(() => {
+    if (includeOptional || hasSeenUnlock) {
+      return false;
+    }
+    return REQUIRED_FIELD_IDS.every((fieldId) => {
+      const definition = findFieldDefinition(fieldId);
+      return isFieldValueProvided(getDeep(state, fieldId), definition);
+    });
+  }, [hasSeenUnlock, includeOptional, state]);
 
   const persistMutation = useMutation({
-    mutationFn: ({ state: jobState, userId, jobId: jobIdInput, intent, currentStepId }) =>
+    mutationFn: ({ state: jobState, userId, jobId: jobIdInput, intent, currentStepId, wizardMeta }) =>
       WizardApi.persistJob(jobState, {
         userId,
         jobId: jobIdInput,
         intent,
-        currentStepId
+        currentStepId,
+        wizardMeta
       })
   });
+
+  const canRevisitOptional = !includeOptional && hasSeenUnlock;
+  const optionalActionsDisabled =
+    !allRequiredStepsCompleteInState || persistMutation.isPending;
+  const isLastStep = currentStepIndex === steps.length - 1;
+  const totalSteps = steps.length;
 
   const goToStep = useCallback((nextIndex) => {
     setCurrentStepIndex(nextIndex);
@@ -571,6 +626,8 @@ export function WizardShell() {
     );
     if (hasOptionalData) {
       setIncludeOptional(true);
+      setHasSeenUnlock(true);
+      setUnlockAction("continue");
     }
   }, [committedState, hiddenFields, includeOptional]);
 
@@ -863,6 +920,103 @@ export function WizardShell() {
     [currentStep?.id, fetchSuggestionsForStep]
   );
 
+  useEffect(() => {
+    setHiddenFields({});
+    setAutofilledFields({});
+    setCopilotNextTeaser("");
+    if (suggestionDebounceRef.current) {
+      clearTimeout(suggestionDebounceRef.current);
+      suggestionDebounceRef.current = null;
+    }
+    if (persistDraftDebounceRef.current) {
+      clearTimeout(persistDraftDebounceRef.current);
+      persistDraftDebounceRef.current = null;
+    }
+    setAssistantMessages((prev) =>
+      prev.filter(
+        (message) =>
+          !["suggestion", "followUp", "skip", "improved"].includes(
+            message.kind
+          )
+      )
+    );
+  }, [currentStepIndex]);
+
+  const persistCurrentDraft = useCallback(
+    async (intentOverrides = {}, stepId = currentStep?.id) => {
+      if (!user) {
+        announceAuthRequired();
+        return null;
+      }
+
+      const intent = { includeOptional, ...intentOverrides };
+
+      try {
+        const wizardMeta = {
+          required_completed: progressCompletedCount === totalProgressFields,
+          required_completed_count: progressCompletedCount,
+          optional_sections_completed: optionalSectionsCompleted,
+          unlock_screen_seen: hasSeenUnlock,
+          unlock_screen_action: unlockAction,
+        };
+
+        const response = await persistMutation.mutateAsync({
+          state,
+          userId: user.id,
+          jobId,
+          intent,
+          currentStepId: stepId,
+          wizardMeta,
+        });
+
+        if (response?.jobId) {
+          setJobId(response.jobId);
+        }
+
+        setCommittedState(() => deepClone(state));
+
+        return { savedId: response?.jobId ?? jobId, intent };
+      } catch (error) {
+        setAssistantMessages((prev) => [
+          ...prev,
+          {
+            id: `persist-error-${Date.now()}`,
+            role: "assistant",
+            kind: "error",
+            content: error.message ?? "Failed to save the job.",
+          },
+        ]);
+        return null;
+      }
+    },
+    [
+      announceAuthRequired,
+      currentStep?.id,
+      jobId,
+      includeOptional,
+      progressCompletedCount,
+      totalProgressFields,
+      optionalSectionsCompleted,
+      hasSeenUnlock,
+      unlockAction,
+      persistMutation,
+      state,
+      user,
+    ]
+  );
+
+  const scheduleAutosave = useCallback(() => {
+    if (!user) {
+      return;
+    }
+    if (persistDraftDebounceRef.current) {
+      clearTimeout(persistDraftDebounceRef.current);
+    }
+    persistDraftDebounceRef.current = setTimeout(() => {
+      persistCurrentDraft({ event: "autosave" }, currentStep?.id).catch(() => {});
+    }, 1500);
+  }, [currentStep?.id, persistCurrentDraft, user]);
+
   const onFieldChange = useCallback(
     (fieldId, value, options = {}) => {
       const {
@@ -898,76 +1052,30 @@ export function WizardShell() {
       if (!skipRealtime) {
         scheduleRealtimeSuggestions(fieldId, value);
       }
+      scheduleAutosave();
     },
-    [scheduleRealtimeSuggestions]
+    [scheduleAutosave, scheduleRealtimeSuggestions]
   );
 
   useEffect(() => {
-    setHiddenFields({});
-    setAutofilledFields({});
-    setCopilotNextTeaser("");
-    if (suggestionDebounceRef.current) {
-      clearTimeout(suggestionDebounceRef.current);
-      suggestionDebounceRef.current = null;
+    if (!shouldShowUnlockScreen) {
+      return;
     }
-    setAssistantMessages((prev) =>
-      prev.filter(
-        (message) =>
-          !["suggestion", "followUp", "skip", "improved"].includes(
-            message.kind
-          )
-      )
-    );
-  }, [currentStepIndex]);
-
-  const persistCurrentDraft = useCallback(
-    async (intentOverrides = {}, stepId = currentStep?.id) => {
-      if (!user) {
-        announceAuthRequired();
-        return null;
-      }
-
-      const intent = { includeOptional, ...intentOverrides };
-
-      try {
-        const response = await persistMutation.mutateAsync({
-          state,
-          userId: user.id,
-          jobId,
-          intent,
-          currentStepId: stepId,
-        });
-
-        if (response?.jobId) {
-          setJobId(response.jobId);
-        }
-
-        setCommittedState(() => deepClone(state));
-
-        return { savedId: response?.jobId ?? jobId, intent };
-      } catch (error) {
-        setAssistantMessages((prev) => [
-          ...prev,
-          {
-            id: `persist-error-${Date.now()}`,
-            role: "assistant",
-            kind: "error",
-            content: error.message ?? "Failed to save the job.",
-          },
-        ]);
-        return null;
-      }
-    },
-    [
-      announceAuthRequired,
-      currentStep?.id,
-      jobId,
-      includeOptional,
-      persistMutation,
-      state,
-      user,
-    ]
-  );
+    const logKey = jobId ?? "__no_job__";
+    if (unlockScreenLoggedFor === logKey) {
+      return;
+    }
+    setUnlockScreenLoggedFor(logKey);
+    (async () => {
+      await persistCurrentDraft({ event: "unlock_screen_viewed" }, currentStep?.id);
+    })().catch(() => {});
+  }, [
+    currentStep?.id,
+    jobId,
+    persistCurrentDraft,
+    shouldShowUnlockScreen,
+    unlockScreenLoggedFor,
+  ]);
 
   const handleNext = async () => {
     if (currentStepIndex >= steps.length - 1) {
@@ -1072,7 +1180,10 @@ export function WizardShell() {
     });
   };
 
-  const handleAddOptional = async () => {
+  const handleAddOptional = async (
+    intentOverrides = {},
+    { markUnlock = false } = {}
+  ) => {
     if (!allRequiredStepsCompleteInState) {
       setAssistantMessages((prev) => [
         ...prev,
@@ -1088,12 +1199,21 @@ export function WizardShell() {
     }
 
     const stepId = currentStep?.id;
-    const result = await persistCurrentDraft({}, stepId);
+    const result = await persistCurrentDraft(intentOverrides, stepId);
     if (!result) {
       return;
     }
 
-    const nextIntent = { ...result.intent, includeOptional: true };
+    if (markUnlock) {
+      setHasSeenUnlock(true);
+      setUnlockAction("continue");
+    }
+
+    const nextIntent = {
+      ...result.intent,
+      ...intentOverrides,
+      includeOptional: true,
+    };
     setIncludeOptional(true);
     const nextIndex = REQUIRED_STEPS.length;
     const optionalFlowSteps = [...REQUIRED_STEPS, ...OPTIONAL_STEPS];
@@ -1103,6 +1223,29 @@ export function WizardShell() {
       stepId: nextStep?.id ?? "compensation",
       intentOverrides: nextIntent,
       jobIdOverride: result.savedId,
+    });
+  };
+
+  const handleSkipOptional = async () => {
+    if (!allRequiredStepsCompleteInState) {
+      setAssistantMessages((prev) => [
+        ...prev,
+        {
+          id: `optional-skip-block-${Date.now()}`,
+          role: "assistant",
+          kind: "error",
+          content: "Complete all required screens before finishing up.",
+        },
+      ]);
+      return;
+    }
+
+    setHasSeenUnlock(true);
+    setUnlockAction("skip");
+    await handleSubmit({
+      includeOptional: false,
+      optionalCompleted: false,
+      event: "unlock_screen_skip",
     });
   };
 
@@ -1430,6 +1573,9 @@ export function WizardShell() {
                 <span className="font-semibold">
                   {index + 1}. {step.title}
                 </span>
+                {metrics.stepComplete ? (
+                  <span className="ml-1 text-emerald-600">✓</span>
+                ) : null}
               </button>
             );
           })}
@@ -1438,16 +1584,39 @@ export function WizardShell() {
         <div className="space-y-3 rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-neutral-800">
-              {progressCompletedCount} of {totalProgressFields} complete
+              {includeOptional
+                ? "Optional enhancements"
+                : "Required questions completed"}
             </span>
             <span className="text-xs font-medium text-primary-500">
-              {progressPercent}% done
+              {includeOptional
+                ? `${optionalSectionsCompleted} of ${OPTIONAL_STEPS.length} sections complete`
+                : `${progressCompletedCount} of ${totalProgressFields} complete`}
             </span>
           </div>
           <div className="h-1.5 w-full rounded-full bg-neutral-200">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-[#667eea] to-[#764ba2] transition-all duration-200"
-              style={{ width: `${Math.min(100, Math.max(progressPercent, progressCompletedCount > 0 ? 6 : 0))}%` }}
+              className={clsx(
+                "h-full rounded-full transition-all duration-200",
+                includeOptional
+                  ? "bg-gradient-to-r from-[#667eea] to-[#764ba2]"
+                  : "bg-[#4caf50]"
+              )}
+              style={{
+                width: `${Math.min(
+                  100,
+                  Math.max(
+                    includeOptional ? optionalProgressPct : progressPercent,
+                    includeOptional
+                      ? optionalSectionsCompleted > 0
+                        ? 6
+                        : 0
+                      : progressCompletedCount > 0
+                      ? 6
+                      : 0
+                  )
+                )}%`,
+              }}
             />
           </div>
           <p className="text-xs text-neutral-500">
@@ -1465,6 +1634,12 @@ export function WizardShell() {
                 {currentStep.subtitle}
               </p>
             ) : null}
+          </div>
+        ) : null}
+
+        {currentOptionalBanner ? (
+          <div className="rounded-md border-l-4 border-[#ffd54f] bg-[#fff9e6] p-3 text-sm text-[#f57f17]">
+            {currentOptionalBanner}
           </div>
         ) : null}
 
@@ -1691,90 +1866,186 @@ export function WizardShell() {
           })}
         </form>
 
-        {showOptionalDecision ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-200 bg-primary-50/50 p-4 text-sm">
-            <p className="text-neutral-600">
-              Optional questions unlock richer campaigns and smarter screening,
-              but you can skip them and finish whenever you’re ready.
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={handleAddOptional}
-                disabled={
-                  !allRequiredStepsCompleteInState || persistMutation.isPending
-                }
-                className="rounded-full border border-primary-500 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-primary-100 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
+        {shouldShowUnlockScreen ? (
+          <div className="space-y-6 rounded-2xl bg-gradient-to-r from-[#667eea] to-[#764ba2] p-8 text-center text-white shadow-lg shadow-primary-400/30">
+            <div className="flex justify-center">
+              <span
+                role="img"
+                aria-label="Celebration"
+                className="text-6xl leading-none"
               >
-                Add optional questions
-              </button>
+                🎉
+              </span>
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-semibold">
+                Your job post is ready to publish!
+              </h2>
+              <p className="text-sm text-white/80">
+                Take 5 more minutes to answer 4 quick questions and get 3.4× more
+                qualified applications.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {[
+                { value: "3.4×", label: "More applications" },
+                { value: "67%", label: "Higher quality matches" },
+                { value: "~5min", label: "Time to complete" },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-2xl bg-white/95 px-4 py-5 text-center shadow-sm shadow-primary-900/10"
+                >
+                  <p className="text-[36px] font-bold text-[#5b4cde]">
+                    {item.value}
+                  </p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    {item.label}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 text-left">
+              {[
+                {
+                  emoji: "🏢",
+                  title: "Work environment",
+                  description: "Remote/hybrid, team size, collaboration — ~60s",
+                },
+                {
+                  emoji: "💰",
+                  title: "Compensation details",
+                  description: "Salary, benefits, equity — ~90s",
+                },
+                {
+                  emoji: "📅",
+                  title: "Work schedule",
+                  description: "Hours, flexibility, time zone — ~45s",
+                },
+                {
+                  emoji: "✨",
+                  title: "Final polish",
+                  description: "Instructions, timeline, next steps — ~90s",
+                },
+              ].map((item) => (
+                <div
+                  key={item.title}
+                  className="flex gap-4 rounded-2xl bg-white/95 px-4 py-4 text-neutral-700 shadow-sm shadow-primary-900/10"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f2f0ff] text-lg">
+                    {item.emoji}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#4d3edf]">
+                      {item.title}
+                    </p>
+                    <p className="text-xs text-neutral-500">{item.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-sm font-medium text-white/80">
+              💡 Join 73% of top employers who fill roles faster by completing these
+              boosters.
+            </p>
+
+            <div className="flex flex-col items-center gap-3">
               <button
                 type="button"
                 onClick={() =>
-                  handleSubmit({
-                    includeOptional: false,
-                    optionalCompleted: false,
-                  })
+                  handleAddOptional(
+                    { event: "unlock_screen_continue" },
+                    { markUnlock: true }
+                  )
                 }
-                disabled={
-                  !allRequiredStepsCompleteInState || persistMutation.isPending
-                }
-                className="rounded-full bg-primary-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                disabled={optionalActionsDisabled}
+                className="rounded-full bg-[#5b4cde] px-6 py-3 text-base font-semibold text-white transition hover:bg-[#4c3ac9] disabled:cursor-not-allowed disabled:bg-[#9086f0]"
               >
-                Skip optional questions
+                Continue to boost my results →
+              </button>
+              <button
+                type="button"
+                onClick={handleSkipOptional}
+                disabled={optionalActionsDisabled}
+                className="text-sm font-semibold text-white/80 transition hover:text-white disabled:cursor-not-allowed disabled:text-white/40"
+              >
+                I’ll publish now and skip these sections
               </button>
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={handleBack}
-              disabled={currentStepIndex === 0}
-              className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 transition hover:border-primary-500 hover:text-primary-600 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
-            >
-              Back
-            </button>
-            {isLastStep ? (
-              <div className="flex flex-col items-end gap-2">
+          <>
+            {canRevisitOptional ? (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-primary-200 bg-white p-4 text-xs text-primary-600">
+                <span>
+                  {unlockAction === "skip"
+                    ? "Optional boosters are paused. Reopen them whenever you’re ready."
+                    : "Optional boosters unlocked—dive back in anytime."}
+                </span>
                 <button
                   type="button"
-                  onClick={() =>
-                    handleSubmit({
-                      includeOptional: true,
-                      optionalCompleted: true,
-                    })
-                  }
+                  onClick={() => handleAddOptional()}
+                  disabled={optionalActionsDisabled}
+                  className="rounded-full border border-primary-400 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-primary-500 transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
+                >
+                  Open optional screens
+                </button>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleBack}
+                disabled={currentStepIndex === 0}
+                className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 transition hover:border-primary-500 hover:text-primary-600 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
+              >
+                Back
+              </button>
+              {isLastStep ? (
+                <div className="flex flex-col items-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSubmit({
+                        includeOptional: true,
+                        optionalCompleted: true,
+                      })
+                    }
+                    disabled={
+                      persistMutation.isPending ||
+                      (currentStepIndex < REQUIRED_STEPS.length &&
+                        !currentRequiredStepCompleteInState)
+                    }
+                    className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                  >
+                    {persistMutation.isPending
+                      ? "Saving..."
+                      : "Generate my hiring pack"}
+                  </button>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+                    We’ll never publish without your approval.
+                  </p>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleNext}
                   disabled={
-                    persistMutation.isPending ||
-                    (currentStepIndex < REQUIRED_STEPS.length &&
-                      !currentRequiredStepCompleteInState)
+                    (isCurrentStepRequired &&
+                      !currentRequiredStepCompleteInState) ||
+                    persistMutation.isPending
                   }
                   className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
                 >
-                  {persistMutation.isPending
-                    ? "Saving..."
-                    : "Generate my hiring pack"}
+                  Save and continue
                 </button>
-                <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-                  We’ll never publish without your approval.
-                </p>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={
-                  (isCurrentStepRequired &&
-                    !currentRequiredStepCompleteInState) ||
-                  persistMutation.isPending
-                }
-                className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-              >
-                Save and continue
-              </button>
-            )}
-          </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 
