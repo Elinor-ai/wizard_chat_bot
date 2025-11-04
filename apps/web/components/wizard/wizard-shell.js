@@ -48,7 +48,7 @@ function deepClone(value) {
 const WORK_MODEL_OPTIONS = [
   { value: "on_site", label: "On-site" },
   { value: "hybrid", label: "Hybrid" },
-  { value: "remote", label: "Remote" }
+  { value: "remote", label: "Remote" },
 ];
 
 const EMPLOYMENT_TYPE_OPTIONS = [
@@ -57,7 +57,7 @@ const EMPLOYMENT_TYPE_OPTIONS = [
   { value: "contract", label: "Contract" },
   { value: "temporary", label: "Temporary" },
   { value: "seasonal", label: "Seasonal" },
-  { value: "intern", label: "Internship" }
+  { value: "intern", label: "Internship" },
 ];
 
 const EXPERIENCE_LEVEL_OPTIONS = [
@@ -65,7 +65,7 @@ const EXPERIENCE_LEVEL_OPTIONS = [
   { value: "mid", label: "Mid level" },
   { value: "senior", label: "Senior" },
   { value: "lead", label: "Lead" },
-  { value: "executive", label: "Executive" }
+  { value: "executive", label: "Executive" },
 ];
 
 const PROGRESS_TRACKING_FIELDS = [
@@ -74,7 +74,7 @@ const PROGRESS_TRACKING_FIELDS = [
   "location",
   "seniorityLevel",
   "employmentType",
-  "jobDescription"
+  "jobDescription",
 ];
 
 const REQUIRED_FIELD_IDS = [
@@ -83,7 +83,7 @@ const REQUIRED_FIELD_IDS = [
   "location",
   "seniorityLevel",
   "employmentType",
-  "jobDescription"
+  "jobDescription",
 ];
 
 const REQUIRED_STEPS = [
@@ -95,30 +95,34 @@ const REQUIRED_STEPS = [
       {
         id: "roleTitle",
         label: "What role title will candidates recognise?",
-        helper: "Plain titles win more clicks than clever ones, so keep it simple.",
+        helper:
+          "Plain titles win more clicks than clever ones, so keep it simple.",
         required: true,
-        placeholder: "Assistant Manager / Operations Lead / Sushi Chef / Product Designer",
+        placeholder:
+          "Assistant Manager / Operations Lead / Sushi Chef / Product Designer",
         type: "text",
-        maxLength: 120
+        maxLength: 120,
       },
       {
         id: "companyName",
         label: "Who will they be working for?",
-        helper: "Helps us ground the story in your brand from the very first sentence.",
+        helper:
+          "Helps us ground the story in your brand from the very first sentence.",
         required: true,
         placeholder: "Acme Kitchens / Flow Logistics / Studio W",
         type: "text",
-        maxLength: 120
+        maxLength: 120,
       },
       {
         id: "location",
         label: "Where will most of the work happen?",
-        helper: "City, region, or \"Remote\"—whatever helps candidates picture the commute.",
+        helper:
+          'City, region, or "Remote"—whatever helps candidates picture the commute.',
         required: true,
         placeholder: "Austin, TX / Remote across EU / Tel Aviv HQ",
-        type: "text"
-      }
-    ]
+        type: "text",
+      },
+    ],
   },
   {
     id: "role-details",
@@ -128,10 +132,11 @@ const REQUIRED_STEPS = [
       {
         id: "seniorityLevel",
         label: "What level are you hiring for?",
-        helper: "Sets expectations so the right folks lean in—and the wrong ones bow out.",
+        helper:
+          "Sets expectations so the right folks lean in—and the wrong ones bow out.",
         required: true,
         type: "capsule",
-        options: EXPERIENCE_LEVEL_OPTIONS
+        options: EXPERIENCE_LEVEL_OPTIONS,
       },
       {
         id: "employmentType",
@@ -139,9 +144,9 @@ const REQUIRED_STEPS = [
         helper: "Keeps everything compliant and transparent from the start.",
         required: true,
         type: "capsule",
-        options: EMPLOYMENT_TYPE_OPTIONS
-      }
-    ]
+        options: EMPLOYMENT_TYPE_OPTIONS,
+      },
+    ],
   },
   {
     id: "job-story",
@@ -151,15 +156,16 @@ const REQUIRED_STEPS = [
       {
         id: "jobDescription",
         label: "What’s the mission for this hire?",
-        helper: "Write like you’re DM’ing a teammate—why this role matters and what success looks like.",
+        helper:
+          "Write like you’re DM’ing a teammate—why this role matters and what success looks like.",
         required: true,
         placeholder:
           "Lead the evening service, coach a 6-person crew, and keep guest experiences seamless even on peak nights.",
         type: "textarea",
-        rows: 6
-      }
-    ]
-  }
+        rows: 6,
+      },
+    ],
+  },
 ];
 
 const OPTIONAL_STEPS = [
@@ -171,18 +177,20 @@ const OPTIONAL_STEPS = [
       {
         id: "workModel",
         label: "Where will they spend most days?",
-        helper: "Clear expectations on hybrid/remote beats surprises halfway through interviews.",
+        helper:
+          "Clear expectations on hybrid/remote beats surprises halfway through interviews.",
         required: false,
         type: "capsule",
-        options: WORK_MODEL_OPTIONS
+        options: WORK_MODEL_OPTIONS,
       },
       {
         id: "industry",
         label: "Which industry or team best describes this role?",
-        helper: "Optional, but helps us suggest tailored benefits and must-haves.",
+        helper:
+          "Optional, but helps us suggest tailored benefits and must-haves.",
         required: false,
         placeholder: "Hospitality / Logistics / AI SaaS / Healthcare clinic",
-        type: "text"
+        type: "text",
       },
       {
         id: "zipCode",
@@ -191,9 +199,9 @@ const OPTIONAL_STEPS = [
         required: false,
         placeholder: "78701 / 94107 / 100-0001",
         type: "text",
-        maxLength: 12
-      }
-    ]
+        maxLength: 12,
+      },
+    ],
   },
   {
     id: "compensation",
@@ -207,7 +215,7 @@ const OPTIONAL_STEPS = [
         required: false,
         placeholder: "USD / GBP / EUR / ILS",
         type: "text",
-        maxLength: 6
+        maxLength: 6,
       },
       {
         id: "compensation.salary.min",
@@ -216,7 +224,7 @@ const OPTIONAL_STEPS = [
         required: false,
         placeholder: "48000 / 22 (hourly) / 3200 (monthly)",
         type: "number",
-        valueAs: "number"
+        valueAs: "number",
       },
       {
         id: "compensation.salary.max",
@@ -225,9 +233,9 @@ const OPTIONAL_STEPS = [
         required: false,
         placeholder: "56000 / 28 (hourly) / 4200 (monthly)",
         type: "number",
-        valueAs: "number"
-      }
-    ]
+        valueAs: "number",
+      },
+    ],
   },
   {
     id: "schedule",
@@ -242,19 +250,20 @@ const OPTIONAL_STEPS = [
         placeholder: "Monday\nTuesday\nWednesday\nThursday\nFriday",
         type: "textarea",
         rows: 3,
-        asList: true
+        asList: true,
       },
       {
         id: "schedule.shiftTimes",
         label: "Any shift windows worth calling out?",
-        helper: "Ex: 08:00-16:00, 16:00-00:00, or simply “Flexible core hours”.",
+        helper:
+          "Ex: 08:00-16:00, 16:00-00:00, or simply “Flexible core hours”.",
         required: false,
         placeholder: "08:00 - 16:00\n16:00 - 00:00",
         type: "textarea",
         rows: 3,
-        asList: true
-      }
-    ]
+        asList: true,
+      },
+    ],
   },
   {
     id: "extras",
@@ -266,10 +275,11 @@ const OPTIONAL_STEPS = [
         label: "Any benefits or perks worth highlighting?",
         helper: "List each on its own line—treat it like your highlight reel.",
         required: false,
-        placeholder: "Health insurance from day one\nPaid parental leave\nQuarterly team retreats",
+        placeholder:
+          "Health insurance from day one\nPaid parental leave\nQuarterly team retreats",
         type: "textarea",
         rows: 4,
-        asList: true
+        asList: true,
       },
       {
         id: "coreDuties",
@@ -280,7 +290,7 @@ const OPTIONAL_STEPS = [
           "Lead daily standups and unblock the team\nReview and ship features every sprint\nCoach junior teammates through code reviews",
         type: "textarea",
         rows: 4,
-        asList: true
+        asList: true,
       },
       {
         id: "mustHaves",
@@ -291,10 +301,10 @@ const OPTIONAL_STEPS = [
           "Comfortable owning customer-critical projects\nAble to collaborate across time zones\nExperience with modern analytics tooling",
         type: "textarea",
         rows: 3,
-        asList: true
-      }
-    ]
-  }
+        asList: true,
+      },
+    ],
+  },
 ];
 
 const OPTIONAL_STEP_BANNERS = {
@@ -437,6 +447,7 @@ export function WizardShell() {
   const stateRef = useRef(state);
   const previousFieldValuesRef = useRef({});
   const [customCapsuleActive, setCustomCapsuleActive] = useState({});
+  const [hoveredCapsules, setHoveredCapsules] = useState({});
   const [hasSeenUnlock, setHasSeenUnlock] = useState(false);
   const [unlockAction, setUnlockAction] = useState(null);
   const [unlockScreenLoggedFor, setUnlockScreenLoggedFor] = useState(null);
@@ -458,7 +469,8 @@ export function WizardShell() {
   }, [state]);
 
   const allRequiredStepsCompleteInState = useMemo(
-    () => REQUIRED_STEPS.every((step) => isStepComplete(step, state, hiddenFields)),
+    () =>
+      REQUIRED_STEPS.every((step) => isStepComplete(step, state, hiddenFields)),
     [hiddenFields, state]
   );
 
@@ -517,7 +529,9 @@ export function WizardShell() {
   const progressCompletedCount = useMemo(() => {
     return PROGRESS_TRACKING_FIELDS.reduce((count, fieldId) => {
       const def = findFieldDefinition(fieldId);
-      return count + (isFieldValueProvided(getDeep(state, fieldId), def) ? 1 : 0);
+      return (
+        count + (isFieldValueProvided(getDeep(state, fieldId), def) ? 1 : 0)
+      );
     }, 0);
   }, [state]);
 
@@ -551,16 +565,25 @@ export function WizardShell() {
     ? Math.round((optionalSectionsCompleted / OPTIONAL_STEPS.length) * 100)
     : 0;
 
-  const capsuleClassName = useCallback(
-    (isActive) =>
-      clsx(
-        "px-5 py-2.5 rounded-full border-2 text-sm font-semibold transition-all duration-150",
-        isActive
-          ? "border-[#667eea] bg-[#667eea] text-white shadow-sm shadow-[#667eea]/50"
-          : "border-[#e5e7eb] bg-white text-[#374151] hover:border-[#667eea] hover:bg-[#f5f7ff] hover:-translate-y-0.5"
-      ),
-    []
-  );
+  const capsuleClassName = useCallback((isActive, isHovered) => {
+    const baseClasses =
+      "px-5 py-2.5 rounded-full border-2 text-sm font-semibold transition-all duration-150 transform focus:outline-none focus:ring-2 focus:ring-[#667eea]/20 cursor-pointer";
+
+    if (isActive) {
+      return clsx(
+        baseClasses,
+        "-translate-y-0.5 border-[#667eea] bg-[#667eea] text-white shadow-sm shadow-[#667eea]/50"
+      );
+    }
+
+    return clsx(
+      baseClasses,
+      "border-[#e5e7eb] bg-white text-[#374151]",
+      isHovered
+        ? "-translate-y-0.5 border-[#667eea] bg-[#f5f7ff] shadow-sm shadow-[#667eea]/20"
+        : "translate-y-0"
+    );
+  }, []);
 
   const shouldShowUnlockScreen = useMemo(() => {
     if (includeOptional || hasSeenUnlock) {
@@ -573,14 +596,21 @@ export function WizardShell() {
   }, [hasSeenUnlock, includeOptional, state]);
 
   const persistMutation = useMutation({
-    mutationFn: ({ state: jobState, userId, jobId: jobIdInput, intent, currentStepId, wizardMeta }) =>
+    mutationFn: ({
+      state: jobState,
+      userId,
+      jobId: jobIdInput,
+      intent,
+      currentStepId,
+      wizardMeta,
+    }) =>
       WizardApi.persistJob(jobState, {
         userId,
         jobId: jobIdInput,
         intent,
         currentStepId,
-        wizardMeta
-      })
+        wizardMeta,
+      }),
   });
 
   const canRevisitOptional = !includeOptional && hasSeenUnlock;
@@ -649,7 +679,7 @@ export function WizardShell() {
       intentOverrides = {},
       jobIdOverride,
       updatedFieldId,
-      updatedValue
+      updatedValue,
     } = {}) => {
       if (!user || !stepId) {
         if (!user) {
@@ -690,7 +720,10 @@ export function WizardShell() {
 
       const requiredComplete = REQUIRED_FIELD_IDS.every((fieldId) => {
         const fieldDefinition = findFieldDefinition(fieldId);
-        return isFieldValueProvided(getDeep(workingState, fieldId), fieldDefinition);
+        return isFieldValueProvided(
+          getDeep(workingState, fieldId),
+          fieldDefinition
+        );
       });
 
       if (!requiredComplete) {
@@ -744,7 +777,10 @@ export function WizardShell() {
           if (getDeep(hiddenMap, candidate.fieldId)) return;
 
           const fieldDefinition = findFieldDefinition(candidate.fieldId);
-          const normalized = normalizeValueForField(fieldDefinition, candidate.value);
+          const normalized = normalizeValueForField(
+            fieldDefinition,
+            candidate.value
+          );
 
           if (normalized !== undefined) {
             freshSuggestions.push({
@@ -868,7 +904,7 @@ export function WizardShell() {
                 role: "assistant",
                 kind: "skip",
                 content: `I’ve removed “${friendlyLabel}” — ${explanation}`,
-                meta: { ...item, friendlyLabel }
+                meta: { ...item, friendlyLabel },
               };
             }
           );
@@ -898,11 +934,12 @@ export function WizardShell() {
     [announceAuthRequired, currentStep?.id, jobId, includeOptional, steps, user]
   );
 
-
   const scheduleRealtimeSuggestions = useCallback(
     (fieldId, value) => {
       if (!currentStep?.id) return;
-      const isOptionalStep = OPTIONAL_STEPS.some((step) => step.id === currentStep.id);
+      const isOptionalStep = OPTIONAL_STEPS.some(
+        (step) => step.id === currentStep.id
+      );
       if (!isOptionalStep) {
         return;
       }
@@ -935,9 +972,7 @@ export function WizardShell() {
     setAssistantMessages((prev) =>
       prev.filter(
         (message) =>
-          !["suggestion", "followUp", "skip", "improved"].includes(
-            message.kind
-          )
+          !["suggestion", "followUp", "skip", "improved"].includes(message.kind)
       )
     );
   }, [currentStepIndex]);
@@ -1013,16 +1048,15 @@ export function WizardShell() {
       clearTimeout(persistDraftDebounceRef.current);
     }
     persistDraftDebounceRef.current = setTimeout(() => {
-      persistCurrentDraft({ event: "autosave" }, currentStep?.id).catch(() => {});
+      persistCurrentDraft({ event: "autosave" }, currentStep?.id).catch(
+        () => {}
+      );
     }, 1500);
   }, [currentStep?.id, persistCurrentDraft, user]);
 
   const onFieldChange = useCallback(
     (fieldId, value, options = {}) => {
-      const {
-        preserveSuggestionMeta = false,
-        skipRealtime = false,
-      } = options;
+      const { preserveSuggestionMeta = false, skipRealtime = false } = options;
       setState((prev) => {
         const next = deepClone(prev);
         if (value === "" || value === null || value === undefined) {
@@ -1067,7 +1101,10 @@ export function WizardShell() {
     }
     setUnlockScreenLoggedFor(logKey);
     (async () => {
-      await persistCurrentDraft({ event: "unlock_screen_viewed" }, currentStep?.id);
+      await persistCurrentDraft(
+        { event: "unlock_screen_viewed" },
+        currentStep?.id
+      );
     })().catch(() => {});
   }, [
     currentStep?.id,
@@ -1256,63 +1293,62 @@ export function WizardShell() {
         return;
       }
 
-    const fieldDef = findFieldDefinition(suggestion.fieldId);
-    const proposal =
-      suggestion.value !== undefined ? suggestion.value : suggestion.proposal;
-    const value = normalizeValueForField(fieldDef, proposal);
+      const fieldDef = findFieldDefinition(suggestion.fieldId);
+      const proposal =
+        suggestion.value !== undefined ? suggestion.value : suggestion.proposal;
+      const value = normalizeValueForField(fieldDef, proposal);
 
-    const currentValue = getDeep(stateRef.current ?? {}, suggestion.fieldId);
-    setDeep(previousFieldValuesRef.current, suggestion.fieldId, {
-      __stored: true,
-      value: currentValue,
-    });
-
-    onFieldChange(suggestion.fieldId, value, {
-      preserveSuggestionMeta: true,
-      skipRealtime: true,
-    });
-
-    setAutofilledFields((prev) => {
-      const next = deepClone(prev);
-      const existing = getDeep(next, suggestion.fieldId) ?? {};
-      setDeep(next, suggestion.fieldId, {
-        ...existing,
-        accepted: true,
-        value,
-        rationale:
-          suggestion.rationale ??
-          existing.rationale ??
-          "Suggested so candidates understand the opportunity immediately.",
-        confidence:
-          suggestion.confidence ?? existing.confidence ?? 0.5,
-        appliedAt: Date.now(),
+      const currentValue = getDeep(stateRef.current ?? {}, suggestion.fieldId);
+      setDeep(previousFieldValuesRef.current, suggestion.fieldId, {
+        __stored: true,
+        value: currentValue,
       });
-      return next;
-    });
 
-    try {
-      await WizardApi.mergeSuggestion(
-        {
-          jobId,
-          fieldId: suggestion.fieldId,
-          value,
-        },
-        { userId: user.id }
-      );
-      setCommittedState((prev) => {
+      onFieldChange(suggestion.fieldId, value, {
+        preserveSuggestionMeta: true,
+        skipRealtime: true,
+      });
+
+      setAutofilledFields((prev) => {
         const next = deepClone(prev);
-        if (value === undefined) {
-          setDeep(next, suggestion.fieldId, undefined);
-        } else {
-          setDeep(next, suggestion.fieldId, value);
-        }
+        const existing = getDeep(next, suggestion.fieldId) ?? {};
+        setDeep(next, suggestion.fieldId, {
+          ...existing,
+          accepted: true,
+          value,
+          rationale:
+            suggestion.rationale ??
+            existing.rationale ??
+            "Suggested so candidates understand the opportunity immediately.",
+          confidence: suggestion.confidence ?? existing.confidence ?? 0.5,
+          appliedAt: Date.now(),
+        });
         return next;
       });
-      await fetchSuggestionsForStep({
-        stepId: currentStep?.id,
-        updatedFieldId: suggestion.fieldId,
-        updatedValue: value,
-      });
+
+      try {
+        await WizardApi.mergeSuggestion(
+          {
+            jobId,
+            fieldId: suggestion.fieldId,
+            value,
+          },
+          { userId: user.id }
+        );
+        setCommittedState((prev) => {
+          const next = deepClone(prev);
+          if (value === undefined) {
+            setDeep(next, suggestion.fieldId, undefined);
+          } else {
+            setDeep(next, suggestion.fieldId, value);
+          }
+          return next;
+        });
+        await fetchSuggestionsForStep({
+          stepId: currentStep?.id,
+          updatedFieldId: suggestion.fieldId,
+          updatedValue: value,
+        });
       } catch (error) {
         const storedOriginalValue = getDeep(
           previousFieldValuesRef.current,
@@ -1354,7 +1390,14 @@ export function WizardShell() {
         ]);
       }
     },
-    [announceAuthRequired, committedState, jobId, fetchSuggestionsForStep, onFieldChange, user]
+    [
+      announceAuthRequired,
+      committedState,
+      jobId,
+      fetchSuggestionsForStep,
+      onFieldChange,
+      user,
+    ]
   );
 
   const handleSuggestionToggle = useCallback(
@@ -1612,15 +1655,16 @@ export function WizardShell() {
                         ? 6
                         : 0
                       : progressCompletedCount > 0
-                      ? 6
-                      : 0
+                        ? 6
+                        : 0
                   )
                 )}%`,
               }}
             />
           </div>
           <p className="text-xs text-neutral-500">
-            We autosave as you go. Skip anything that doesn’t apply—you can always come back.
+            We autosave as you go. Skip anything that doesn’t apply—you can
+            always come back.
           </p>
         </div>
 
@@ -1630,9 +1674,7 @@ export function WizardShell() {
               {currentStep.title}
             </h1>
             {currentStep.subtitle ? (
-              <p className="text-sm text-neutral-500">
-                {currentStep.subtitle}
-              </p>
+              <p className="text-sm text-neutral-500">{currentStep.subtitle}</p>
             ) : null}
           </div>
         ) : null}
@@ -1662,8 +1704,8 @@ export function WizardShell() {
                 effectiveValue === true
                   ? "true"
                   : effectiveValue === false
-                  ? "false"
-                  : "";
+                    ? "false"
+                    : "";
             } else if (field.type === "number" || field.valueAs === "number") {
               inputValue = effectiveValue ?? "";
             } else if (isListField) {
@@ -1722,6 +1764,14 @@ export function WizardShell() {
               "rounded-xl border border-neutral-200 px-4 py-3 text-sm text-neutral-700 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100",
               isSuggestedValue ? "border-primary-300 bg-primary-50" : ""
             );
+            const hoveredValue = hoveredCapsules[field.id];
+            const customOptionActive =
+              Boolean(customCapsuleActive[field.id]) ||
+              (effectiveValue !== undefined &&
+                effectiveValue !== null &&
+                !(field.options ?? []).some(
+                  (option) => option.value === effectiveValue
+                ));
 
             return (
               <label
@@ -1756,18 +1806,35 @@ export function WizardShell() {
                       {(field.options ?? []).map((option) => {
                         const optionValue = option.value;
                         const isActive = effectiveValue === optionValue;
+                        const isHovered = hoveredValue === optionValue;
                         return (
                           <button
                             type="button"
                             key={optionValue}
-                            className={capsuleClassName(isActive)}
+                            className={capsuleClassName(isActive, isHovered)}
                             onClick={() => {
                               setCustomCapsuleActive((prev) => ({
                                 ...prev,
-                                [field.id]: false
+                                [field.id]: false,
                               }));
                               onFieldChange(field.id, optionValue);
                             }}
+                            onMouseEnter={() =>
+                              setHoveredCapsules((prev) => ({
+                                ...prev,
+                                [field.id]: optionValue,
+                              }))
+                            }
+                            onMouseLeave={() =>
+                              setHoveredCapsules((prev) => {
+                                if (prev[field.id] !== optionValue) {
+                                  return prev;
+                                }
+                                const next = { ...prev };
+                                delete next[field.id];
+                                return next;
+                              })
+                            }
                           >
                             {option.label}
                           </button>
@@ -1777,16 +1844,13 @@ export function WizardShell() {
                         <button
                           type="button"
                           className={capsuleClassName(
-                            Boolean(customCapsuleActive[field.id]) ||
-                              (effectiveValue &&
-                                !(field.options ?? []).some(
-                                  (option) => option.value === effectiveValue
-                                ))
+                            customOptionActive,
+                            hoveredValue === "__custom__"
                           )}
                           onClick={() => {
                             setCustomCapsuleActive((prev) => ({
                               ...prev,
-                              [field.id]: true
+                              [field.id]: true,
                             }));
                             if (
                               (field.options ?? []).some(
@@ -1796,6 +1860,22 @@ export function WizardShell() {
                               onFieldChange(field.id, "");
                             }
                           }}
+                          onMouseEnter={() =>
+                            setHoveredCapsules((prev) => ({
+                              ...prev,
+                              [field.id]: "__custom__",
+                            }))
+                          }
+                          onMouseLeave={() =>
+                            setHoveredCapsules((prev) => {
+                              if (prev[field.id] !== "__custom__") {
+                                return prev;
+                              }
+                              const next = { ...prev };
+                              delete next[field.id];
+                              return next;
+                            })
+                          }
                         >
                           {field.customLabel ?? "Other"}
                         </button>
@@ -1882,8 +1962,8 @@ export function WizardShell() {
                 Your job post is ready to publish!
               </h2>
               <p className="text-sm text-white/80">
-                Take 5 more minutes to answer 4 quick questions and get 3.4× more
-                qualified applications.
+                Take 5 more minutes to answer 4 quick questions and get 3.4×
+                more qualified applications.
               </p>
             </div>
 
@@ -1941,15 +2021,17 @@ export function WizardShell() {
                     <p className="text-sm font-semibold text-[#4d3edf]">
                       {item.title}
                     </p>
-                    <p className="text-xs text-neutral-500">{item.description}</p>
+                    <p className="text-xs text-neutral-500">
+                      {item.description}
+                    </p>
                   </div>
                 </div>
               ))}
             </div>
 
             <p className="text-sm font-medium text-white/80">
-              💡 Join 73% of top employers who fill roles faster by completing these
-              boosters.
+              💡 Join 73% of top employers who fill roles faster by completing
+              these boosters.
             </p>
 
             <div className="flex flex-col items-center gap-3">
