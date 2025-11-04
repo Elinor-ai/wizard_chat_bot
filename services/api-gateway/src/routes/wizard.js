@@ -22,8 +22,9 @@ const ALLOWED_INTAKE_KEYS = [
   "coreDuties",
   "mustHaves",
   "benefits",
-  "schedule",
-  "compensation"
+  "salary",
+  "salaryPeriod",
+  "currency"
 ];
 
 const REQUIRED_FIELD_PATHS = [
@@ -50,7 +51,8 @@ const suggestionsRequestSchema = z.object({
   updatedFieldId: z.string().optional(),
   updatedFieldValue: z.unknown().optional(),
   emptyFieldIds: z.array(z.string()).optional(),
-  upcomingFieldIds: z.array(z.string()).optional()
+  upcomingFieldIds: z.array(z.string()).optional(),
+  visibleFieldIds: z.array(z.string()).optional()
 });
 
 const mergeRequestSchema = z.object({
@@ -162,17 +164,14 @@ function createBaseJob({ jobId, userId, now }) {
     roleTitle: "",
     companyName: "",
     location: "",
-    zipCode: undefined,
-    industry: undefined,
-    seniorityLevel: "entry",
-    employmentType: "full_time",
-    workModel: undefined,
     jobDescription: "",
     coreDuties: [],
     mustHaves: [],
     benefits: [],
-    schedule: { days: [], shiftTimes: [] },
-    compensation: {},
+    salary: "",
+    salaryPeriod: "",
+    currency: "",
+    confirmed: {},
     createdAt: now,
     updatedAt: now,
     archivedAt: null
@@ -261,11 +260,9 @@ function applyRequiredProgress(job, progress, now) {
     valueProvidedAt(nextJob, "workModel") ||
     valueProvidedAt(nextJob, "industry") ||
     valueProvidedAt(nextJob, "zipCode") ||
-    valueProvidedAt(nextJob, "compensation.currency") ||
-    valueProvidedAt(nextJob, "compensation.salary.min") ||
-    valueProvidedAt(nextJob, "compensation.salary.max") ||
-    valueProvidedAt(nextJob, "schedule.days") ||
-    valueProvidedAt(nextJob, "schedule.shiftTimes") ||
+    valueProvidedAt(nextJob, "currency") ||
+    valueProvidedAt(nextJob, "salary") ||
+    valueProvidedAt(nextJob, "salaryPeriod") ||
     valueProvidedAt(nextJob, "benefits") ||
     valueProvidedAt(nextJob, "coreDuties") ||
     valueProvidedAt(nextJob, "mustHaves");
@@ -294,93 +291,6 @@ function applyRequiredProgress(job, progress, now) {
   nextJob.stateMachine = machine;
   nextJob.status = deriveJobStatusFromState(machine.currentState);
   return nextJob;
-}
-
-function parseLocation(job = {}) {
-  const locationRaw = typeof job.location === "string" ? job.location.trim() : "";
-  const zip = typeof job.zipCode === "string" ? job.zipCode.trim() : "";
-  const workModel = job.workModel ?? "on_site";
-
-  const label =
-    locationRaw.length > 0
-      ? locationRaw
-      : workModel === "remote"
-      ? "Remote"
-      : "On-site";
-
-  return {
-    label,
-    zip,
-    workModel
-  };
-}
-
-function normaliseKey(value, fallback = "general") {
-  if (!value) return fallback;
-  return String(value).trim().toLowerCase() || fallback;
-}
-
-function buildMarketIntelligence(job = {}) {
-  const roleKey = normaliseKey(job.roleTitle);
-  const industryKey = normaliseKey(job.industry);
-
-  const LOOKUP = {
-    general: {
-      salary: { min: 38000, max: 52000, currency: "USD" },
-      benefits: ["Health insurance", "Paid time off", "Learning stipend"],
-      duties: [
-        "Own the daily rhythm so everything runs on-time.",
-        "Coach teammates through tricky situations with calm confidence.",
-        "Spot and surface improvements that keep customers thrilled."
-      ],
-      mustHaves: [
-        "Reliable communicator who follows through without micromanagement.",
-        "Comfortable working with modern productivity tools.",
-        "Able to adapt quickly when priorities shift."
-      ]
-    },
-    hospitality: {
-      salary: { min: 24000, max: 32000, currency: "USD" },
-      benefits: ["Staff meals", "Tip pooling", "Flexible scheduling"],
-      duties: [
-        "Lead the floor with energy and attention to detail.",
-        "Train new teammates on service standards and safety rituals.",
-        "Anticipate guest needs before they even ask."
-      ],
-      mustHaves: [
-        "Warm, people-first style that turns guests into regulars.",
-        "Experience juggling multiple tables or stations calmly.",
-        "Food safety or hospitality certification preferred."
-      ]
-    },
-    engineering: {
-      salary: { min: 95000, max: 140000, currency: "USD" },
-      benefits: ["Stock options", "Flexible remote culture", "Wellness budget"],
-      duties: [
-        "Design and ship features that improve the customer experience.",
-        "Collaborate with product and design on clear technical handoffs.",
-        "Review code and mentor teammates to raise the engineering bar."
-      ],
-      mustHaves: [
-        "3+ years building production-grade applications.",
-        "Comfortable owning features end-to-end in an agile environment.",
-        "Experience with cloud-native tooling and CI/CD flows."
-      ]
-    }
-  };
-
-  const profile =
-    LOOKUP[roleKey] ??
-    LOOKUP[industryKey] ??
-    LOOKUP.general;
-
-  return {
-    roleKey,
-    salary: profile.salary,
-    benefits: profile.benefits,
-    duties: profile.duties,
-    mustHaves: profile.mustHaves
-  };
 }
 
 function normalizeStateMachine(rawState, now) {
@@ -416,193 +326,112 @@ function normalizeStateMachine(rawState, now) {
 }
 
 
-function collectVariants(finalResponse, now) {
-  const variantsByField = new Map();
-
-  const addVariant = (fieldId, value, defaults = {}) => {
-    if (!fieldId || value === undefined) {
-      return;
-    }
-    const bucket = variantsByField.get(fieldId) ?? [];
-    bucket.push({
-      id: defaults.id ?? `sugg_${uuid()}`,
-      value,
-      confidence:
-        typeof defaults.confidence === "number" && defaults.confidence >= 0 && defaults.confidence <= 1
-          ? defaults.confidence
-          : 0.5,
-      rationale: defaults.rationale,
-      source: defaults.source
-    });
-    variantsByField.set(fieldId, bucket);
-  };
-
-  const improved = finalResponse.improved_value ?? finalResponse.improvedValue;
-  if (improved?.fieldId && improved.value !== undefined) {
-    addVariant(improved.fieldId, improved.value, {
-      id: improved.id ?? `improved_${uuid()}`,
-      confidence: improved.confidence ?? 0.6,
-      rationale: improved.rationale,
-      source: improved.source ?? "copilot"
-    });
-  }
-
-  const autofillCandidates = Array.isArray(finalResponse.autofill_candidates)
-    ? finalResponse.autofill_candidates
-    : Array.isArray(finalResponse.autofillCandidates)
-    ? finalResponse.autofillCandidates
-    : [];
-  for (const candidate of autofillCandidates) {
-    if (!candidate?.fieldId) continue;
-    addVariant(candidate.fieldId, candidate.value, {
-      id: candidate.id ?? `autofill_${uuid()}`,
-      confidence: candidate.confidence ?? 0.5,
-      rationale: candidate.rationale,
-      source: candidate.source ?? "copilot"
-    });
-  }
-
-  const legacySuggestions = Array.isArray(finalResponse.suggestions)
-    ? finalResponse.suggestions
-    : [];
-  for (const suggestion of legacySuggestions) {
-    if (!suggestion?.fieldId) continue;
-    const value =
-      suggestion.value ?? suggestion.proposal ?? suggestion.text ?? suggestion;
-    addVariant(suggestion.fieldId, value, {
-      id: suggestion.id ?? `legacy_${uuid()}`,
-      confidence: suggestion.confidence ?? 0.5,
-      rationale: suggestion.rationale,
-      source: suggestion.source ?? "legacy"
-    });
-  }
-
-  return variantsByField;
+function mapCandidatesByField(candidates = []) {
+  const map = {};
+  candidates.forEach((candidate) => {
+    map[candidate.fieldId] = candidate;
+  });
+  return map;
 }
 
-function buildSuggestionTree(variantsByField, now) {
-  const tree = {};
-
-  for (const [fieldId, variants] of variantsByField.entries()) {
-    if (!fieldId || !Array.isArray(variants) || variants.length === 0) continue;
-
-    const parts = fieldId.split(".");
-    let cursor = tree;
-    for (let index = 0; index < parts.length - 1; index += 1) {
-      const segment = parts[index];
-      if (!isPlainObject(cursor[segment])) {
-        cursor[segment] = {};
-      }
-      cursor = cursor[segment];
-    }
-    const leafKey = parts[parts.length - 1];
-    cursor[leafKey] = {
-      variants: variants.map((variant) => ({
-        id: variant.id ?? `sugg_${uuid()}`,
-        value: variant.value,
-        confidence:
-          typeof variant.confidence === "number"
-            ? Math.min(Math.max(variant.confidence, 0), 1)
-            : 0.5,
-        rationale: variant.rationale,
-        source: variant.source
-      })),
-      updatedAt: now
-    };
+async function loadSuggestionDocument(firestore, jobId) {
+  const existing = await firestore.getDocument(SUGGESTION_COLLECTION, jobId);
+  if (!existing) return null;
+  const parsed = JobSuggestionSchema.safeParse(existing);
+  if (!parsed.success) {
+    return null;
   }
-
-  return tree;
+  return parsed.data;
 }
 
-async function persistJobSuggestions({
+async function overwriteSuggestionDocument({
   firestore,
-  jobId,
   logger,
-  finalResponse,
+  jobId,
+  candidates,
+  provider,
+  model,
+  metadata,
   now
 }) {
-  const variantsByField = collectVariants(finalResponse, now);
-  const fields = buildSuggestionTree(variantsByField, now);
-
-  const skipRaw = [
-    ...(Array.isArray(finalResponse.skip) ? finalResponse.skip : []),
-    ...(Array.isArray(finalResponse.irrelevant_fields) ? finalResponse.irrelevant_fields : [])
-  ];
-  const skip = skipRaw
-    .map((entry) => normaliseIrrelevantField(entry))
-    .filter(Boolean);
-
-  const followUpRaw = Array.isArray(finalResponse.followUpToUser)
-    ? finalResponse.followUpToUser
-    : Array.isArray(finalResponse.follow_up_to_user)
-    ? finalResponse.follow_up_to_user
-    : [];
-  const followUpToUser = ensureUniqueMessages(followUpRaw);
-
+  const telemetry = metadata && Object.keys(metadata).length > 0
+    ? {
+        promptTokens:
+          metadata.promptTokens ?? metadata.promptTokenCount ?? null,
+        candidateTokens:
+          metadata.candidateTokens ?? metadata.candidatesTokenCount ?? null,
+        totalTokens:
+          metadata.totalTokens ?? metadata.totalTokenCount ?? null,
+        finishReason: metadata.finishReason ?? null
+      }
+    : undefined;
   const payload = JobSuggestionSchema.parse({
     id: jobId,
     jobId,
-    schema_version: "2",
-    fields,
-    followUpToUser,
-    skip,
-    nextStepTeaser:
-      finalResponse.next_step_teaser ??
-      finalResponse.nextStepTeaser ??
-      undefined,
+    schema_version: "3",
+    candidates: mapCandidatesByField(candidates),
+    provider,
+    model,
+    metadata: telemetry,
     updatedAt: now
   });
 
   await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
   logger.info(
-    { jobId, suggestions: variantsByField.size, skip: skip.length },
+    { jobId, suggestions: candidates.length, provider, model },
     "Persisted LLM suggestions"
   );
+
+  return payload;
 }
 
-function clearSuggestionField(tree, fieldPath) {
-  if (!fieldPath || !isPlainObject(tree)) {
-    return false;
-  }
+async function persistSuggestionFailure({
+  firestore,
+  logger,
+  jobId,
+  reason,
+  rawPreview,
+  error,
+  now
+}) {
+  const existing = await loadSuggestionDocument(firestore, jobId);
 
-  const parts = fieldPath.split(".");
-  const stack = [];
-  let cursor = tree;
+  const payload = JobSuggestionSchema.parse({
+    id: jobId,
+    jobId,
+    schema_version: "3",
+    candidates: existing?.candidates ?? {},
+    provider: existing?.provider,
+    model: existing?.model,
+    metadata: existing?.metadata,
+    lastFailure: {
+      reason,
+      rawPreview,
+      error,
+      occurredAt: now
+    },
+    updatedAt: existing?.updatedAt ?? now
+  });
 
-  for (const part of parts) {
-    if (!isPlainObject(cursor)) {
-      return false;
-    }
-    stack.push({ parent: cursor, key: part });
-    cursor = cursor[part];
-    if (cursor === undefined) {
-      return false;
-    }
-  }
+  await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
+  logger.warn({ jobId, reason }, "Persisted suggestion failure");
+  return payload;
+}
 
-  const last = stack.pop();
-  if (!last) {
-    return false;
+function selectSuggestionsForFields(candidateMap = {}, fieldIds = []) {
+  if (!Array.isArray(fieldIds) || fieldIds.length === 0) {
+    return Object.values(candidateMap ?? {});
   }
-  const { parent, key } = last;
-  if (!isPlainObject(parent) || parent[key] === undefined) {
-    return false;
-  }
-
-  delete parent[key];
-
-  for (let index = stack.length - 1; index >= 0; index -= 1) {
-    const { parent: ancestor, key: ancestorKey } = stack[index];
-    if (!isPlainObject(ancestor[ancestorKey])) {
-      break;
-    }
-    if (Object.keys(ancestor[ancestorKey]).length === 0) {
-      delete ancestor[ancestorKey];
-    } else {
-      break;
-    }
-  }
-  return true;
+  return fieldIds
+    .map((fieldId) => candidateMap?.[fieldId])
+    .filter(Boolean)
+    .map((candidate) => ({
+      fieldId: candidate.fieldId,
+      value: candidate.value,
+      rationale: candidate.rationale ?? "",
+      confidence: candidate.confidence ?? undefined,
+      source: candidate.source ?? "expert-assistant"
+    }));
 }
 
 async function acknowledgeSuggestionField({
@@ -612,25 +441,23 @@ async function acknowledgeSuggestionField({
   logger,
   now
 }) {
-  const existing = await firestore.getDocument(SUGGESTION_COLLECTION, jobId);
-  if (!existing || !isPlainObject(existing.fields)) {
+  const existing = await loadSuggestionDocument(firestore, jobId);
+  if (!existing || !existing.candidates?.[fieldId]) {
     return;
   }
 
-  const fieldsClone = deepClone(existing.fields ?? {});
-  const removed = clearSuggestionField(fieldsClone, fieldId);
-  if (!removed) {
-    return;
-  }
+  const candidateMap = { ...existing.candidates };
+  delete candidateMap[fieldId];
 
   const payload = JobSuggestionSchema.parse({
     id: jobId,
     jobId,
-    schema_version: existing.schema_version ?? "2",
-    fields: fieldsClone,
-    followUpToUser: Array.isArray(existing.followUpToUser) ? existing.followUpToUser : [],
-    skip: Array.isArray(existing.skip) ? existing.skip : [],
-    nextStepTeaser: existing.nextStepTeaser,
+    schema_version: "3",
+    candidates: candidateMap,
+    provider: existing.provider,
+    model: existing.model,
+    metadata: existing.metadata,
+    lastFailure: existing.lastFailure,
     updatedAt: now
   });
 
@@ -651,522 +478,6 @@ function valueProvided(value) {
 function valueProvidedAt(state, path) {
   return valueProvided(getDeep(state, path));
 }
-
-function normaliseTextSpacing(value) {
-  return value
-    .split("\n")
-    .map((line) => line.trim().replace(/\s+/g, " "))
-    .join("\n")
-    .replace(/\s+\n/g, "\n")
-    .trim();
-}
-
-const STEP_TEASERS = {
-  "role-basics": "Next we’ll confirm the level and format so candidates know if it’s a match.",
-  "role-details": "Great. Now let’s bring the role to life with a tight description.",
-  "job-story": "Ready for extras? We’ll sprinkle in comp, schedules, and selling points.",
-  "work-style": "Perfect. Want to clarify location details or how the role operates day-to-day?",
-  compensation: "Dial in the offer so the right people lean in.",
-  schedule: "Set expectations about the rhythm of the workday.",
-  extras: "Almost done—let’s capture finishing touches that help you stand out."
-};
-
-function buildNextStepTeaser(stepId) {
-  return STEP_TEASERS[stepId] ?? "Keep going—each answer trains your hiring copilot to do more for you.";
-}
-
-function capitaliseFirst(input) {
-  if (!input) return input;
-  return input.charAt(0).toUpperCase() + input.slice(1);
-}
-
-function ensureSentenceEnding(text) {
-  if (!text) return text;
-  if (text.length < 12) return text;
-  if (/[.!?…]$/.test(text.trim())) {
-    return text;
-  }
-  return `${text}.`;
-}
-
-function polishFreeformText(rawValue) {
-  if (typeof rawValue !== "string") {
-    return null;
-  }
-  const trimmed = rawValue.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const normalised = normaliseTextSpacing(trimmed);
-  const hasMultipleLines = normalised.includes("\n");
-
-  if (hasMultipleLines) {
-    const polishedLines = normalised
-      .split("\n")
-      .map((line) => ensureSentenceEnding(capitaliseFirst(line.trim())));
-    const rebuilt = polishedLines.join("\n");
-    return rebuilt !== rawValue ? rebuilt : null;
-  }
-
-  const capitalised = capitaliseFirst(normalised);
-  const final = ensureSentenceEnding(capitalised);
-  return final !== rawValue ? final : null;
-}
-
-function buildImprovedValueCandidate({ fieldId, rawValue }) {
-  if (!fieldId || rawValue === undefined || rawValue === null) {
-    return null;
-  }
-  const polished = polishFreeformText(rawValue);
-  if (!polished) {
-    return null;
-  }
-  return {
-    fieldId,
-    value: polished,
-    rationale: "Smoothed the wording so candidates know exactly what you mean.",
-    confidence: 0.55,
-    source: "fallback",
-    mode: "rewrite"
-  };
-}
-
-function normaliseAutofillCandidate(candidate, defaults = {}) {
-  if (!candidate || typeof candidate !== "object") {
-    return null;
-  }
-  const fieldId = candidate.fieldId ?? candidate.field_id ?? defaults.fieldId;
-  if (!fieldId || typeof fieldId !== "string") {
-    return null;
-  }
-  const value =
-    candidate.value !== undefined
-      ? candidate.value
-      : candidate.proposal !== undefined
-      ? candidate.proposal
-      : defaults.value;
-
-  if (value === undefined) {
-    return null;
-  }
-
-  const confidence =
-    typeof candidate.confidence === "number"
-      ? candidate.confidence
-      : typeof defaults.confidence === "number"
-      ? defaults.confidence
-      : 0.5;
-
-  const rationale = candidate.rationale ?? defaults.rationale ?? "";
-  const source = candidate.source ?? defaults.source ?? "fallback";
-  const appliesToFutureStep =
-    typeof candidate.appliesToFutureStep === "boolean"
-      ? candidate.appliesToFutureStep
-      : defaults.appliesToFutureStep ?? false;
-
-  return {
-    fieldId,
-    value,
-    confidence,
-    rationale,
-    source,
-    appliesToFutureStep
-  };
-}
-
-function normaliseImprovedValue(candidate, defaults = {}) {
-  if (!candidate || typeof candidate !== "object") {
-    return null;
-  }
-  const fieldId = candidate.fieldId ?? candidate.field_id ?? defaults.fieldId;
-  if (!fieldId || typeof fieldId !== "string") {
-    return null;
-  }
-  const value =
-    candidate.value !== undefined
-      ? candidate.value
-      : candidate.proposal !== undefined
-      ? candidate.proposal
-      : defaults.value;
-  if (value === undefined || value === null || value === "") {
-    return null;
-  }
-  const confidence =
-    typeof candidate.confidence === "number"
-      ? candidate.confidence
-      : typeof defaults.confidence === "number"
-      ? defaults.confidence
-      : 0.6;
-  const rationale = candidate.rationale ?? defaults.rationale ?? "Polished for clarity.";
-  const source = candidate.source ?? defaults.source ?? "copilot";
-  const mode = candidate.mode ?? defaults.mode ?? "rewrite";
-
-  return {
-    fieldId,
-    value,
-    confidence,
-    rationale,
-    source,
-    mode
-  };
-}
-
-function normaliseIrrelevantField(entry, defaults = {}) {
-  if (!entry || typeof entry !== "object") {
-    return null;
-  }
-  const fieldId = entry.fieldId ?? entry.field_id ?? defaults.fieldId;
-  if (!fieldId || typeof fieldId !== "string") {
-    return null;
-  }
-  const reason =
-    entry.reason ??
-    defaults.reason ??
-    "Not relevant based on the information already provided.";
-
-  return { fieldId, reason };
-}
-
-function mergeCandidateArrays(base = [], incoming = []) {
-  const result = Array.isArray(base) ? base.slice() : [];
-  if (!Array.isArray(incoming)) {
-    return result;
-  }
-  for (const candidate of incoming) {
-    if (!candidate) continue;
-    const index = result.findIndex((item) => item.fieldId === candidate.fieldId);
-    if (index >= 0) {
-      result[index] = { ...result[index], ...candidate };
-    } else {
-      result.push(candidate);
-    }
-  }
-  return result;
-}
-
-function mergeIrrelevantArrays(base = [], incoming = []) {
-  const result = Array.isArray(base) ? base.slice() : [];
-  if (!Array.isArray(incoming)) {
-    return result;
-  }
-  for (const entry of incoming) {
-    if (!entry) continue;
-    const index = result.findIndex((item) => item.fieldId === entry.fieldId);
-    if (index >= 0) {
-      result[index] = { ...result[index], ...entry };
-    } else {
-      result.push(entry);
-    }
-  }
-  return result;
-}
-
-function convertAutofillToLegacy(autofillCandidates) {
-  const baseTimestamp = Date.now();
-  return (autofillCandidates ?? []).map((candidate, index) => ({
-    id: `suggestion-${candidate.fieldId}-${baseTimestamp + index}`,
-    fieldId: candidate.fieldId,
-    proposal: candidate.value,
-    confidence: candidate.confidence ?? 0.5,
-    rationale:
-      candidate.rationale ??
-      "Preset by the copilot so you can approve or tweak in one click."
-  }));
-}
-
-function convertIrrelevantToLegacy(irrelevantFields) {
-  return (irrelevantFields ?? []).map((entry) => ({
-    fieldId: entry.fieldId,
-    reason: entry.reason
-  }));
-}
-
-function ensureUniqueMessages(messages = []) {
-  const seen = new Set();
-  const result = [];
-  for (const message of messages) {
-    if (!message || typeof message !== "string") continue;
-    const trimmed = message.trim();
-    if (!trimmed) continue;
-    if (seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    result.push(trimmed);
-  }
-  return result;
-}
-
-function extractImprovedValue(raw) {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-  const candidate = raw.improved_value ?? raw.improvedValue ?? null;
-  return normaliseImprovedValue(candidate);
-}
-
-function extractAutofillCandidates(raw) {
-  if (!raw || typeof raw !== "object") {
-    return [];
-  }
-  const candidatesRaw =
-    raw.autofill_candidates ?? raw.autofillCandidates ?? raw.suggestions ?? [];
-  if (!Array.isArray(candidatesRaw)) {
-    return [];
-  }
-  const normalized = [];
-  for (const candidate of candidatesRaw) {
-    const normalised = normaliseAutofillCandidate(candidate);
-    if (normalised) {
-      normalized.push(normalised);
-    }
-  }
-  return normalized;
-}
-
-function extractIrrelevantFields(raw) {
-  if (!raw || typeof raw !== "object") {
-    return [];
-  }
-  const entriesRaw =
-    raw.irrelevant_fields ?? raw.irrelevantFields ?? raw.skip ?? [];
-  if (!Array.isArray(entriesRaw)) {
-    return [];
-  }
-  const normalized = [];
-  for (const entry of entriesRaw) {
-    const normalised = normaliseIrrelevantField(entry);
-    if (normalised) {
-      normalized.push(normalised);
-    }
-  }
-  return normalized;
-}
-
-function mergeCopilotResponse(fallback, raw) {
-  if (!raw || typeof raw !== "object") {
-    return fallback;
-  }
-
-  const fallbackClone = {
-    improved_value: fallback.improved_value ?? null,
-    autofill_candidates: Array.isArray(fallback.autofill_candidates)
-      ? fallback.autofill_candidates.slice()
-      : [],
-    irrelevant_fields: Array.isArray(fallback.irrelevant_fields)
-      ? fallback.irrelevant_fields.slice()
-      : [],
-    next_step_teaser: fallback.next_step_teaser ?? null,
-    followUpToUser: Array.isArray(fallback.followUpToUser)
-      ? fallback.followUpToUser.slice()
-      : [],
-    suggestions: Array.isArray(fallback.suggestions) ? fallback.suggestions.slice() : [],
-    skip: Array.isArray(fallback.skip) ? fallback.skip.slice() : []
-  };
-
-  const improved = extractImprovedValue(raw);
-  if (improved) {
-    fallbackClone.improved_value = improved;
-  }
-
-  const autofillCandidates = extractAutofillCandidates(raw);
-  if (autofillCandidates.length > 0) {
-    fallbackClone.autofill_candidates = mergeCandidateArrays(
-      fallbackClone.autofill_candidates,
-      autofillCandidates
-    );
-  }
-
-  const irrelevantFields = extractIrrelevantFields(raw);
-  if (irrelevantFields.length > 0) {
-    fallbackClone.irrelevant_fields = mergeIrrelevantArrays(
-      fallbackClone.irrelevant_fields,
-      irrelevantFields
-    );
-  }
-
-  const nextStep =
-    typeof raw.next_step_teaser === "string"
-      ? raw.next_step_teaser
-      : typeof raw.nextStepTeaser === "string"
-      ? raw.nextStepTeaser
-      : null;
-  if (nextStep && nextStep.trim().length > 0) {
-    fallbackClone.next_step_teaser = nextStep.trim();
-  }
-
-  const followUpExtras = Array.isArray(raw.followUpToUser)
-    ? raw.followUpToUser
-    : Array.isArray(raw.follow_up_to_user)
-    ? raw.follow_up_to_user
-    : [];
-
-  fallbackClone.followUpToUser = ensureUniqueMessages([
-    ...fallbackClone.followUpToUser,
-    ...followUpExtras,
-    fallbackClone.next_step_teaser
-  ]);
-
-  fallbackClone.suggestions = convertAutofillToLegacy(fallbackClone.autofill_candidates);
-  fallbackClone.skip = convertIrrelevantToLegacy(fallbackClone.irrelevant_fields);
-
-  return fallbackClone;
-}
-
-function buildFallbackResponse({
-  stepId,
-  state,
-  marketIntel,
-  updatedFieldId,
-  updatedFieldValue,
-  emptyFieldIds = [],
-  upcomingFieldIds = []
-}) {
-  const autofillMap = new Map();
-  const irrelevantMap = new Map();
-  const followUps = [];
-  const emptyFieldSet = new Set(Array.isArray(emptyFieldIds) ? emptyFieldIds : []);
-  const upcomingFieldSet = new Set(Array.isArray(upcomingFieldIds) ? upcomingFieldIds : []);
-
-  function addAutofill(fieldId, value, { confidence = 0.5, rationale = "", source = "fallback" } = {}) {
-    const candidate = normaliseAutofillCandidate({
-      fieldId,
-      value,
-      confidence,
-      rationale,
-      source,
-      appliesToFutureStep: upcomingFieldSet.has(fieldId) && !emptyFieldSet.has(fieldId)
-    });
-    if (candidate) {
-      autofillMap.set(fieldId, candidate);
-    }
-  }
-
-  function addIrrelevant(fieldId, reason) {
-    const entry = normaliseIrrelevantField({ fieldId, reason });
-    if (entry) {
-      irrelevantMap.set(fieldId, entry);
-    }
-  }
-
-  function addFollowUp(message) {
-    if (message && typeof message === "string") {
-      followUps.push(message);
-    }
-  }
-
-  const normalizedStep = stepId ?? "";
-  const roleTitle = typeof state.roleTitle === "string" ? state.roleTitle.trim() : "";
-
-  if (normalizedStep === "work-style") {
-    const locationMeta = parseLocation(state);
-
-    if (!valueProvidedAt(state, "workModel")) {
-      const inferredModel =
-        locationMeta.workModel ??
-        (typeof state.location === "string" && state.location.toLowerCase().includes("remote")
-          ? "remote"
-          : "on_site");
-      addAutofill("workModel", inferredModel, {
-        confidence: 0.55,
-        rationale: "Keeps candidates aligned on whether they’ll be on-site, hybrid, or remote."
-      });
-    }
-
-    if (!valueProvidedAt(state, "industry") && marketIntel.roleKey !== "general") {
-      addAutofill("industry", marketIntel.roleKey.replace(/\b\w/g, (char) => char.toUpperCase()), {
-        confidence: 0.45,
-        rationale: "Helps your copilot tailor suggestions to the right talent pool."
-      });
-    }
-
-    if (!valueProvidedAt(state, "zipCode") && locationMeta.zip) {
-      addAutofill("zipCode", locationMeta.zip, {
-        confidence: 0.5,
-        rationale: "Zip codes sharpen salary suggestions and ad targeting."
-      });
-    }
-  } else if (normalizedStep === "compensation") {
-    if (!valueProvidedAt(state, "compensation.currency") && marketIntel.salary?.currency) {
-      addAutofill("compensation.currency", marketIntel.salary.currency, {
-        confidence: 0.6,
-        rationale: "Sets expectations up front so candidates can compare offers quickly."
-      });
-    }
-    if (!valueProvidedAt(state, "compensation.salary.min") && marketIntel.salary?.min) {
-      addAutofill("compensation.salary.min", marketIntel.salary.min, {
-        confidence: 0.62,
-        rationale: "Baseline pulled from fresh market data for similar roles."
-      });
-    }
-    if (!valueProvidedAt(state, "compensation.salary.max") && marketIntel.salary?.max) {
-      addAutofill("compensation.salary.max", marketIntel.salary.max, {
-        confidence: 0.6,
-        rationale: "Upper range to stay competitive without overspending."
-      });
-    }
-  } else if (normalizedStep === "schedule") {
-    if (!valueProvidedAt(state, "schedule.days")) {
-      addAutofill("schedule.days", "Monday\nTuesday\nWednesday\nThursday\nFriday", {
-        confidence: 0.45,
-        rationale: "Default weekday coverage—you can trim or extend as needed."
-      });
-    }
-    if (!valueProvidedAt(state, "schedule.shiftTimes")) {
-      addAutofill("schedule.shiftTimes", "08:00 - 16:00\n16:00 - 00:00", {
-        confidence: 0.4,
-        rationale: "Example shift blocks so candidates see the rhythm."
-      });
-    }
-  } else if (normalizedStep === "extras") {
-    if (!valueProvidedAt(state, "benefits") && Array.isArray(marketIntel.benefits)) {
-      addAutofill("benefits", marketIntel.benefits.join("\n"), {
-        confidence: 0.55,
-        rationale: "Common perks candidates expect to see for this kind of role."
-      });
-    }
-    if (!valueProvidedAt(state, "coreDuties") && Array.isArray(marketIntel.duties)) {
-      addAutofill("coreDuties", marketIntel.duties.join("\n"), {
-        confidence: 0.58,
-        rationale: "Gives applicants a vivid snapshot of the day-to-day."
-      });
-    }
-    if (!valueProvidedAt(state, "mustHaves") && Array.isArray(marketIntel.mustHaves)) {
-      addAutofill("mustHaves", marketIntel.mustHaves.join("\n"), {
-        confidence: 0.6,
-        rationale: "Keeps the screening criteria tight without sounding robotic."
-      });
-    }
-  }
-
-  if (!roleTitle && normalizedStep === "extras") {
-    addFollowUp("Want me to weave in culture or growth notes? Drop a hint and I’ll polish the wording.");
-  }
-
-  const improvedValue = buildImprovedValueCandidate({
-    fieldId: updatedFieldId,
-    rawValue: updatedFieldValue
-  });
-
-  const autofillCandidates = Array.from(autofillMap.values());
-  const irrelevantFields = Array.from(irrelevantMap.values());
-  const nextStepTeaser = buildNextStepTeaser(normalizedStep);
-
-  const followUpMessages = ensureUniqueMessages([
-    ...followUps,
-    nextStepTeaser
-  ]);
-
-  return {
-    improved_value: improvedValue,
-    autofill_candidates: autofillCandidates,
-    irrelevant_fields: irrelevantFields,
-    next_step_teaser: nextStepTeaser,
-    followUpToUser: followUpMessages,
-    suggestions: convertAutofillToLegacy(autofillCandidates),
-    skip: convertIrrelevantToLegacy(irrelevantFields)
-  };
-}
-
 export function wizardRouter({ firestore, logger, llmClient }) {
   const router = Router();
 
@@ -1247,66 +558,91 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           "Suggestions requested before required intake completed"
         );
         return res.json({
-          improved_value: null,
-          autofill_candidates: [],
-          irrelevant_fields: [],
-          next_step_teaser: buildNextStepTeaser(payload.currentStepId),
-          followUpToUser: [
-            "Finish the required setup first so I can tailor the optional fields for you."
-          ],
+          jobId: payload.jobId,
           suggestions: [],
-          skip: []
+          updatedAt: null,
+          refreshed: false,
+          failure: null
         });
       }
 
-      const locationMeta = parseLocation(mergedJob);
+      const visibleFieldIds =
+        Array.isArray(payload.visibleFieldIds) && payload.visibleFieldIds.length > 0
+          ? payload.visibleFieldIds
+          : Array.isArray(payload.emptyFieldIds) && payload.emptyFieldIds.length > 0
+          ? payload.emptyFieldIds
+          : [];
 
-      const context = {
-        jobTitle: typeof mergedJob.roleTitle === "string" ? mergedJob.roleTitle : "",
-        location: locationMeta.label,
-        currentStepId: payload.currentStepId,
-        state: mergedJob
-      };
+      let suggestionDoc = await loadSuggestionDocument(firestore, payload.jobId);
+      const shouldRefresh =
+        !suggestionDoc ||
+        payload.intent?.forceRefresh === true ||
+        (payload.updatedFieldId && payload.updatedFieldValue !== undefined);
 
-      const marketIntel = buildMarketIntelligence(context.state);
+      let refreshed = false;
 
-      const fallbackResponse = buildFallbackResponse({
-        stepId: payload.currentStepId,
-        state: context.state,
-        marketIntel,
-        updatedFieldId: payload.updatedFieldId,
-        updatedFieldValue: payload.updatedFieldValue,
-        emptyFieldIds: payload.emptyFieldIds ?? [],
-        upcomingFieldIds: payload.upcomingFieldIds ?? []
-      });
-
-      let finalResponse = fallbackResponse;
-
-      if (llmClient?.askSuggestions) {
+      if (shouldRefresh && llmClient?.askSuggestions) {
         const llmPayload = {
-          ...context,
-          marketIntel,
           updatedFieldId: payload.updatedFieldId,
           updatedFieldValue: payload.updatedFieldValue,
-          emptyFieldIds: payload.emptyFieldIds ?? [],
-          upcomingFieldIds: payload.upcomingFieldIds ?? []
+          previousSuggestions: suggestionDoc?.candidates ?? {},
+          visibleFieldIds,
+          jobSnapshot: ALLOWED_INTAKE_KEYS.reduce((acc, key) => {
+            acc[key] = mergedJob[key];
+            return acc;
+          }, {})
         };
 
-        const llmRaw = await llmClient.askSuggestions(llmPayload);
-        if (llmRaw) {
-          finalResponse = mergeCopilotResponse(fallbackResponse, llmRaw);
+        const llmResult = await llmClient.askSuggestions(llmPayload);
+        if (llmResult?.candidates?.length > 0) {
+          suggestionDoc = await overwriteSuggestionDocument({
+            firestore,
+            logger,
+            jobId: payload.jobId,
+            candidates: llmResult.candidates,
+            provider: llmResult.provider,
+            model: llmResult.model,
+            metadata: llmResult.metadata,
+            now
+          });
+          refreshed = true;
+        } else if (llmResult?.error) {
+          suggestionDoc = await persistSuggestionFailure({
+            firestore,
+            logger,
+            jobId: payload.jobId,
+            reason: llmResult.error.reason ?? "unknown_error",
+            rawPreview: llmResult.error.rawPreview ?? null,
+            error: llmResult.error.message ?? null,
+            now
+          });
+          refreshed = true;
+        } else {
+          suggestionDoc = await persistSuggestionFailure({
+            firestore,
+            logger,
+            jobId: payload.jobId,
+            reason: "no_suggestions",
+            rawPreview: null,
+            error: "LLM returned no candidates",
+            now
+          });
+          refreshed = true;
         }
       }
 
-      await persistJobSuggestions({
-        firestore,
-        jobId: payload.jobId,
-        logger,
-        finalResponse,
-        now
-      });
+      const suggestions = selectSuggestionsForFields(
+        suggestionDoc?.candidates ?? {},
+        visibleFieldIds
+      );
 
-      res.json(finalResponse);
+      res.json({
+        jobId: payload.jobId,
+        suggestions,
+        updatedAt: suggestionDoc?.updatedAt ?? null,
+        refreshed,
+        failure: suggestionDoc?.lastFailure ?? null
+      });
     })
   );
 

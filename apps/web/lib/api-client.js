@@ -13,85 +13,47 @@ const valueSchema = z.union([
 ]);
 
 const suggestionSchema = z.object({
-  id: z.string(),
   fieldId: z.string(),
-  proposal: valueSchema,
-  confidence: z.number(),
-  rationale: z.string()
+  value: valueSchema,
+  rationale: z.string().optional(),
+  confidence: z.number().optional(),
+  source: z.string().optional()
 });
 
-const skipSchema = z.object({
-  fieldId: z.string(),
-  reason: z.string()
-});
-
-const improvedValueSchema = z
+const suggestionFailureSchema = z
   .object({
-    fieldId: z.string(),
-    value: valueSchema,
-    rationale: z.string().optional(),
-    confidence: z.number().optional(),
-    source: z.string().optional(),
-    mode: z.string().optional()
+    reason: z.string(),
+    rawPreview: z.string().optional().nullable(),
+    error: z.string().optional().nullable(),
+    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional()
   })
-  .passthrough();
-
-const autofillCandidateSchema = z
-  .object({
-    fieldId: z.string(),
-    value: valueSchema,
-    rationale: z.string().optional(),
-    confidence: z.number().optional(),
-    source: z.string().optional(),
-    appliesToFutureStep: z.boolean().optional()
-  })
-  .passthrough();
-
-const irrelevantFieldSchema = z
-  .object({
-    fieldId: z.string(),
-    reason: z.string().optional()
-  })
-  .passthrough();
+  .transform((data) => ({
+    reason: data.reason,
+    rawPreview: data.rawPreview ?? null,
+    error: data.error ?? null,
+    occurredAt:
+      data.occurredAt instanceof Date
+        ? data.occurredAt
+        : data.occurredAt
+        ? new Date(data.occurredAt)
+        : null
+  }));
 
 const copilotSuggestionResponseSchema = z
   .object({
-    improved_value: improvedValueSchema.nullable().optional(),
-    improvedValue: improvedValueSchema.nullable().optional(),
-    autofill_candidates: z.array(autofillCandidateSchema).optional(),
-    autofillCandidates: z.array(autofillCandidateSchema).optional(),
-    irrelevant_fields: z.array(irrelevantFieldSchema).optional(),
-    irrelevantFields: z.array(irrelevantFieldSchema).optional(),
-    next_step_teaser: z.string().optional(),
-    nextStepTeaser: z.string().optional(),
-    followUpToUser: z.array(z.string()).optional(),
-    follow_up_to_user: z.array(z.string()).optional(),
+    jobId: z.string().optional(),
     suggestions: z.array(suggestionSchema).optional(),
-    skip: z.array(skipSchema).optional()
+    updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
+    refreshed: z.boolean().optional(),
+    failure: suggestionFailureSchema.optional().nullable()
   })
-  .transform((data) => {
-    const improvedValue = data.improved_value ?? data.improvedValue ?? null;
-    const autofillCandidates =
-      data.autofill_candidates ?? data.autofillCandidates ?? [];
-    const irrelevantFields =
-      data.irrelevant_fields ?? data.irrelevantFields ?? [];
-    const nextStepTeaser =
-      data.next_step_teaser ?? data.nextStepTeaser ?? "";
-    const followUps =
-      data.followUpToUser ?? data.follow_up_to_user ?? [];
-    const suggestions = data.suggestions ?? [];
-    const skip = data.skip ?? [];
-
-    return {
-      improvedValue,
-      autofillCandidates,
-      irrelevantFields,
-      nextStepTeaser,
-      followUps,
-      suggestions,
-      skip
-    };
-  });
+  .transform((data) => ({
+    jobId: data.jobId ?? null,
+    suggestions: data.suggestions ?? [],
+    updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
+    refreshed: Boolean(data.refreshed),
+    failure: data.failure ?? null
+  }));
 
 const persistResponseSchema = z
   .object({

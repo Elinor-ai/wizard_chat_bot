@@ -94,8 +94,8 @@ const REQUIRED_STEPS = [
     fields: [
       {
         id: "roleTitle",
-        label: "What role title will candidates recognise?",
-        helper: "Plain titles win more clicks than clever ones, so keep it simple.",
+        label: "What job title are you hiring for?",
+        helper: "Use the title candidates expect to see in listings.",
         required: true,
         placeholder: "Assistant Manager / Operations Lead / Sushi Chef / Product Designer",
         type: "text",
@@ -103,8 +103,8 @@ const REQUIRED_STEPS = [
       },
       {
         id: "companyName",
-        label: "Who will they be working for?",
-        helper: "Helps us ground the story in your brand from the very first sentence.",
+        label: "Which company is hiring for this role?",
+        helper: "We reference this name throughout the job assets.",
         required: true,
         placeholder: "Acme Kitchens / Flow Logistics / Studio W",
         type: "text",
@@ -112,8 +112,8 @@ const REQUIRED_STEPS = [
       },
       {
         id: "location",
-        label: "Where will most of the work happen?",
-        helper: "City, region, or \"Remote\"—whatever helps candidates picture the commute.",
+        label: "Where is the role based?",
+        helper: "Enter a city or region, or type “Remote” if the role is fully remote.",
         required: true,
         placeholder: "Austin, TX / Remote across EU / Tel Aviv HQ",
         type: "text"
@@ -127,16 +127,16 @@ const REQUIRED_STEPS = [
     fields: [
       {
         id: "seniorityLevel",
-        label: "What level are you hiring for?",
-        helper: "Sets expectations so the right folks lean in—and the wrong ones bow out.",
+        label: "What experience level are you targeting?",
+        helper: "Pick the seniority that reflects day-one expectations.",
         required: true,
         type: "capsule",
         options: EXPERIENCE_LEVEL_OPTIONS
       },
       {
         id: "employmentType",
-        label: "How is the role scoped?",
-        helper: "Keeps everything compliant and transparent from the start.",
+        label: "What is the employment type?",
+        helper: "Clarify whether this is full-time, part-time, contract, or another arrangement.",
         required: true,
         type: "capsule",
         options: EMPLOYMENT_TYPE_OPTIONS
@@ -150,8 +150,8 @@ const REQUIRED_STEPS = [
     fields: [
       {
         id: "jobDescription",
-        label: "What’s the mission for this hire?",
-        helper: "Write like you’re DM’ing a teammate—why this role matters and what success looks like.",
+        label: "How would you describe this role to a candidate?",
+        helper: "Explain why the role matters, what success looks like, and the impact they’ll have.",
         required: true,
         placeholder:
           "Lead the evening service, coach a 6-person crew, and keep guest experiences seamless even on peak nights.",
@@ -170,24 +170,24 @@ const OPTIONAL_STEPS = [
     fields: [
       {
         id: "workModel",
-        label: "Where will they spend most days?",
-        helper: "Clear expectations on hybrid/remote beats surprises halfway through interviews.",
+        label: "What is the primary work model?",
+        helper: "Set expectations for on-site, hybrid, or remote working rhythms.",
         required: false,
         type: "capsule",
         options: WORK_MODEL_OPTIONS
       },
       {
         id: "industry",
-        label: "Which industry or team best describes this role?",
-        helper: "Optional, but helps us suggest tailored benefits and must-haves.",
+        label: "Which industry best describes this role?",
+        helper: "Helps us suggest relevant benchmarks and examples.",
         required: false,
         placeholder: "Hospitality / Logistics / AI SaaS / Healthcare clinic",
         type: "text"
       },
       {
         id: "zipCode",
-        label: "Do you want to add a ZIP or postal code?",
-        helper: "Helpful for hyper-local salary benchmarks and targeting.",
+        label: "What is the ZIP or postal code for this role?",
+        helper: "Improves location-specific benchmarks and distribution targeting.",
         required: false,
         placeholder: "78701 / 94107 / 100-0001",
         type: "text",
@@ -201,58 +201,29 @@ const OPTIONAL_STEPS = [
     subtitle: "Keep it transparent so the right people raise their hand.",
     fields: [
       {
-        id: "compensation.currency",
+        id: "currency",
         label: "What currency should we display?",
-        helper: "USD, EUR, GBP, ILS—you name it.",
+        helper: "Use an ISO currency like USD, EUR, GBP, ILS, etc.",
         required: false,
         placeholder: "USD / GBP / EUR / ILS",
         type: "text",
         maxLength: 6
       },
       {
-        id: "compensation.salary.min",
-        label: "What’s a realistic starting point?",
-        helper: "Listing a floor keeps expectations aligned from day one.",
+        id: "salary",
+        label: "What’s the salary or range you want to advertise?",
+        helper: "Example: 60,000–72,000 or 30/hour. We’ll keep formatting consistent for you.",
         required: false,
-        placeholder: "48000 / 22 (hourly) / 3200 (monthly)",
-        type: "number",
-        valueAs: "number"
+        placeholder: "60,000 – 72,000 / 30 hourly / 3,500 monthly",
+        type: "text"
       },
       {
-        id: "compensation.salary.max",
-        label: "And what’s the top end of the range?",
-        helper: "Signals growth without locking you into overpaying.",
+        id: "salaryPeriod",
+        label: "How should we frame the pay cadence?",
+        helper: "Example: per year, per month, hourly, per shift.",
         required: false,
-        placeholder: "56000 / 28 (hourly) / 4200 (monthly)",
-        type: "number",
-        valueAs: "number"
-      }
-    ]
-  },
-  {
-    id: "schedule",
-    title: "Map the rhythm of the workweek.",
-    subtitle: "Clarity here dramatically reduces no-shows.",
-    fields: [
-      {
-        id: "schedule.days",
-        label: "Which days are in rotation?",
-        helper: "List each one—candidates appreciate the transparency.",
-        required: false,
-        placeholder: "Monday\nTuesday\nWednesday\nThursday\nFriday",
-        type: "textarea",
-        rows: 3,
-        asList: true
-      },
-      {
-        id: "schedule.shiftTimes",
-        label: "Any shift windows worth calling out?",
-        helper: "Ex: 08:00-16:00, 16:00-00:00, or simply “Flexible core hours”.",
-        required: false,
-        placeholder: "08:00 - 16:00\n16:00 - 00:00",
-        type: "textarea",
-        rows: 3,
-        asList: true
+        placeholder: "per year / hourly / per shift",
+        type: "text"
       }
     ]
   },
@@ -263,8 +234,8 @@ const OPTIONAL_STEPS = [
     fields: [
       {
         id: "benefits",
-        label: "Any benefits or perks worth highlighting?",
-        helper: "List each on its own line—treat it like your highlight reel.",
+        label: "What benefits or perks do you offer?",
+        helper: "List each on its own line—think about what differentiates your package.",
         required: false,
         placeholder: "Health insurance from day one\nPaid parental leave\nQuarterly team retreats",
         type: "textarea",
@@ -273,8 +244,8 @@ const OPTIONAL_STEPS = [
       },
       {
         id: "coreDuties",
-        label: "What will they own day-to-day?",
-        helper: "Quick bullet points make it easy to scan.",
+        label: "What are the core responsibilities for this role?",
+        helper: "Use quick bullet points so candidates can scan responsibilities at a glance.",
         required: false,
         placeholder:
           "Lead daily standups and unblock the team\nReview and ship features every sprint\nCoach junior teammates through code reviews",
@@ -284,8 +255,8 @@ const OPTIONAL_STEPS = [
       },
       {
         id: "mustHaves",
-        label: "Non-negotiables or dealbreakers?",
-        helper: "Be honest so you attract the right humans.",
+        label: "What must-have qualifications should candidates bring?",
+        helper: "Call out non-negotiable skills, experience, or certifications.",
         required: false,
         placeholder:
           "Comfortable owning customer-critical projects\nAble to collaborate across time zones\nExperience with modern analytics tooling",
@@ -642,6 +613,10 @@ export function WizardShell() {
 
       setIsFetchingSuggestions(true);
       try {
+        const visibleFieldIds = targetStep
+          ? targetStep.fields.map((field) => field.id)
+          : [];
+
         const response = await WizardApi.fetchSuggestions(
           {
             state: workingState,
@@ -651,88 +626,95 @@ export function WizardShell() {
             updatedFieldValue: updatedValue,
             emptyFieldIds,
             upcomingFieldIds,
+            visibleFieldIds
           },
           { userId: user.id, jobId: effectiveJobId }
         );
 
-        const hiddenMap = {};
-        (response.irrelevantFields ?? []).forEach((item) => {
-          if (item?.fieldId) {
-            setDeep(
-              hiddenMap,
-              item.fieldId,
-              item.reason ?? "Not needed based on what you’ve already shared."
+        setHiddenFields({});
+
+        const failure = response.failure;
+        setCopilotNextTeaser(
+          failure
+            ? "I hit a snag fetching fresh suggestions. Tap refresh to try again."
+            : ""
+        );
+
+        const visibleFieldSet = new Set(visibleFieldIds);
+        const suggestions = response.suggestions ?? [];
+        const enrichedSuggestions = suggestions
+          .map((suggestion) => {
+            if (visibleFieldIds.length > 0 && !visibleFieldSet.has(suggestion.fieldId)) {
+              return null;
+            }
+            const fieldDefinition = findFieldDefinition(suggestion.fieldId);
+            const existingValue = getDeep(workingState, suggestion.fieldId);
+            if (fieldDefinition && isFieldValueProvided(existingValue, fieldDefinition)) {
+              return null;
+            }
+            const normalized = normalizeValueForField(
+              fieldDefinition,
+              suggestion.value
             );
-          }
-        });
-        setHiddenFields(hiddenMap);
-        if ((response.irrelevantFields ?? []).length > 0) {
-          setAutofilledFields((prev) => {
-            const next = deepClone(prev);
-            (response.irrelevantFields ?? []).forEach((item) => {
-              if (item?.fieldId) {
-                setDeep(next, item.fieldId, undefined);
-              }
-            });
-            return next;
-          });
-        }
-
-        const autofillCandidates = response.autofillCandidates ?? [];
-        setCopilotNextTeaser(response.nextStepTeaser ?? "");
-
-        const freshSuggestions = [];
-        autofillCandidates.forEach((candidate) => {
-          if (!candidate?.fieldId) return;
-          if (getDeep(hiddenMap, candidate.fieldId)) return;
-
-          const fieldDefinition = findFieldDefinition(candidate.fieldId);
-          const normalized = normalizeValueForField(fieldDefinition, candidate.value);
-
-          if (normalized !== undefined) {
-            freshSuggestions.push({
-              fieldId: candidate.fieldId,
+            if (normalized === undefined) {
+              return null;
+            }
+            return {
+              fieldId: suggestion.fieldId,
               value: normalized,
               rationale:
-                candidate?.rationale ??
+                suggestion.rationale ??
                 "Suggested so candidates understand the opportunity immediately.",
-              confidence: candidate?.confidence ?? 0.5,
-              source: candidate?.source ?? "copilot",
+              confidence: suggestion.confidence ?? 0.5,
+              source: suggestion.source ?? "copilot"
+            };
+          })
+          .filter(Boolean);
+
+        setAutofilledFields((prev) => {
+          const next = deepClone(prev);
+          if (visibleFieldIds.length > 0) {
+            visibleFieldIds.forEach((fieldId) => {
+              const hasSuggestion = enrichedSuggestions.some(
+                (candidate) => candidate.fieldId === fieldId
+              );
+              if (!hasSuggestion) {
+                const existing = getDeep(next, fieldId);
+                if (existing && !existing.accepted) {
+                  setDeep(next, fieldId, undefined);
+                }
+              }
             });
           }
+          enrichedSuggestions.forEach((suggestion) => {
+            const existing = getDeep(next, suggestion.fieldId);
+            if (existing?.accepted) {
+              return;
+            }
+            setDeep(next, suggestion.fieldId, {
+              ...existing,
+              value: suggestion.value,
+              rationale: suggestion.rationale,
+              confidence: suggestion.confidence,
+              source: suggestion.source,
+              accepted: false,
+              suggestedAt: Date.now()
+            });
+          });
+          return next;
         });
 
-        if (freshSuggestions.length > 0) {
-          setAutofilledFields((prev) => {
-            const next = deepClone(prev);
-            freshSuggestions.forEach((suggestion) => {
-              const existing = getDeep(next, suggestion.fieldId);
-              if (existing?.accepted) {
-                return;
-              }
-              setDeep(next, suggestion.fieldId, {
-                ...existing,
-                value: suggestion.value,
-                rationale: suggestion.rationale,
-                confidence: suggestion.confidence,
-                source: suggestion.source,
-                accepted: false,
-                suggestedAt: Date.now(),
-              });
-            });
-            return next;
-          });
-        }
-
         setAssistantMessages((prev) => {
-          const base = prev.filter(
-            (message) =>
-              !["suggestion", "followUp", "skip", "improved"].includes(
-                message.kind
-              )
-          );
-
-          const suggestionMessages = (response.autofillCandidates ?? []).map(
+          const base = prev.filter((message) => {
+            if (message.kind === "suggestion") {
+              return false;
+            }
+            if (!failure && message.kind === "error" && message.meta?.type === "suggestion-failure") {
+              return false;
+            }
+            return true;
+          });
+          const suggestionMessages = enrichedSuggestions.map(
             (candidate, index) => ({
               id: `autofill-${candidate.fieldId}-${Date.now()}-${index}`,
               role: "assistant",
@@ -745,85 +727,36 @@ export function WizardShell() {
               meta: {
                 fieldId: candidate.fieldId,
                 confidence: candidate.confidence ?? 0.5,
-                rationale:
-                  candidate.rationale ??
-                  "Suggested by your copilot so you can approve in one click.",
+                rationale: candidate.rationale,
                 value: candidate.value,
-                mode: "autofill",
-              },
+                mode: "autofill"
+              }
             })
           );
 
-          const improvedMessages =
-            response.improvedValue && response.improvedValue.fieldId
-              ? [
-                  {
-                    id: `improved-${response.improvedValue.fieldId}-${Date.now()}`,
-                    role: "assistant",
-                    kind: "suggestion",
-                    content:
-                      typeof response.improvedValue.value === "string"
-                        ? response.improvedValue.value
-                        : JSON.stringify(response.improvedValue.value),
-                    meta: {
-                      fieldId: response.improvedValue.fieldId,
-                      confidence: response.improvedValue.confidence ?? 0.6,
-                      rationale:
-                        response.improvedValue.rationale ??
-                        "Reworded for clarity and candidate appeal.",
-                      value: response.improvedValue.value,
-                      mode: response.improvedValue.mode ?? "rewrite",
-                    },
-                  },
-                ]
-              : [];
-
-          const followUpsRaw = [
-            ...(response.followUps ?? []),
-            response.nextStepTeaser ?? "",
-          ];
-          const followUpUnique = [];
-          const followUpSeen = new Set();
-          for (const text of followUpsRaw) {
-            if (!text || typeof text !== "string") continue;
-            const trimmed = text.trim();
-            if (!trimmed || followUpSeen.has(trimmed)) continue;
-            followUpSeen.add(trimmed);
-            followUpUnique.push(trimmed);
-          }
-
-          const followUps = followUpUnique.map((text, index) => ({
-            id: `follow-up-${Date.now()}-${index}`,
-            role: "assistant",
-            kind: "followUp",
-            content: text,
-          }));
-
-          const hiddenMessages = (response.irrelevantFields ?? []).map(
-            (item, index) => {
-              const fieldDef = findFieldDefinition(item.fieldId);
-              const friendlyLabel = fieldDef?.label ?? item.fieldId;
-              const explanation =
-                item.reason ??
-                "Not relevant for this role, so we tucked it away for you.";
-              return {
-                id: `hidden-${item.fieldId}-${Date.now()}-${index}`,
-                role: "assistant",
-                kind: "skip",
-                content: `I’ve removed “${friendlyLabel}” — ${explanation}`,
-                meta: { ...item, friendlyLabel }
-              };
-            }
-          );
-
-          return [
-            ...base,
-            ...improvedMessages,
-            ...suggestionMessages,
-            ...followUps,
-            ...hiddenMessages,
-          ];
+          return [...base, ...suggestionMessages];
         });
+
+        if (failure) {
+          setAssistantMessages((prev) => {
+            const base = prev.filter(
+              (message) => !(message.kind === "error" && message.meta?.type === "suggestion-failure")
+            );
+            return [
+              ...base,
+              {
+                id: `suggestion-failure-${Date.now()}`,
+                role: "assistant",
+                kind: "error",
+                content:
+                  failure.error
+                    ? `I couldn't refresh suggestions (${failure.reason}). ${failure.error}`
+                    : `I couldn't refresh suggestions (${failure.reason}). Please try again soon.`,
+                meta: { type: "suggestion-failure" }
+              }
+            ];
+          });
+        }
       } catch (error) {
         setAssistantMessages((prev) => [
           ...prev,
@@ -1781,7 +1714,12 @@ export function WizardShell() {
       <WizardSuggestionPanel
         state={state}
         messages={assistantMessages}
-        onRefresh={() => fetchSuggestionsForStep({ stepId: currentStep?.id })}
+        onRefresh={() =>
+          fetchSuggestionsForStep({
+            stepId: currentStep?.id,
+            intentOverrides: { forceRefresh: true }
+          })
+        }
         onSendMessage={handleSendMessage}
         onAcceptSuggestion={handleAcceptSuggestion}
         onToggleSuggestion={handleSuggestionToggle}
