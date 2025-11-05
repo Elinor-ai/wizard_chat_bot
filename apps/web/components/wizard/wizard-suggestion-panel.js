@@ -417,11 +417,6 @@ export function WizardSuggestionPanel({
                         {message.meta.rationale}
                       </p>
                       <div className="space-y-2 rounded-2xl border border-primary-200 bg-primary-50/60 px-3 py-2">
-                        <p className="text-xs font-medium text-primary-700">
-                          {acceptedMap[message.id]
-                            ? "Added to your draft."
-                            : "Apply this suggestion to your form."}
-                        </p>
                         <button
                           type="button"
                           className="w-full rounded-full bg-primary-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500"
@@ -437,7 +432,7 @@ export function WizardSuggestionPanel({
                             }
                           }}
                         >
-                          {acceptedMap[message.id] ? "Apply again" : "Apply suggestion"}
+                          Apply suggestion
                         </button>
                       </div>
                     </div>

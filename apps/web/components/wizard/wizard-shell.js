@@ -474,7 +474,6 @@ export function WizardShell() {
   const [hiddenFields, setHiddenFields] = useState({});
   const [autofilledFields, setAutofilledFields] = useState({});
   const [copilotNextTeaser, setCopilotNextTeaser] = useState("");
-  const suggestionDebounceRef = useRef(null);
   const stateRef = useRef(state);
   const previousFieldValuesRef = useRef({});
   const lastSuggestionSnapshotRef = useRef({});
@@ -1086,37 +1085,10 @@ export function WizardShell() {
     [announceAuthRequired, currentStep?.id, jobId, includeOptional, steps, user]
   );
 
-  const scheduleRealtimeSuggestions = useCallback(
-    (fieldId, value) => {
-      if (!currentStep?.id) return;
-      const isOptionalStep = OPTIONAL_STEPS.some(
-        (step) => step.id === currentStep.id
-      );
-      if (!isOptionalStep) {
-        return;
-      }
-      if (suggestionDebounceRef.current) {
-        clearTimeout(suggestionDebounceRef.current);
-      }
-      suggestionDebounceRef.current = setTimeout(() => {
-        fetchSuggestionsForStep({
-          stepId: currentStep.id,
-          updatedFieldId: fieldId,
-          updatedValue: value,
-        });
-      }, 450);
-    },
-    [currentStep?.id, fetchSuggestionsForStep]
-  );
-
   useEffect(() => {
     setHiddenFields({});
     setAutofilledFields({});
     setCopilotNextTeaser("");
-    if (suggestionDebounceRef.current) {
-      clearTimeout(suggestionDebounceRef.current);
-      suggestionDebounceRef.current = null;
-    }
     setAssistantMessages((prev) =>
       prev.filter(
         (message) =>
@@ -1193,7 +1165,7 @@ export function WizardShell() {
 
   const onFieldChange = useCallback(
     (fieldId, value, options = {}) => {
-      const { preserveSuggestionMeta = false, skipRealtime = false } = options;
+      const { preserveSuggestionMeta = false } = options;
       setState((prev) => {
         const next = deepClone(prev);
         if (value === "" || value === null || value === undefined) {
@@ -1220,11 +1192,8 @@ export function WizardShell() {
         return next;
       });
 
-      if (!skipRealtime) {
-        scheduleRealtimeSuggestions(fieldId, value);
-      }
     },
-    [scheduleRealtimeSuggestions]
+    []
   );
 
   const handleNext = async () => {
@@ -1846,8 +1815,11 @@ export function WizardShell() {
                   (option) => option.value === effectiveValue
                 ));
 
+            const isCapsuleField = field.type === "capsule";
+            const FieldContainer = isCapsuleField ? "div" : "label";
+
             return (
-              <label
+              <FieldContainer
                 key={field.id}
                 className="flex flex-col gap-2 text-sm font-medium text-neutral-700"
               >
@@ -1873,7 +1845,7 @@ export function WizardShell() {
                   </span>
                 ) : null}
 
-                {field.type === "capsule" ? (
+                {isCapsuleField ? (
                   <div className="space-y-3">
                     <div className="flex flex-wrap gap-3">
                       {(field.options ?? []).map((option) => {
@@ -1970,9 +1942,7 @@ export function WizardShell() {
                       />
                     ) : null}
                   </div>
-                ) : null}
-
-                {field.type === "capsule" ? null : field.type === "select" ? (
+                ) : field.type === "select" ? (
                   <select
                     className={clsx(sharedInputClasses, "cursor-pointer")}
                     value={inputValue}
@@ -2014,7 +1984,7 @@ export function WizardShell() {
                     autoComplete="off"
                   />
                 )}
-              </label>
+              </FieldContainer>
             );
           })}
         </form>
