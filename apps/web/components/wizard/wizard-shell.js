@@ -477,6 +477,7 @@ export function WizardShell() {
   const suggestionDebounceRef = useRef(null);
   const stateRef = useRef(state);
   const previousFieldValuesRef = useRef({});
+  const lastSuggestionSnapshotRef = useRef({});
   const [customCapsuleActive, setCustomCapsuleActive] = useState({});
   const [hoveredCapsules, setHoveredCapsules] = useState({});
   const [hasSeenUnlock, setHasSeenUnlock] = useState(false);
@@ -500,6 +501,10 @@ export function WizardShell() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    lastSuggestionSnapshotRef.current = {};
+  }, [jobId, user?.id]);
 
   useEffect(() => {
     setUnsavedChanges(!deepEqual(committedState, state));
@@ -839,7 +844,11 @@ export function WizardShell() {
       }
 
       const workingState = stateRef.current ?? {};
-      const targetStep = steps.find((step) => step.id === stepId) ?? null;
+      const targetStep =
+        steps.find((step) => step.id === stepId) ??
+        OPTIONAL_STEPS.find((step) => step.id === stepId) ??
+        REQUIRED_STEPS.find((step) => step.id === stepId) ??
+        null;
       const emptyFieldIds = [];
       if (targetStep) {
         for (const field of targetStep.fields) {
@@ -881,6 +890,29 @@ export function WizardShell() {
           ? targetStep.fields.map((field) => field.id)
           : [];
 
+        if (visibleFieldIds.length === 0) {
+          return;
+        }
+
+        const shouldForceFetch = Boolean(intentOverrides?.forceRefresh);
+        const snapshotEntries = visibleFieldIds.map((fieldId) => {
+          const rawValue =
+            fieldId === updatedFieldId
+              ? updatedValue
+              : getDeep(workingState, fieldId);
+          if (rawValue === undefined) {
+            return [fieldId, { __defined: false }];
+          }
+          return [fieldId, { __defined: true, value: deepClone(rawValue) }];
+        });
+        const snapshotKey = JSON.stringify(snapshotEntries);
+        if (
+          !shouldForceFetch &&
+          lastSuggestionSnapshotRef.current[stepId] === snapshotKey
+        ) {
+          return;
+        }
+
         const response = await WizardApi.fetchSuggestions(
           {
             state: workingState,
@@ -906,6 +938,7 @@ export function WizardShell() {
 
         const visibleFieldSet = new Set(visibleFieldIds);
         const suggestions = response.suggestions ?? [];
+        lastSuggestionSnapshotRef.current[stepId] = snapshotKey;
         const enrichedSuggestions = suggestions
           .map((suggestion) => {
             if (visibleFieldIds.length > 0 && !visibleFieldSet.has(suggestion.fieldId)) {
@@ -935,11 +968,22 @@ export function WizardShell() {
           })
           .filter(Boolean);
 
+        const fieldOrderIndex = new Map(
+          visibleFieldIds.map((fieldId, index) => [fieldId, index])
+        );
+        const orderedSuggestions = enrichedSuggestions
+          .slice()
+          .sort(
+            (a, b) =>
+              (fieldOrderIndex.get(a.fieldId) ?? Number.MAX_SAFE_INTEGER) -
+              (fieldOrderIndex.get(b.fieldId) ?? Number.MAX_SAFE_INTEGER)
+          );
+
         setAutofilledFields((prev) => {
           const next = deepClone(prev);
           if (visibleFieldIds.length > 0) {
             visibleFieldIds.forEach((fieldId) => {
-              const hasSuggestion = enrichedSuggestions.some(
+              const hasSuggestion = orderedSuggestions.some(
                 (candidate) => candidate.fieldId === fieldId
               );
               if (!hasSuggestion) {
@@ -950,7 +994,7 @@ export function WizardShell() {
               }
             });
           }
-          enrichedSuggestions.forEach((suggestion) => {
+          orderedSuggestions.forEach((suggestion) => {
             const existing = getDeep(next, suggestion.fieldId);
             if (existing?.accepted) {
               return;
@@ -970,7 +1014,10 @@ export function WizardShell() {
 
         setAssistantMessages((prev) => {
           const base = prev.filter((message) => {
-            if (message.kind === "suggestion") {
+            if (
+              message.kind === "suggestion" &&
+              (message.meta?.stepId ?? stepId) === stepId
+            ) {
               return false;
             }
             if (!failure && message.kind === "error" && message.meta?.type === "suggestion-failure") {
@@ -978,7 +1025,7 @@ export function WizardShell() {
             }
             return true;
           });
-          const suggestionMessages = enrichedSuggestions.map(
+          const suggestionMessages = orderedSuggestions.map(
             (candidate, index) => ({
               id: `autofill-${candidate.fieldId}-${Date.now()}-${index}`,
               role: "assistant",
@@ -993,7 +1040,8 @@ export function WizardShell() {
                 confidence: candidate.confidence ?? 0.5,
                 rationale: candidate.rationale,
                 value: candidate.value,
-                mode: "autofill"
+                mode: "autofill",
+                stepId
               }
             })
           );
@@ -1072,7 +1120,7 @@ export function WizardShell() {
     setAssistantMessages((prev) =>
       prev.filter(
         (message) =>
-          !["suggestion", "followUp", "skip", "improved"].includes(message.kind)
+          !["followUp", "skip", "improved"].includes(message.kind)
       )
     );
   }, [currentStepIndex]);
@@ -1205,11 +1253,15 @@ export function WizardShell() {
 
     const nextIndex = currentStepIndex + 1;
     const nextStep = steps[nextIndex] ?? steps[steps.length - 1];
+    const shouldForceRefresh = !result.noChanges;
 
     goToStep(nextIndex);
     await fetchSuggestionsForStep({
       stepId: nextStep?.id ?? stepId,
-      intentOverrides: result.intent,
+      intentOverrides: {
+        ...result.intent,
+        forceRefresh: shouldForceRefresh || undefined
+      },
       jobIdOverride: result.savedId,
     });
   };
@@ -1258,9 +1310,14 @@ export function WizardShell() {
       return;
     }
 
+    const shouldForceRefresh = !result.noChanges;
+
     await fetchSuggestionsForStep({
       stepId,
-      intentOverrides: result.intent,
+      intentOverrides: {
+        ...result.intent,
+        forceRefresh: shouldForceRefresh || undefined
+      },
       jobIdOverride: result.savedId,
     });
   };
@@ -1294,11 +1351,15 @@ export function WizardShell() {
     const nextIndex = REQUIRED_STEPS.length;
     const optionalFlowSteps = [...REQUIRED_STEPS, ...OPTIONAL_STEPS];
     const nextStep = optionalFlowSteps[nextIndex] ?? OPTIONAL_STEPS[0];
+    const shouldForceRefresh = !result.noChanges;
 
     goToStep(nextIndex);
     await fetchSuggestionsForStep({
       stepId: nextStep?.id ?? OPTIONAL_STEPS[0]?.id,
-      intentOverrides: { includeOptional: true },
+      intentOverrides: {
+        includeOptional: true,
+        forceRefresh: shouldForceRefresh || undefined
+      },
       jobIdOverride: result.savedId ?? jobId ?? undefined,
     });
   }, [
@@ -1397,14 +1458,8 @@ export function WizardShell() {
         });
         return next;
       });
-
-      await fetchSuggestionsForStep({
-        stepId: currentStep?.id,
-        updatedFieldId: suggestion.fieldId,
-        updatedValue: value,
-      });
     },
-    [announceAuthRequired, currentStep?.id, fetchSuggestionsForStep, onFieldChange, user]
+    [announceAuthRequired, onFieldChange, user]
   );
 
   const handleSuggestionToggle = useCallback(
@@ -1574,6 +1629,19 @@ export function WizardShell() {
       setIsChatting(false);
     }
   };
+
+  const visibleAssistantMessages = useMemo(() => {
+    const activeStepId = currentStep?.id;
+    if (!activeStepId) {
+      return assistantMessages;
+    }
+    return assistantMessages.filter((message) => {
+      if (message.kind !== "suggestion") {
+        return true;
+      }
+      return message.meta?.stepId === activeStepId;
+    });
+  }, [assistantMessages, currentStep?.id]);
 
   if (!user) {
     return (
@@ -2030,7 +2098,7 @@ export function WizardShell() {
       </div>
 
       <WizardSuggestionPanel
-        messages={assistantMessages}
+        messages={visibleAssistantMessages}
         onRefresh={() =>
           fetchSuggestionsForStep({
             stepId: currentStep?.id,
