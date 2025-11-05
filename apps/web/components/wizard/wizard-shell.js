@@ -299,12 +299,24 @@ export function WizardShell() {
                 isSuggestedValue ? "border-primary-300 bg-primary-50" : ""
               );
 
+              const isCapsuleField = field.type === "capsule";
+              const labelId = `${field.id}-label`;
+              const FieldContainer = isCapsuleField ? "div" : "label";
+
+              const containerProps = {
+                key: field.id,
+                className:
+                  "flex flex-col gap-2 text-sm font-medium text-neutral-700",
+              };
+
+              if (isCapsuleField) {
+                containerProps.role = "group";
+                containerProps["aria-labelledby"] = labelId;
+              }
+
               return (
-                <label
-                  key={field.id}
-                  className="flex flex-col gap-2 text-sm font-medium text-neutral-700"
-                >
-                  <span>
+                <FieldContainer {...containerProps}>
+                  <span id={labelId}>
                     {field.label}
                     {field.required ? (
                       <span className="ml-1 text-primary-600">*</span>
@@ -326,7 +338,7 @@ export function WizardShell() {
                     </span>
                   ) : null}
 
-                  {field.type === "capsule" ? (
+                  {isCapsuleField ? (
                     <div className="space-y-3">
                       <div className="flex flex-wrap gap-3">
                         {(field.options ?? []).map((option) => {
@@ -343,7 +355,9 @@ export function WizardShell() {
                               )}
                               onClick={() => {
                                 setCustomCapsuleActive(field.id, false);
-                                onFieldChange(field.id, optionValue);
+                                onFieldChange(field.id, optionValue, {
+                                  skipRealtime: true,
+                                });
                               }}
                               onMouseEnter={() =>
                                 setHoveredCapsule(field.id, optionValue)
@@ -364,18 +378,20 @@ export function WizardShell() {
                               hoveredValue === "__custom__"
                             )}
                             onClick={() => {
-                              setCustomCapsuleActive(field.id, true);
-                              if (
-                                (field.options ?? []).some(
-                                  (option) => option.value === effectiveValue
-                                )
-                              ) {
-                                onFieldChange(field.id, "");
+                                setCustomCapsuleActive(field.id, true);
+                                if (
+                                  (field.options ?? []).some(
+                                    (option) => option.value === effectiveValue
+                                  )
+                                ) {
+                                  onFieldChange(field.id, "", {
+                                    skipRealtime: true,
+                                  });
+                                }
+                              }}
+                              onMouseEnter={() =>
+                                setHoveredCapsule(field.id, "__custom__")
                               }
-                            }}
-                            onMouseEnter={() =>
-                              setHoveredCapsule(field.id, "__custom__")
-                            }
                             onMouseLeave={() =>
                               clearHoveredCapsule(field.id, "__custom__")
                             }
@@ -400,12 +416,12 @@ export function WizardShell() {
                         />
                       ) : null}
                     </div>
-                  ) : field.type === "select" ? (
-                    <select
-                      className={clsx(sharedInputClasses, "cursor-pointer")}
-                      value={inputValue}
-                      onChange={handleChange}
-                      disabled={false}
+                ) : field.type === "select" ? (
+                  <select
+                    className={clsx(sharedInputClasses, "cursor-pointer")}
+                    value={inputValue}
+                    onChange={handleChange}
+                    disabled={false}
                     >
                       <option value="">
                         {field.placeholder ?? "Select an option"}
@@ -424,11 +440,11 @@ export function WizardShell() {
                       onChange={handleChange}
                       rows={field.rows ?? 3}
                       disabled={false}
-                    />
-                  ) : (
-                    <input
-                      className={sharedInputClasses}
-                      type={field.type === "number" ? "number" : "text"}
+                  />
+                ) : (
+                  <input
+                    className={sharedInputClasses}
+                    type={field.type === "number" ? "number" : "text"}
                       placeholder={field.placeholder}
                       value={
                         field.type === "number" && inputValue === ""
@@ -438,11 +454,11 @@ export function WizardShell() {
                       onChange={handleChange}
                       maxLength={field.maxLength}
                       step={field.step}
-                      disabled={false}
-                      autoComplete="off"
-                    />
-                  )}
-                </label>
+                    disabled={false}
+                    autoComplete="off"
+                  />
+                )}
+                </FieldContainer>
               );
             })}
           </form>
