@@ -679,7 +679,6 @@ async function askChatGemini({ userMessage, draftState, intent }) {
     null,
     2
   );
-
   const content = await callGemini({
     model: chatModel,
     contents: [

@@ -2054,7 +2054,6 @@ export function WizardShell() {
       </div>
 
       <WizardSuggestionPanel
-        state={state}
         messages={assistantMessages}
         onRefresh={() =>
           fetchSuggestionsForStep({
@@ -2068,6 +2067,8 @@ export function WizardShell() {
         isLoading={isFetchingSuggestions}
         isSending={isChatting}
         nextStepTeaser={copilotNextTeaser}
+        jobState={committedState}
+        isJobTabEnabled={allRequiredStepsCompleteInState}
       />
     </div>
   );
