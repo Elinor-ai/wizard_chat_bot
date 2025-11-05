@@ -180,6 +180,7 @@ export const WizardApi = {
       options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
     const response = await fetch(`${API_BASE_URL}/wizard/suggestions`, {
       method: "POST",
+      signal: options.signal,
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.userId)
