@@ -2,6 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { WizardApi } from "../../lib/api-client";
 import { clsx } from "../../lib/cn";
 import { WizardSuggestionPanel } from "./wizard-suggestion-panel";
@@ -43,6 +44,73 @@ function deepClone(value) {
     return structuredClone(value);
   }
   return JSON.parse(JSON.stringify(value));
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function arraysEqual(left = [], right = []) {
+  if (left === right) return true;
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (!deepEqual(left[index], right[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function deepEqual(left, right) {
+  if (left === right) return true;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return arraysEqual(left, right);
+  }
+  if (isPlainObject(left) && isPlainObject(right)) {
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+    for (const key of keys) {
+      if (!deepEqual(left[key], right[key])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return left === right;
+}
+
+function computeStateDiff(previousState = {}, nextState = {}) {
+  const diff = {};
+  const keys = new Set([
+    ...Object.keys(previousState ?? {}),
+    ...Object.keys(nextState ?? {}),
+  ]);
+
+  for (const key of keys) {
+    const prevValue = previousState?.[key];
+    const nextValue = nextState?.[key];
+
+    if (isPlainObject(prevValue) && isPlainObject(nextValue)) {
+      const nestedDiff = computeStateDiff(prevValue, nextValue);
+      if (Object.keys(nestedDiff).length > 0) {
+        diff[key] = nestedDiff;
+      }
+      continue;
+    }
+
+    if (Array.isArray(prevValue) && Array.isArray(nextValue)) {
+      if (!arraysEqual(prevValue, nextValue)) {
+        diff[key] = nextValue;
+      }
+      continue;
+    }
+
+    if (!deepEqual(prevValue, nextValue)) {
+      diff[key] = nextValue === undefined ? null : nextValue;
+    }
+  }
+
+  return diff;
 }
 
 const WORK_MODEL_OPTIONS = [
@@ -385,6 +453,7 @@ function normalizeValueForField(field, proposal) {
 
 export function WizardShell() {
   const { user } = useUser();
+  const router = useRouter();
   const [state, setState] = useState({});
   const [committedState, setCommittedState] = useState({});
   const [jobId, setJobId] = useState(null);
@@ -406,14 +475,15 @@ export function WizardShell() {
   const [autofilledFields, setAutofilledFields] = useState({});
   const [copilotNextTeaser, setCopilotNextTeaser] = useState("");
   const suggestionDebounceRef = useRef(null);
-  const persistDraftDebounceRef = useRef(null);
   const stateRef = useRef(state);
   const previousFieldValuesRef = useRef({});
   const [customCapsuleActive, setCustomCapsuleActive] = useState({});
   const [hoveredCapsules, setHoveredCapsules] = useState({});
   const [hasSeenUnlock, setHasSeenUnlock] = useState(false);
   const [unlockAction, setUnlockAction] = useState(null);
-  const [unlockScreenLoggedFor, setUnlockScreenLoggedFor] = useState(null);
+  const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [activeToast, setActiveToast] = useState(null);
+  const toastTimeoutRef = useRef(null);
 
   const steps = useMemo(
     () =>
@@ -430,6 +500,114 @@ export function WizardShell() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    setUnsavedChanges(!deepEqual(committedState, state));
+  }, [committedState, state]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleBeforeUnload = (event) => {
+      if (!unsavedChanges) {
+        return;
+      }
+      event.preventDefault();
+      // Chrome requires returnValue to be set.
+      // eslint-disable-next-line no-param-reassign
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [unsavedChanges]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    if (!unsavedChanges) {
+      return undefined;
+    }
+
+    const confirmationMessage =
+      "You have unsaved changes. Are you sure you want to leave without saving?";
+
+    const handleAnchorClick = (event) => {
+      const path =
+        typeof event.composedPath === "function" ? event.composedPath() : [];
+
+      let anchor =
+        path.find((node) => node instanceof HTMLAnchorElement) ?? null;
+
+      if (!anchor) {
+        let element = event.target;
+        while (element && element instanceof Element && element.tagName.toLowerCase() !== "a") {
+          element = element.parentElement;
+        }
+        if (element instanceof HTMLAnchorElement) {
+          anchor = element;
+        }
+      }
+
+      if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+
+      if (anchor.target && anchor.target !== "_self") {
+        return;
+      }
+
+      if (anchor.hasAttribute("download")) {
+        return;
+      }
+
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+
+      const href = anchor.getAttribute("href");
+      if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) {
+        return;
+      }
+
+      const destination = new URL(href, window.location.origin);
+      const current = new URL(window.location.href);
+      const isSameLocation =
+        destination.origin === current.origin &&
+        destination.pathname === current.pathname &&
+        destination.search === current.search &&
+        destination.hash === current.hash;
+
+      if (isSameLocation) {
+        return;
+      }
+
+      const shouldLeave = window.confirm(confirmationMessage);
+      if (!shouldLeave) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    const handlePopState = (event) => {
+      const shouldLeave = window.confirm(confirmationMessage);
+      if (!shouldLeave) {
+        event.preventDefault?.();
+        window.history.pushState(null, "", window.location.href);
+      }
+    };
+
+    window.addEventListener("click", handleAnchorClick, true);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("click", handleAnchorClick, true);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [unsavedChanges]);
 
   const allRequiredStepsCompleteInState = useMemo(
     () =>
@@ -548,16 +726,6 @@ export function WizardShell() {
     );
   }, []);
 
-  const shouldShowUnlockScreen = useMemo(() => {
-    if (includeOptional || hasSeenUnlock) {
-      return false;
-    }
-    return REQUIRED_FIELD_IDS.every((fieldId) => {
-      const definition = findFieldDefinition(fieldId);
-      return isFieldValueProvided(getDeep(state, fieldId), definition);
-    });
-  }, [hasSeenUnlock, includeOptional, state]);
-
   const persistMutation = useMutation({
     mutationFn: ({
       state: jobState,
@@ -576,11 +744,10 @@ export function WizardShell() {
       }),
   });
 
-  const canRevisitOptional = !includeOptional && hasSeenUnlock;
-  const optionalActionsDisabled =
-    !allRequiredStepsCompleteInState || persistMutation.isPending;
   const isLastStep = currentStepIndex === steps.length - 1;
   const totalSteps = steps.length;
+  const showUnlockCtas =
+    allRequiredStepsCompleteInState && includeOptional === false;
 
   const goToStep = useCallback((nextIndex) => {
     setCurrentStepIndex(nextIndex);
@@ -612,18 +779,6 @@ export function WizardShell() {
     });
   }, [committedState, currentStepIndex, hiddenFields, steps]);
 
-  useEffect(() => {
-    if (includeOptional) return;
-    const hasOptionalData = OPTIONAL_STEPS.some((step) =>
-      isStepComplete(step, committedState, hiddenFields)
-    );
-    if (hasOptionalData) {
-      setIncludeOptional(true);
-      setHasSeenUnlock(true);
-      setUnlockAction("continue");
-    }
-  }, [committedState, hiddenFields, includeOptional]);
-
   const announceAuthRequired = useCallback(() => {
     setAssistantMessages((prev) => [
       ...prev,
@@ -635,6 +790,33 @@ export function WizardShell() {
       },
     ]);
   }, []);
+
+  const showToast = useCallback(
+    (variant, message) => {
+      if (!message) return;
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+      setActiveToast({
+        id: Date.now(),
+        variant,
+        message,
+      });
+      toastTimeoutRef.current = setTimeout(() => {
+        setActiveToast(null);
+      }, 4000);
+    },
+    []
+  );
+
+  useEffect(
+    () => () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    },
+    []
+  );
 
   const fetchSuggestionsForStep = useCallback(
     async ({
@@ -887,10 +1069,6 @@ export function WizardShell() {
       clearTimeout(suggestionDebounceRef.current);
       suggestionDebounceRef.current = null;
     }
-    if (persistDraftDebounceRef.current) {
-      clearTimeout(persistDraftDebounceRef.current);
-      persistDraftDebounceRef.current = null;
-    }
     setAssistantMessages((prev) =>
       prev.filter(
         (message) =>
@@ -907,6 +1085,14 @@ export function WizardShell() {
       }
 
       const intent = { includeOptional, ...intentOverrides };
+      const diff = computeStateDiff(committedState, state);
+      const hasChanges = Object.keys(diff).length > 0;
+      const creatingJob = !jobId;
+
+      if (!creatingJob && !hasChanges) {
+        showToast("info", "No new changes to save.");
+        return { savedId: jobId, intent, noChanges: true };
+      }
 
       try {
         const wizardMeta = {
@@ -918,7 +1104,7 @@ export function WizardShell() {
         };
 
         const response = await persistMutation.mutateAsync({
-          state,
+          state: creatingJob ? state : diff,
           userId: user.id,
           jobId,
           intent,
@@ -931,18 +1117,11 @@ export function WizardShell() {
         }
 
         setCommittedState(() => deepClone(state));
+        showToast("success", "Draft saved successfully.");
 
         return { savedId: response?.jobId ?? jobId, intent };
       } catch (error) {
-        setAssistantMessages((prev) => [
-          ...prev,
-          {
-            id: `persist-error-${Date.now()}`,
-            role: "assistant",
-            kind: "error",
-            content: error.message ?? "Failed to save the job.",
-          },
-        ]);
+        showToast("error", error.message ?? "Failed to save your changes.");
         return null;
       }
     },
@@ -951,6 +1130,7 @@ export function WizardShell() {
       currentStep?.id,
       jobId,
       includeOptional,
+      committedState,
       progressCompletedCount,
       totalProgressFields,
       optionalSectionsCompleted,
@@ -958,23 +1138,10 @@ export function WizardShell() {
       unlockAction,
       persistMutation,
       state,
+      showToast,
       user,
     ]
   );
-
-  const scheduleAutosave = useCallback(() => {
-    if (!user) {
-      return;
-    }
-    if (persistDraftDebounceRef.current) {
-      clearTimeout(persistDraftDebounceRef.current);
-    }
-    persistDraftDebounceRef.current = setTimeout(() => {
-      persistCurrentDraft({ event: "autosave" }, currentStep?.id).catch(
-        () => {}
-      );
-    }, 1500);
-  }, [currentStep?.id, persistCurrentDraft, user]);
 
   const onFieldChange = useCallback(
     (fieldId, value, options = {}) => {
@@ -1008,33 +1175,9 @@ export function WizardShell() {
       if (!skipRealtime) {
         scheduleRealtimeSuggestions(fieldId, value);
       }
-      scheduleAutosave();
     },
-    [scheduleAutosave, scheduleRealtimeSuggestions]
+    [scheduleRealtimeSuggestions]
   );
-
-  useEffect(() => {
-    if (!shouldShowUnlockScreen) {
-      return;
-    }
-    const logKey = jobId ?? "__no_job__";
-    if (unlockScreenLoggedFor === logKey) {
-      return;
-    }
-    setUnlockScreenLoggedFor(logKey);
-    (async () => {
-      await persistCurrentDraft(
-        { event: "unlock_screen_viewed" },
-        currentStep?.id
-      );
-    })().catch(() => {});
-  }, [
-    currentStep?.id,
-    jobId,
-    persistCurrentDraft,
-    shouldShowUnlockScreen,
-    unlockScreenLoggedFor,
-  ]);
 
   const handleNext = async () => {
     if (currentStepIndex >= steps.length - 1) {
@@ -1076,20 +1219,13 @@ export function WizardShell() {
       return;
     }
 
-    const stepId = currentStep?.id;
-    const result = await persistCurrentDraft({}, stepId);
-    if (!result) {
+    if (unsavedChanges) {
+      showToast("warning", "Save your changes before leaving this step.");
       return;
     }
 
     const previousIndex = currentStepIndex - 1;
-    const previousStep = steps[previousIndex] ?? steps[0];
     goToStep(previousIndex);
-    await fetchSuggestionsForStep({
-      stepId: previousStep?.id ?? stepId,
-      intentOverrides: result.intent,
-      jobIdOverride: result.savedId,
-    });
   };
 
   const handleSubmit = async (submissionIntent = {}) => {
@@ -1122,16 +1258,6 @@ export function WizardShell() {
       return;
     }
 
-    setAssistantMessages((prev) => [
-      ...prev,
-      {
-        id: `saved-${Date.now()}`,
-        role: "assistant",
-        kind: "info",
-        content: "Draft saved. Copilot will continue enriching your inputs.",
-      },
-    ]);
-
     await fetchSuggestionsForStep({
       stepId,
       intentOverrides: result.intent,
@@ -1139,10 +1265,7 @@ export function WizardShell() {
     });
   };
 
-  const handleAddOptional = async (
-    intentOverrides = {},
-    { markUnlock = false } = {}
-  ) => {
+  const handleAddOptional = useCallback(async () => {
     if (!allRequiredStepsCompleteInState) {
       setAssistantMessages((prev) => [
         ...prev,
@@ -1157,35 +1280,44 @@ export function WizardShell() {
       return;
     }
 
-    const stepId = currentStep?.id;
-    const result = await persistCurrentDraft(intentOverrides, stepId);
+    const result = await persistCurrentDraft({ includeOptional: true }, currentStep?.id);
     if (!result) {
       return;
     }
 
-    if (markUnlock) {
-      setHasSeenUnlock(true);
-      setUnlockAction("continue");
-    }
-
-    const nextIntent = {
-      ...result.intent,
-      ...intentOverrides,
-      includeOptional: true,
-    };
+    setHasSeenUnlock(true);
+    setUnlockAction("continue");
     setIncludeOptional(true);
+    setCommittedState(() => deepClone(state));
+    setUnsavedChanges(false);
+
     const nextIndex = REQUIRED_STEPS.length;
     const optionalFlowSteps = [...REQUIRED_STEPS, ...OPTIONAL_STEPS];
-    const nextStep = optionalFlowSteps[nextIndex];
+    const nextStep = optionalFlowSteps[nextIndex] ?? OPTIONAL_STEPS[0];
+
     goToStep(nextIndex);
     await fetchSuggestionsForStep({
-      stepId: nextStep?.id ?? "compensation",
-      intentOverrides: nextIntent,
-      jobIdOverride: result.savedId,
+      stepId: nextStep?.id ?? OPTIONAL_STEPS[0]?.id,
+      intentOverrides: { includeOptional: true },
+      jobIdOverride: result.savedId ?? jobId ?? undefined,
     });
-  };
+  }, [
+    allRequiredStepsCompleteInState,
+    currentStep?.id,
+    fetchSuggestionsForStep,
+    goToStep,
+    jobId,
+    persistCurrentDraft,
+    setAssistantMessages,
+    setCommittedState,
+    setHasSeenUnlock,
+    setIncludeOptional,
+    setUnlockAction,
+    setUnsavedChanges,
+    state,
+  ]);
 
-  const handleSkipOptional = async () => {
+  const handleSkipOptional = useCallback(async () => {
     if (!allRequiredStepsCompleteInState) {
       setAssistantMessages((prev) => [
         ...prev,
@@ -1199,18 +1331,36 @@ export function WizardShell() {
       return;
     }
 
+    const result = await persistCurrentDraft(
+      { includeOptional: false, publishNow: true },
+      currentStep?.id
+    );
+    if (!result) {
+      return;
+    }
+
     setHasSeenUnlock(true);
     setUnlockAction("skip");
-    await handleSubmit({
-      includeOptional: false,
-      optionalCompleted: false,
-      event: "unlock_screen_skip",
-    });
-  };
+    setCommittedState(() => deepClone(state));
+    setUnsavedChanges(false);
+
+    router.push("/assets");
+  }, [
+    allRequiredStepsCompleteInState,
+    currentStep?.id,
+    persistCurrentDraft,
+    router,
+    setAssistantMessages,
+    setCommittedState,
+    setHasSeenUnlock,
+    setUnlockAction,
+    setUnsavedChanges,
+    state,
+  ]);
 
   const handleAcceptSuggestion = useCallback(
     async (suggestion) => {
-      if (!user || !jobId) {
+      if (!user) {
         announceAuthRequired();
         return;
       }
@@ -1248,78 +1398,13 @@ export function WizardShell() {
         return next;
       });
 
-      try {
-        await WizardApi.mergeSuggestion(
-          {
-            jobId,
-            fieldId: suggestion.fieldId,
-            value,
-          },
-          { userId: user.id }
-        );
-        setCommittedState((prev) => {
-          const next = deepClone(prev);
-          if (value === undefined) {
-            setDeep(next, suggestion.fieldId, undefined);
-          } else {
-            setDeep(next, suggestion.fieldId, value);
-          }
-          return next;
-        });
-        await fetchSuggestionsForStep({
-          stepId: currentStep?.id,
-          updatedFieldId: suggestion.fieldId,
-          updatedValue: value,
-        });
-      } catch (error) {
-        const storedOriginalValue = getDeep(
-          previousFieldValuesRef.current,
-          suggestion.fieldId
-        );
-        const fallbackValue =
-          storedOriginalValue && storedOriginalValue.__stored
-            ? storedOriginalValue.value
-            : getDeep(committedState, suggestion.fieldId);
-
-        onFieldChange(suggestion.fieldId, fallbackValue ?? undefined, {
-          preserveSuggestionMeta: false,
-          skipRealtime: true,
-        });
-
-        setAutofilledFields((prev) => {
-          const next = deepClone(prev);
-          const existing = getDeep(next, suggestion.fieldId);
-          if (existing) {
-            setDeep(next, suggestion.fieldId, {
-              ...existing,
-              accepted: false,
-              lastRejectedAt: Date.now(),
-            });
-          }
-          return next;
-        });
-
-        setDeep(previousFieldValuesRef.current, suggestion.fieldId, undefined);
-
-        setAssistantMessages((prev) => [
-          ...prev,
-          {
-            id: `merge-error-${Date.now()}`,
-            role: "assistant",
-            kind: "error",
-            content: error.message ?? "Failed to merge the suggestion.",
-          },
-        ]);
-      }
+      await fetchSuggestionsForStep({
+        stepId: currentStep?.id,
+        updatedFieldId: suggestion.fieldId,
+        updatedValue: value,
+      });
     },
-    [
-      announceAuthRequired,
-      committedState,
-      jobId,
-      fetchSuggestionsForStep,
-      onFieldChange,
-      user,
-    ]
+    [announceAuthRequired, currentStep?.id, fetchSuggestionsForStep, onFieldChange, user]
   );
 
   const handleSuggestionToggle = useCallback(
@@ -1413,27 +1498,25 @@ export function WizardShell() {
         return;
       }
 
-      const result = await persistCurrentDraft({}, currentStep?.id);
-      if (!result) {
+      if (unsavedChanges) {
+        showToast("warning", "Save your changes before switching screens.");
         return;
       }
 
       goToStep(index);
       await fetchSuggestionsForStep({
         stepId: targetStep.id,
-        intentOverrides: result.intent,
-        jobIdOverride: result.savedId,
       });
     },
     [
-      currentStep?.id,
       currentStepIndex,
       currentRequiredStepCompleteInState,
       allRequiredStepsCompleteInState,
       isCurrentStepRequired,
+      unsavedChanges,
+      showToast,
       fetchSuggestionsForStep,
       goToStep,
-      persistCurrentDraft,
       steps,
     ]
   );
@@ -1585,8 +1668,8 @@ export function WizardShell() {
             />
           </div>
           <p className="text-xs text-neutral-500">
-            We autosave as you go. Skip anything that doesn’t apply—you can
-            always come back.
+            Changes stay local until you press “Save & Continue.” Skip anything
+            that doesn’t apply—you can always return before saving.
           </p>
         </div>
 
@@ -1868,189 +1951,82 @@ export function WizardShell() {
           })}
         </form>
 
-        {shouldShowUnlockScreen ? (
-          <div className="space-y-6 rounded-2xl bg-gradient-to-r from-[#667eea] to-[#764ba2] p-8 text-center text-white shadow-lg shadow-primary-400/30">
-            <div className="flex justify-center">
-              <span
-                role="img"
-                aria-label="Celebration"
-                className="text-6xl leading-none"
-              >
-                🎉
-              </span>
-            </div>
-            <div className="space-y-2">
-              <h2 className="text-2xl font-semibold">
-                Your job post is ready to publish!
-              </h2>
-              <p className="text-sm text-white/80">
-                Take 5 more minutes to answer 4 quick questions and get 3.4×
-                more qualified applications.
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <button
+            type="button"
+            onClick={handleBack}
+            disabled={currentStepIndex === 0}
+            className="self-start rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 transition hover:border-primary-500 hover:text-primary-600 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
+          >
+            Back
+          </button>
+          {showUnlockCtas ? (
+            <div className="flex flex-col items-end gap-2 text-right">
+              <p className="text-xs font-medium text-neutral-500">
+                Required complete. Continue to improve (recommended) or publish now.
               </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {[
-                { value: "3.4×", label: "More applications" },
-                { value: "67%", label: "Higher quality matches" },
-                { value: "~5min", label: "Time to complete" },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-2xl bg-white/95 px-4 py-5 text-center shadow-sm shadow-primary-900/10"
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddOptional}
+                  disabled={persistMutation.isPending}
+                  className="rounded-full bg-primary-600 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
                 >
-                  <p className="text-[36px] font-bold text-[#5b4cde]">
-                    {item.value}
-                  </p>
-                  <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                    {item.label}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 text-left">
-              {[
-                {
-                  emoji: "🏢",
-                  title: "Work environment",
-                  description: "Remote/hybrid, team size, collaboration — ~60s",
-                },
-                {
-                  emoji: "💰",
-                  title: "Compensation details",
-                  description: "Salary, benefits, equity — ~90s",
-                },
-                {
-                  emoji: "📅",
-                  title: "Work schedule",
-                  description: "Hours, flexibility, time zone — ~45s",
-                },
-                {
-                  emoji: "✨",
-                  title: "Final polish",
-                  description: "Instructions, timeline, next steps — ~90s",
-                },
-              ].map((item) => (
-                <div
-                  key={item.title}
-                  className="flex gap-4 rounded-2xl bg-white/95 px-4 py-4 text-neutral-700 shadow-sm shadow-primary-900/10"
+                  {persistMutation.isPending
+                    ? "Saving..."
+                    : "Continue — Boost my result (recommended)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSkipOptional}
+                  disabled={persistMutation.isPending}
+                  className="rounded-full border border-neutral-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:border-primary-400 hover:text-primary-600 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f2f0ff] text-lg">
-                    {item.emoji}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-[#4d3edf]">
-                      {item.title}
-                    </p>
-                    <p className="text-xs text-neutral-500">
-                      {item.description}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                  {persistMutation.isPending
+                    ? "Saving..."
+                    : "Publish now and skip"}
+                </button>
+              </div>
             </div>
-
-            <p className="text-sm font-medium text-white/80">
-              💡 Join 73% of top employers who fill roles faster by completing
-              these boosters.
-            </p>
-
-            <div className="flex flex-col items-center gap-3">
+          ) : isLastStep ? (
+            <div className="flex flex-col items-end gap-2">
               <button
                 type="button"
                 onClick={() =>
-                  handleAddOptional(
-                    { event: "unlock_screen_continue" },
-                    { markUnlock: true }
-                  )
+                  handleSubmit({
+                    includeOptional: true,
+                    optionalCompleted: true,
+                  })
                 }
-                disabled={optionalActionsDisabled}
-                className="rounded-full bg-[#5b4cde] px-6 py-3 text-base font-semibold text-white transition hover:bg-[#4c3ac9] disabled:cursor-not-allowed disabled:bg-[#9086f0]"
+                disabled={
+                  persistMutation.isPending ||
+                  (currentStepIndex < REQUIRED_STEPS.length &&
+                    !currentRequiredStepCompleteInState)
+                }
+                className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
               >
-                Continue to boost my results →
+                {persistMutation.isPending
+                  ? "Saving..."
+                  : "Generate my hiring pack"}
               </button>
-              <button
-                type="button"
-                onClick={handleSkipOptional}
-                disabled={optionalActionsDisabled}
-                className="text-sm font-semibold text-white/80 transition hover:text-white disabled:cursor-not-allowed disabled:text-white/40"
-              >
-                I’ll publish now and skip these sections
-              </button>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+                We’ll never publish without your approval.
+              </p>
             </div>
-          </div>
-        ) : (
-          <>
-            {canRevisitOptional ? (
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-primary-200 bg-white p-4 text-xs text-primary-600">
-                <span>
-                  {unlockAction === "skip"
-                    ? "Optional boosters are paused. Reopen them whenever you’re ready."
-                    : "Optional boosters unlocked—dive back in anytime."}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleAddOptional()}
-                  disabled={optionalActionsDisabled}
-                  className="rounded-full border border-primary-400 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-primary-500 transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
-                >
-                  Open optional screens
-                </button>
-              </div>
-            ) : null}
-
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={handleBack}
-                disabled={currentStepIndex === 0}
-                className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 transition hover:border-primary-500 hover:text-primary-600 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
-              >
-                Back
-              </button>
-              {isLastStep ? (
-                <div className="flex flex-col items-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleSubmit({
-                        includeOptional: true,
-                        optionalCompleted: true,
-                      })
-                    }
-                    disabled={
-                      persistMutation.isPending ||
-                      (currentStepIndex < REQUIRED_STEPS.length &&
-                        !currentRequiredStepCompleteInState)
-                    }
-                    className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-                  >
-                    {persistMutation.isPending
-                      ? "Saving..."
-                      : "Generate my hiring pack"}
-                  </button>
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-                    We’ll never publish without your approval.
-                  </p>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  disabled={
-                    (isCurrentStepRequired &&
-                      !currentRequiredStepCompleteInState) ||
-                    persistMutation.isPending
-                  }
-                  className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-                >
-                  Save and continue
-                </button>
-              )}
-            </div>
-          </>
-        )}
+          ) : (
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={
+                (isCurrentStepRequired && !currentRequiredStepCompleteInState) ||
+                persistMutation.isPending
+              }
+              className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+            >
+              {persistMutation.isPending ? "Saving..." : "Save & Continue"}
+            </button>
+          )}
+        </div>
       </div>
 
       <WizardSuggestionPanel
