@@ -2,10 +2,23 @@ import { Router } from "express";
 import { z } from "zod";
 import { v4 as uuid } from "uuid";
 import { wrapAsync, httpError } from "@wizard/utils";
-import { JobSchema, JobSuggestionSchema, deriveJobStatusFromState } from "@wizard/core";
+import {
+  CampaignSchema,
+  JobChannelRecommendationSchema,
+  JobFinalSchema,
+  JobRefinementSchema,
+  JobSchema,
+  ConfirmedJobDetailsSchema,
+  JobSuggestionSchema,
+  deriveJobStatusFromState
+} from "@wizard/core";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
+const CHANNEL_RECOMMENDATION_COLLECTION = "jobChannelRecommendations";
+const REFINEMENT_COLLECTION = "jobRefinements";
+const FINAL_JOB_COLLECTION = "jobFinalJobs";
+const SUPPORTED_CHANNELS = CampaignSchema.shape.channel.options;
 
 const looseObjectSchema = z.object({}).catchall(z.unknown());
 
@@ -59,6 +72,22 @@ const mergeRequestSchema = z.object({
   jobId: z.string(),
   fieldId: z.string(),
   value: z.unknown()
+});
+
+const channelRecommendationRequestSchema = z.object({
+  jobId: z.string(),
+  forceRefresh: z.boolean().optional()
+});
+
+const refinementRequestSchema = z.object({
+  jobId: z.string(),
+  forceRefresh: z.boolean().optional()
+});
+
+const finalizeRequestSchema = z.object({
+  jobId: z.string(),
+  finalJob: ConfirmedJobDetailsSchema,
+  source: z.enum(["original", "refined", "edited"]).optional()
 });
 
 function requireUserId(req) {
@@ -465,6 +494,210 @@ async function acknowledgeSuggestionField({
   logger.info({ jobId, fieldId }, "Suggestion removed after merge");
 }
 
+async function loadRefinementDocument(firestore, jobId) {
+  const existing = await firestore.getDocument(REFINEMENT_COLLECTION, jobId);
+  if (!existing) return null;
+  const parsed = JobRefinementSchema.safeParse(existing);
+  if (!parsed.success) {
+    return null;
+  }
+  return parsed.data;
+}
+
+async function overwriteRefinementDocument({
+  firestore,
+  logger,
+  jobId,
+  refinedJob,
+  summary,
+  provider,
+  model,
+  metadata,
+  now
+}) {
+  const payload = JobRefinementSchema.parse({
+    id: jobId,
+    jobId,
+    schema_version: "1",
+    refinedJob,
+    summary: summary ?? null,
+    provider,
+    model,
+    metadata,
+    updatedAt: now
+  });
+
+  await firestore.saveDocument(REFINEMENT_COLLECTION, jobId, payload);
+  logger.info({ jobId, provider, model }, "Persisted job refinement");
+  return payload;
+}
+
+async function persistRefinementFailure({
+  firestore,
+  logger,
+  jobId,
+  reason,
+  message,
+  rawPreview,
+  now
+}) {
+  const existing = await loadRefinementDocument(firestore, jobId);
+  const payload = JobRefinementSchema.parse({
+    id: jobId,
+    jobId,
+    schema_version: "1",
+    refinedJob: existing?.refinedJob ?? {},
+    summary: existing?.summary ?? null,
+    provider: existing?.provider,
+    model: existing?.model,
+    metadata: existing?.metadata,
+    lastFailure: {
+      reason,
+      message: message ?? null,
+      rawPreview: rawPreview ?? null,
+      occurredAt: now
+    },
+    updatedAt: existing?.updatedAt ?? now
+  });
+
+  await firestore.saveDocument(REFINEMENT_COLLECTION, jobId, payload);
+  logger.warn({ jobId, reason }, "Persisted refinement failure");
+  return payload;
+}
+
+async function loadFinalJobDocument(firestore, jobId) {
+  const existing = await firestore.getDocument(FINAL_JOB_COLLECTION, jobId);
+  if (!existing) return null;
+  const parsed = JobFinalSchema.safeParse(existing);
+  if (!parsed.success) {
+    return null;
+  }
+  return parsed.data;
+}
+
+async function overwriteFinalJobDocument({
+  firestore,
+  logger,
+  jobId,
+  finalJob,
+  source,
+  now
+}) {
+  const payload = JobFinalSchema.parse({
+    id: jobId,
+    jobId,
+    schema_version: "1",
+    job: finalJob,
+    source,
+    updatedAt: now
+  });
+
+  await firestore.saveDocument(FINAL_JOB_COLLECTION, jobId, payload);
+  logger.info({ jobId, source }, "Persisted final job version");
+  return payload;
+}
+
+async function loadChannelRecommendationDocument(firestore, jobId) {
+  const existing = await firestore.getDocument(
+    CHANNEL_RECOMMENDATION_COLLECTION,
+    jobId
+  );
+  if (!existing) return null;
+  const parsed = JobChannelRecommendationSchema.safeParse(existing);
+  if (!parsed.success) {
+    return null;
+  }
+  return parsed.data;
+}
+
+async function overwriteChannelRecommendationDocument({
+  firestore,
+  logger,
+  jobId,
+  recommendations,
+  provider,
+  model,
+  metadata,
+  now
+}) {
+  const payload = JobChannelRecommendationSchema.parse({
+    id: jobId,
+    jobId,
+    schema_version: "1",
+    recommendations,
+    provider,
+    model,
+    metadata:
+      metadata && Object.keys(metadata).length > 0
+        ? {
+            promptTokens: metadata.promptTokens ?? null,
+            responseTokens: metadata.responseTokens ?? null,
+            totalTokens: metadata.totalTokens ?? null,
+            finishReason: metadata.finishReason ?? null
+          }
+        : undefined,
+    updatedAt: now
+  });
+
+  await firestore.saveDocument(
+    CHANNEL_RECOMMENDATION_COLLECTION,
+    jobId,
+    payload
+  );
+  logger.info(
+    { jobId, recommendations: recommendations.length, provider, model },
+    "Persisted channel recommendations"
+  );
+  return payload;
+}
+
+async function persistChannelRecommendationFailure({
+  firestore,
+  logger,
+  jobId,
+  reason,
+  message,
+  rawPreview,
+  now
+}) {
+  const existing = await loadChannelRecommendationDocument(firestore, jobId);
+
+  const payload = JobChannelRecommendationSchema.parse({
+    id: jobId,
+    jobId,
+    schema_version: "1",
+    recommendations: existing?.recommendations ?? [],
+    provider: existing?.provider,
+    model: existing?.model,
+    metadata: existing?.metadata,
+    lastFailure: {
+      reason,
+      message: message ?? null,
+      rawPreview: rawPreview ?? null,
+      occurredAt: now
+    },
+    updatedAt: existing?.updatedAt ?? now
+  });
+
+  await firestore.saveDocument(
+    CHANNEL_RECOMMENDATION_COLLECTION,
+    jobId,
+    payload
+  );
+  logger.warn(
+    { jobId, reason },
+    "Persisted channel recommendation failure"
+  );
+  return payload;
+}
+
+function buildJobSnapshot(job) {
+  return ALLOWED_INTAKE_KEYS.reduce((acc, key) => {
+    acc[key] = job?.[key];
+    return acc;
+  }, {});
+}
+
 function valueProvided(value) {
   if (Array.isArray(value)) {
     return value.length > 0;
@@ -678,6 +911,294 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       });
 
       res.json({ status: "ok" });
+    })
+  );
+
+  router.post(
+    "/refine",
+    wrapAsync(async (req, res) => {
+      const userId = requireUserId(req);
+      const payload = refinementRequestSchema.parse(req.body ?? {});
+
+      const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+      if (!job) {
+        throw httpError(404, "Job not found");
+      }
+
+      const parsedJob = JobSchema.parse(job);
+      if (!parsedJob.stateMachine?.requiredComplete) {
+        throw httpError(
+          409,
+          "Complete required questions before running refinement."
+        );
+      }
+
+      const now = new Date();
+      const jobSnapshot = buildJobSnapshot(parsedJob);
+
+      let refinementDoc = await loadRefinementDocument(
+        firestore,
+        payload.jobId
+      );
+
+      let refreshed = false;
+
+      if (
+        payload.forceRefresh === true ||
+        !refinementDoc ||
+        refinementDoc.lastFailure
+      ) {
+        const llmResult = await llmClient.askRefineJob({
+          jobSnapshot,
+          confirmed: parsedJob.confirmed ?? {},
+        });
+
+        if (llmResult?.refinedJob) {
+          refinementDoc = await overwriteRefinementDocument({
+            firestore,
+            logger,
+            jobId: payload.jobId,
+            refinedJob: llmResult.refinedJob,
+            summary: llmResult.summary ?? null,
+            provider: llmResult.provider,
+            model: llmResult.model,
+            metadata: llmResult.metadata,
+            now
+          });
+          refreshed = true;
+        } else if (llmResult?.error) {
+          refinementDoc = await persistRefinementFailure({
+            firestore,
+            logger,
+            jobId: payload.jobId,
+            reason: llmResult.error.reason ?? "unknown_error",
+            message: llmResult.error.message ?? null,
+            rawPreview: llmResult.error.rawPreview ?? null,
+            now
+          });
+          refreshed = true;
+        }
+      }
+
+      if (!refinementDoc) {
+        throw httpError(500, "Failed to load job refinement");
+      }
+
+      res.json({
+        jobId: payload.jobId,
+        refinedJob: refinementDoc.refinedJob ?? {},
+        summary: refinementDoc.summary ?? null,
+        provider: refinementDoc.provider ?? null,
+        model: refinementDoc.model ?? null,
+        updatedAt: refinementDoc.updatedAt ?? null,
+        refreshed,
+        failure: refinementDoc.lastFailure ?? null,
+        originalJob: jobSnapshot
+      });
+    })
+  );
+
+  router.post(
+    "/refine/finalize",
+    wrapAsync(async (req, res) => {
+      const userId = requireUserId(req);
+      const payload = finalizeRequestSchema.parse(req.body ?? {});
+
+      const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+      if (!job) {
+        throw httpError(404, "Job not found");
+      }
+
+      const parsedJob = JobSchema.parse(job);
+      const now = new Date();
+      const finalJob = payload.finalJob;
+      const source = payload.source ?? "refined";
+
+      const progressCheck = computeRequiredProgress(finalJob);
+      if (!progressCheck.allComplete) {
+        throw httpError(
+          422,
+          "Final job must include all required fields before publishing."
+        );
+      }
+
+      const nextJob = deepClone(parsedJob);
+      for (const fieldId of ALLOWED_INTAKE_KEYS) {
+        const value = finalJob[fieldId];
+        if (value === undefined) {
+          setDeep(nextJob, fieldId, undefined);
+        } else {
+          setDeep(nextJob, fieldId, value);
+        }
+      }
+      nextJob.confirmed = {
+        ...(nextJob.confirmed ?? {}),
+        ...finalJob
+      };
+      nextJob.updatedAt = now;
+
+      const finalProgress = computeRequiredProgress(nextJob);
+      const jobWithProgress = applyRequiredProgress(nextJob, finalProgress, now);
+      const validatedJob = JobSchema.parse(jobWithProgress);
+      await firestore.saveDocument(JOB_COLLECTION, payload.jobId, validatedJob);
+
+      await overwriteFinalJobDocument({
+        firestore,
+        logger,
+        jobId: payload.jobId,
+        finalJob,
+        source,
+        now
+      });
+
+      const channelResult = await llmClient.askChannelRecommendations({
+        jobSnapshot: buildJobSnapshot(validatedJob),
+        confirmed: validatedJob.confirmed ?? finalJob,
+        supportedChannels: SUPPORTED_CHANNELS,
+        existingChannels: Array.isArray(validatedJob.campaigns)
+          ? validatedJob.campaigns
+              .map((campaign) => campaign?.channel)
+              .filter((channel) => typeof channel === "string")
+          : []
+      });
+
+      let channelDoc = null;
+
+      if (channelResult?.recommendations?.length > 0) {
+        channelDoc = await overwriteChannelRecommendationDocument({
+          firestore,
+          logger,
+          jobId: payload.jobId,
+          recommendations: channelResult.recommendations,
+          provider: channelResult.provider,
+          model: channelResult.model,
+          metadata: channelResult.metadata,
+          now
+        });
+      } else if (channelResult?.error) {
+        channelDoc = await persistChannelRecommendationFailure({
+          firestore,
+          logger,
+          jobId: payload.jobId,
+          reason: channelResult.error.reason ?? "unknown_error",
+          message: channelResult.error.message ?? null,
+          rawPreview: channelResult.error.rawPreview ?? null,
+          now
+        });
+      } else {
+        channelDoc = await persistChannelRecommendationFailure({
+          firestore,
+          logger,
+          jobId: payload.jobId,
+          reason: "no_recommendations",
+          message: "LLM returned no channel recommendations",
+          rawPreview: null,
+          now
+        });
+      }
+
+      res.json({
+        jobId: payload.jobId,
+        finalJob,
+        source,
+        channelRecommendations: channelDoc?.recommendations ?? [],
+        channelUpdatedAt: channelDoc?.updatedAt ?? null,
+        channelFailure: channelDoc?.lastFailure ?? null
+      });
+    })
+  );
+
+  router.post(
+    "/channels/recommendations",
+    wrapAsync(async (req, res) => {
+      const userId = requireUserId(req);
+      const payload = channelRecommendationRequestSchema.parse(req.body ?? {});
+
+      const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+      if (!job) {
+        throw httpError(404, "Job not found");
+      }
+
+      const parsedJob = JobSchema.parse(job);
+      if (!parsedJob.stateMachine?.requiredComplete) {
+        throw httpError(
+          409,
+          "Complete all required questions before generating channels."
+        );
+      }
+
+      const now = new Date();
+      let doc = await loadChannelRecommendationDocument(
+        firestore,
+        payload.jobId
+      );
+
+      const shouldRefresh =
+        !doc || payload.forceRefresh === true;
+
+      let refreshed = false;
+
+      if (shouldRefresh && llmClient?.askChannelRecommendations) {
+        const llmResult = await llmClient.askChannelRecommendations({
+          jobSnapshot: buildJobSnapshot(parsedJob),
+          confirmed: parsedJob.confirmed ?? {},
+          supportedChannels: SUPPORTED_CHANNELS,
+          existingChannels: Array.isArray(parsedJob.campaigns)
+            ? parsedJob.campaigns
+                .map((campaign) => campaign?.channel)
+                .filter((channel) => typeof channel === "string")
+            : []
+        });
+
+        if (llmResult?.recommendations?.length > 0) {
+          doc = await overwriteChannelRecommendationDocument({
+            firestore,
+            logger,
+            jobId: payload.jobId,
+            recommendations: llmResult.recommendations,
+            provider: llmResult.provider,
+            model: llmResult.model,
+            metadata: llmResult.metadata,
+            now
+          });
+          refreshed = true;
+        } else if (llmResult?.error) {
+          doc = await persistChannelRecommendationFailure({
+            firestore,
+            logger,
+            jobId: payload.jobId,
+            reason: llmResult.error.reason ?? "unknown_error",
+            message: llmResult.error.message ?? null,
+            rawPreview: llmResult.error.rawPreview ?? null,
+            now
+          });
+          refreshed = true;
+        } else {
+          doc = await persistChannelRecommendationFailure({
+            firestore,
+            logger,
+            jobId: payload.jobId,
+            reason: "no_recommendations",
+            message: "LLM returned no channel recommendations",
+            rawPreview: null,
+            now
+          });
+          refreshed = true;
+        }
+      }
+
+      const supportedSet = new Set(SUPPORTED_CHANNELS);
+      const recommendations = (doc?.recommendations ?? []).filter((item) =>
+        supportedSet.has(item.channel)
+      );
+
+      res.json({
+        jobId: payload.jobId,
+        recommendations,
+        updatedAt: doc?.updatedAt ?? null,
+        refreshed,
+        failure: doc?.lastFailure ?? null
+      });
     })
   );
 

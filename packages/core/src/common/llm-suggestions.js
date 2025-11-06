@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { NonNegativeNumber } from "./zod.js";
 
+export const ChannelRecommendationSchema = z.object({
+  channel: z.string(),
+  reason: z.string(),
+  expectedCPA: z.number().optional()
+});
+
 export const LlmSuggestionBucketSchema = z.object({
   salaryRanges: z
     .array(
@@ -35,15 +41,7 @@ export const LlmSuggestionBucketSchema = z.object({
       })
     )
     .default([]),
-  channelRecommendations: z
-    .array(
-      z.object({
-        channel: z.string(),
-        reason: z.string(),
-        expectedCPA: z.number().optional()
-      })
-    )
-    .default([])
+  channelRecommendations: z.array(ChannelRecommendationSchema).default([])
 });
 
 export const EMPTY_SUGGESTIONS = LlmSuggestionBucketSchema.parse({});

@@ -55,6 +55,148 @@ const copilotSuggestionResponseSchema = z
     failure: data.failure ?? null
   }));
 
+const channelRecommendationSchema = z.object({
+  channel: z.string(),
+  reason: z.string(),
+  expectedCPA: z.number().optional()
+});
+
+const channelRecommendationFailureSchema = z
+  .object({
+    reason: z.string(),
+    message: z.string().optional().nullable(),
+    rawPreview: z.string().optional().nullable(),
+    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional()
+  })
+  .transform((data) => ({
+    reason: data.reason,
+    message: data.message ?? null,
+    rawPreview: data.rawPreview ?? null,
+    occurredAt:
+      data.occurredAt instanceof Date
+        ? data.occurredAt
+        : data.occurredAt
+        ? new Date(data.occurredAt)
+        : null
+  }));
+
+const channelRecommendationResponseSchema = z
+  .object({
+    jobId: z.string(),
+    recommendations: z.array(channelRecommendationSchema).optional(),
+    updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
+    refreshed: z.boolean().optional(),
+    failure: channelRecommendationFailureSchema.optional().nullable()
+  })
+  .transform((data) => ({
+    jobId: data.jobId,
+    recommendations: data.recommendations ?? [],
+    updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
+    refreshed: Boolean(data.refreshed),
+    failure: data.failure ?? null
+  }));
+
+const jobDetailsSchema = z
+  .object({
+    roleTitle: z.string().optional().nullable(),
+    companyName: z.string().optional().nullable(),
+    location: z.string().optional().nullable(),
+    zipCode: z.string().optional().nullable(),
+    industry: z.string().optional().nullable(),
+    seniorityLevel: z.string().optional().nullable(),
+    employmentType: z.string().optional().nullable(),
+    workModel: z.string().optional().nullable(),
+    jobDescription: z.string().optional().nullable(),
+    coreDuties: z.array(z.string()).optional().nullable(),
+    mustHaves: z.array(z.string()).optional().nullable(),
+    benefits: z.array(z.string()).optional().nullable(),
+    salary: z.string().optional().nullable(),
+    salaryPeriod: z.string().optional().nullable(),
+    currency: z.string().optional().nullable()
+  })
+  .transform((data) => ({
+    roleTitle: data.roleTitle ?? "",
+    companyName: data.companyName ?? "",
+    location: data.location ?? "",
+    zipCode: data.zipCode ?? "",
+    industry: data.industry ?? "",
+    seniorityLevel: data.seniorityLevel ?? "",
+    employmentType: data.employmentType ?? "",
+    workModel: data.workModel ?? "",
+    jobDescription: data.jobDescription ?? "",
+    coreDuties: Array.isArray(data.coreDuties) ? data.coreDuties : [],
+    mustHaves: Array.isArray(data.mustHaves) ? data.mustHaves : [],
+    benefits: Array.isArray(data.benefits) ? data.benefits : [],
+    salary: data.salary ?? "",
+    salaryPeriod: data.salaryPeriod ?? "",
+    currency: data.currency ?? ""
+  }));
+
+const refinementFailureSchema = z
+  .object({
+    reason: z.string(),
+    message: z.string().optional().nullable(),
+    rawPreview: z.string().optional().nullable(),
+    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional()
+  })
+  .transform((data) => ({
+    reason: data.reason,
+    message: data.message ?? null,
+    rawPreview: data.rawPreview ?? null,
+    occurredAt:
+      data.occurredAt instanceof Date
+        ? data.occurredAt
+        : data.occurredAt
+        ? new Date(data.occurredAt)
+        : null
+  }));
+
+const refinementResponseSchema = z
+  .object({
+    jobId: z.string(),
+    refinedJob: jobDetailsSchema,
+    originalJob: jobDetailsSchema,
+    summary: z.string().optional().nullable(),
+    provider: z.string().optional().nullable(),
+    model: z.string().optional().nullable(),
+    updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
+    refreshed: z.boolean().optional(),
+    failure: refinementFailureSchema.optional().nullable()
+  })
+  .transform((data) => ({
+    jobId: data.jobId,
+    refinedJob: data.refinedJob,
+    originalJob: data.originalJob,
+    summary: data.summary ?? "",
+    provider: data.provider ?? null,
+    model: data.model ?? null,
+    updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
+    refreshed: Boolean(data.refreshed),
+    failure: data.failure ?? null
+  }));
+
+const finalizeResponseSchema = z
+  .object({
+    jobId: z.string(),
+    finalJob: jobDetailsSchema,
+    source: z.string().optional().nullable(),
+    channelRecommendations: z
+      .array(channelRecommendationSchema)
+      .optional(),
+    channelUpdatedAt: z.union([z.string(), z.date()]).nullable().optional(),
+    channelFailure: channelRecommendationFailureSchema.optional().nullable()
+  })
+  .transform((data) => ({
+    jobId: data.jobId,
+    finalJob: data.finalJob,
+    source: data.source ?? null,
+    channelRecommendations: data.channelRecommendations ?? [],
+    channelUpdatedAt: data.channelUpdatedAt
+      ? new Date(data.channelUpdatedAt)
+      : null,
+    channelFailure: data.channelFailure ?? null
+  }));
+
 const persistResponseSchema = z
   .object({
     jobId: z.string().optional(),
@@ -197,6 +339,111 @@ export const WizardApi = {
 
     const data = await response.json();
     return copilotSuggestionResponseSchema.parse(data);
+  },
+
+  async fetchChannelRecommendations(payload, options = {}) {
+    const normalizedJobId =
+      options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
+    const response = await fetch(`${API_BASE_URL}/wizard/channels/recommendations`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.userId)
+      },
+      body: JSON.stringify({
+        ...payload,
+        jobId: normalizedJobId
+      })
+    });
+
+    if (!response.ok) {
+      let message = "Channel recommendation fetch failed";
+      try {
+        const errorData = await response.json();
+        if (typeof errorData?.error === "string") {
+          message = errorData.error;
+        }
+      } catch (_error) {
+        const text = await response.text();
+        if (text) {
+          message = text;
+        }
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return channelRecommendationResponseSchema.parse(data);
+  },
+
+  async refineJob(payload, options = {}) {
+    const normalizedJobId =
+      options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
+    const response = await fetch(`${API_BASE_URL}/wizard/refine`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.userId)
+      },
+      body: JSON.stringify({
+        ...payload,
+        jobId: normalizedJobId
+      })
+    });
+
+    if (!response.ok) {
+      let message = "Job refinement failed";
+      try {
+        const errorData = await response.json();
+        if (typeof errorData?.error === "string") {
+          message = errorData.error;
+        }
+      } catch (_error) {
+        const text = await response.text();
+        if (text) {
+          message = text;
+        }
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return refinementResponseSchema.parse(data);
+  },
+
+  async finalizeJob(payload, options = {}) {
+    const normalizedJobId =
+      options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
+    const response = await fetch(`${API_BASE_URL}/wizard/refine/finalize`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.userId)
+      },
+      body: JSON.stringify({
+        ...payload,
+        jobId: normalizedJobId
+      })
+    });
+
+    if (!response.ok) {
+      let message = "Finalizing job failed";
+      try {
+        const errorData = await response.json();
+        if (typeof errorData?.error === "string") {
+          message = errorData.error;
+        }
+      } catch (_error) {
+        const text = await response.text();
+        if (text) {
+          message = text;
+        }
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return finalizeResponseSchema.parse(data);
   },
 
   async persistJob(state, options = {}) {

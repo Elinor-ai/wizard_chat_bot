@@ -30,10 +30,14 @@ export {
   JobStatusEnum,
   WorkModelEnum,
   EmploymentTypeEnum,
-  ExperienceLevelEnum
+  ExperienceLevelEnum,
+  ConfirmedJobDetailsSchema
 } from "./schemas/job.js";
 export { JobStepSchema } from "./common/job-step.js";
 export { JobVersionSchema } from "./common/job-version.js";
 export { JobSuggestionSchema } from "./schemas/job-suggestion.js";
 
 export { JobRecord } from "./job-record.js";
+export { JobChannelRecommendationSchema } from "./schemas/job-channel-recommendation.js";
+export { JobRefinementSchema } from "./schemas/job-refinement.js";
+export { JobFinalSchema } from "./schemas/job-final.js";

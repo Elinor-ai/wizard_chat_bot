@@ -67,7 +67,7 @@ export function WizardShell() {
     handleBack,
     handleAddOptional,
     handleSkipOptional,
-    handleSubmit,
+    handleGenerateHiringPack,
     handleSendMessage,
     handleAcceptSuggestion,
     handleSuggestionToggle,
@@ -91,6 +91,7 @@ export function WizardShell() {
     totalProgressFields === 0
       ? 0
       : Math.round((progressCompletedCount / totalProgressFields) * 100);
+  const isGeneratingPack = isSaving;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -503,19 +504,14 @@ export function WizardShell() {
             <div className="flex flex-col items-end gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  handleSubmit({
-                    includeOptional: true,
-                    optionalCompleted: true,
-                  })
-                }
+                onClick={handleGenerateHiringPack}
                 disabled={
-                  isSaving ||
+                  isGeneratingPack ||
                   (isCurrentStepRequired && !currentRequiredStepCompleteInState)
                 }
                 className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
               >
-                {isSaving ? "Saving..." : "Generate my hiring pack"}
+                {isGeneratingPack ? "Generating..." : "Generate my hiring pack"}
               </button>
               <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
                 We’ll never publish without your approval.

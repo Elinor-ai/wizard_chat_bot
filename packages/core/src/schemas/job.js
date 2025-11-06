@@ -70,7 +70,7 @@ export const EmploymentTypeEnum = z.enum(["full_time", "part_time", "contract", 
 
 export const ExperienceLevelEnum = z.enum(["entry", "mid", "senior", "lead", "executive"]);
 
-const ConfirmedJobDetailsSchema = z
+export const ConfirmedJobDetailsSchema = z
   .object({
     roleTitle: z.string().optional(),
     companyName: z.string().optional(),

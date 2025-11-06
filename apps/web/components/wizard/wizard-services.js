@@ -65,3 +65,43 @@ export async function sendWizardChatMessage({
     { userId }
   );
 }
+
+export async function fetchChannelRecommendations({
+  userId,
+  jobId,
+  forceRefresh = false,
+}) {
+  return WizardApi.fetchChannelRecommendations(
+    {
+      jobId,
+      forceRefresh,
+    },
+    { userId, jobId }
+  );
+}
+
+export async function refineJob({ userId, jobId, forceRefresh = false }) {
+  return WizardApi.refineJob(
+    {
+      jobId,
+      forceRefresh,
+    },
+    { userId, jobId }
+  );
+}
+
+export async function finalizeJob({
+  userId,
+  jobId,
+  finalJob,
+  source,
+}) {
+  return WizardApi.finalizeJob(
+    {
+      jobId,
+      finalJob,
+      source,
+    },
+    { userId, jobId }
+  );
+}

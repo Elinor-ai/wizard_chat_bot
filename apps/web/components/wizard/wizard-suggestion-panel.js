@@ -33,6 +33,7 @@ function formatPrimitive(value) {
   return JSON.stringify(value);
 }
 
+
 function renderSuggestionContent(message) {
   const { meta } = message;
   if (!meta) {
@@ -333,14 +334,16 @@ export function WizardSuggestionPanel({
             </p>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="rounded-full border border-primary-200 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {isLoading ? "Thinking…" : "Refresh"}
-        </button>
+        {chatTabActive ? (
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="rounded-full border border-primary-200 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isLoading ? "Thinking…" : "Refresh"}
+          </button>
+        ) : null}
       </header>
 
       <div className="rounded-full bg-white/50 p-1 text-xs font-semibold uppercase tracking-wide text-primary-500">

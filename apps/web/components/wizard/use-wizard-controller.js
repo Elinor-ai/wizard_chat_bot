@@ -33,7 +33,6 @@ import {
 } from "./wizard-services";
 
 const TOAST_TIMEOUT_MS = 4000;
-const SUGGESTION_DEBOUNCE_MS = 450;
 
 export function useWizardController({ user }) {
   const router = useRouter();
@@ -43,7 +42,6 @@ export function useWizardController({ user }) {
     createInitialWizardState
   );
 
-  const suggestionDebounceRef = useRef(null);
   const suggestionsAbortRef = useRef(null);
   const stateRef = useRef(wizardState.state);
   const previousFieldValuesRef = useRef({});
@@ -250,10 +248,6 @@ export function useWizardController({ user }) {
 
   useEffect(() => {
     dispatch({ type: "RESET_STEP_CONTEXT" });
-    if (suggestionDebounceRef.current) {
-      clearTimeout(suggestionDebounceRef.current);
-      suggestionDebounceRef.current = null;
-    }
     const filteredMessages = wizardState.assistantMessages.filter(
       (message) => !["followUp", "skip", "improved"].includes(message.kind)
     );
@@ -735,29 +729,6 @@ export function useWizardController({ user }) {
     ]
   );
 
-  const scheduleRealtimeSuggestions = useCallback(
-    (fieldId, value) => {
-      if (!currentStep?.id) return;
-      const isOptionalStep = OPTIONAL_STEPS.some(
-        (step) => step.id === currentStep.id
-      );
-      if (!isOptionalStep) {
-        return;
-      }
-      if (suggestionDebounceRef.current) {
-        clearTimeout(suggestionDebounceRef.current);
-      }
-      suggestionDebounceRef.current = setTimeout(() => {
-        fetchSuggestionsForStep({
-          stepId: currentStep.id,
-          updatedFieldId: fieldId,
-          updatedValue: value,
-        });
-      }, SUGGESTION_DEBOUNCE_MS);
-    },
-    [currentStep?.id, fetchSuggestionsForStep]
-  );
-
   const persistCurrentDraft = useCallback(
     async (intentOverrides = {}, stepId = currentStep?.id) => {
       if (!user) {
@@ -837,7 +808,7 @@ export function useWizardController({ user }) {
 
   const onFieldChange = useCallback(
     (fieldId, value, options = {}) => {
-      const { preserveSuggestionMeta = false, skipRealtime = false } = options;
+      const { preserveSuggestionMeta = false } = options;
       dispatch({
         type: "FIELD_CHANGE",
         payload: {
@@ -847,12 +818,8 @@ export function useWizardController({ user }) {
           timestamp: Date.now(),
         },
       });
-
-      if (!skipRealtime) {
-        scheduleRealtimeSuggestions(fieldId, value);
-      }
     },
-    [scheduleRealtimeSuggestions]
+    []
   );
 
   const handleNext = useCallback(async () => {
@@ -942,7 +909,7 @@ export function useWizardController({ user }) {
             content: "Fill every required field before submitting.",
           },
         });
-        return;
+        return null;
       }
 
       const stepId = currentStep?.id;
@@ -955,7 +922,7 @@ export function useWizardController({ user }) {
       );
 
       if (!result) {
-        return;
+        return null;
       }
 
       const shouldForceRefresh = !result.noChanges;
@@ -968,6 +935,8 @@ export function useWizardController({ user }) {
         },
         jobIdOverride: result.savedId,
       });
+
+      return result;
     },
     [
       currentRequiredStepCompleteInState,
@@ -978,6 +947,25 @@ export function useWizardController({ user }) {
       wizardState.includeOptional,
     ]
   );
+
+  const handleGenerateHiringPack = useCallback(async () => {
+    const result = await handleSubmit({
+      includeOptional: true,
+      optionalCompleted: true,
+    });
+
+    if (!result) {
+      return;
+    }
+
+    const targetJobId = result.savedId ?? wizardState.jobId;
+    if (!targetJobId) {
+      showToast("error", "Unable to determine job for refinement.");
+      return;
+    }
+
+    router.push(`/wizard/${targetJobId}/refine`);
+  }, [handleSubmit, router, showToast, wizardState.jobId]);
 
   const handleAddOptional = useCallback(async () => {
     if (!allRequiredStepsCompleteInState) {
@@ -1353,6 +1341,7 @@ export function useWizardController({ user }) {
     handleAddOptional,
     handleSkipOptional,
     handleSubmit,
+    handleGenerateHiringPack,
     handleSendMessage,
     handleAcceptSuggestion,
     handleSuggestionToggle,
