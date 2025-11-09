@@ -189,7 +189,7 @@ export function WizardShell() {
             />
           </div>
           <p className="text-xs text-neutral-500">
-            Changes stay local until you press “Save & Continue.” Skip anything
+            Changes stay local until you press “Next step.” Skip anything
             that doesn’t apply—you can always return before saving.
           </p>
         </div>
@@ -482,21 +482,21 @@ export function WizardShell() {
               <div className="flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
+                  onClick={handleSkipOptional}
+                  disabled={isSaving}
+                  className="rounded-full border border-neutral-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:border-primary-400 hover:text-primary-600 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
+                >
+                  {isSaving ? "Saving..." : "✨ Create my hiring kit now (Not recommended)"}
+                </button>
+                <button
+                  type="button"
                   onClick={handleAddOptional}
                   disabled={isSaving}
                   className="rounded-full bg-primary-600 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
                 >
                   {isSaving
                     ? "Saving..."
-                    : "Continue — Boost my result (recommended)"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSkipOptional}
-                  disabled={isSaving}
-                  className="rounded-full border border-neutral-200 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:border-primary-400 hover:text-primary-600 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-300"
-                >
-                  {isSaving ? "Saving..." : "Publish now and skip"}
+                    : "Continue add more details (recommended)"}
                 </button>
               </div>
             </div>
@@ -511,7 +511,7 @@ export function WizardShell() {
                 }
                 className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
               >
-                {isGeneratingPack ? "Generating..." : "Generate my hiring pack"}
+                {isGeneratingPack ? "Generating..." : "✨ Create my hiring kit"}
               </button>
               <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
                 We’ll never publish without your approval.
@@ -527,7 +527,7 @@ export function WizardShell() {
               }
               className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
             >
-              {isSaving ? "Saving..." : "Save & Continue"}
+              {isSaving ? "Saving..." : "Next step"}
             </button>
           )}
         </div>

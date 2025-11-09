@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
-  OPTIONAL_STEP_BANNERS,
+  // OPTIONAL_STEP_BANNERS,
   OPTIONAL_STEPS,
   PROGRESS_TRACKING_FIELDS,
   REQUIRED_FIELD_IDS,
@@ -367,10 +367,10 @@ export function useWizardController({ user }) {
   const showUnlockCtas =
     allRequiredStepsCompleteInState && wizardState.includeOptional === false;
 
-  const currentOptionalBanner = useMemo(() => {
-    if (!currentStep) return null;
-    return OPTIONAL_STEP_BANNERS[currentStep.id] ?? null;
-  }, [currentStep]);
+  // const currentOptionalBanner = useMemo(() => {
+  //   if (!currentStep) return null;
+  //   return OPTIONAL_STEP_BANNERS[currentStep.id] ?? null;
+  // }, [currentStep]);
 
   const activeToastClassName = wizardState.activeToast
     ? TOAST_VARIANT_CLASSES[wizardState.activeToast.variant] ?? null
@@ -701,13 +701,16 @@ export function useWizardController({ user }) {
           },
         });
       } catch (error) {
+        if (error?.name === "AbortError") {
+          return;
+        }
         dispatch({
           type: "PUSH_ASSISTANT_MESSAGE",
           payload: {
             id: `suggestion-error-${Date.now()}`,
             role: "assistant",
             kind: "error",
-            content: error.message ?? "Failed to load suggestions.",
+            content: error?.message ?? "Failed to load suggestions.",
           },
         });
       } finally {
@@ -806,6 +809,14 @@ export function useWizardController({ user }) {
     ]
   );
 
+  const persistUnsavedChangesIfNeeded = useCallback(async () => {
+    if (!wizardState.unsavedChanges) {
+      return true;
+    }
+    const result = await persistCurrentDraft({}, currentStep?.id);
+    return Boolean(result);
+  }, [currentStep?.id, persistCurrentDraft, wizardState.unsavedChanges]);
+
   const onFieldChange = useCallback(
     (fieldId, value, options = {}) => {
       const { preserveSuggestionMeta = false } = options;
@@ -875,8 +886,8 @@ export function useWizardController({ user }) {
       return;
     }
 
-    if (wizardState.unsavedChanges) {
-      showToast("warning", "Save your changes before leaving this step.");
+    const persisted = await persistUnsavedChangesIfNeeded();
+    if (!persisted) {
       return;
     }
 
@@ -888,14 +899,14 @@ export function useWizardController({ user }) {
   }, [
     fetchSuggestionsForStep,
     goToStep,
-    showToast,
+    persistUnsavedChangesIfNeeded,
     steps,
     wizardState.currentStepIndex,
-    wizardState.unsavedChanges,
   ]);
 
   const handleSubmit = useCallback(
-    async (submissionIntent = {}) => {
+    async (submissionIntent = {}, options = {}) => {
+      const { skipSuggestionRefresh = false } = options ?? {};
       if (
         wizardState.currentStepIndex < REQUIRED_STEPS.length &&
         !currentRequiredStepCompleteInState
@@ -927,14 +938,16 @@ export function useWizardController({ user }) {
 
       const shouldForceRefresh = !result.noChanges;
 
-      await fetchSuggestionsForStep({
-        stepId,
-        intentOverrides: {
-          ...result.intent,
-          forceRefresh: shouldForceRefresh || undefined,
-        },
-        jobIdOverride: result.savedId,
-      });
+      if (!skipSuggestionRefresh) {
+        await fetchSuggestionsForStep({
+          stepId,
+          intentOverrides: {
+            ...result.intent,
+            forceRefresh: shouldForceRefresh || undefined,
+          },
+          jobIdOverride: result.savedId,
+        });
+      }
 
       return result;
     },
@@ -949,10 +962,13 @@ export function useWizardController({ user }) {
   );
 
   const handleGenerateHiringPack = useCallback(async () => {
-    const result = await handleSubmit({
-      includeOptional: true,
-      optionalCompleted: true,
-    });
+    const result = await handleSubmit(
+      {
+        includeOptional: true,
+        optionalCompleted: true,
+      },
+      { skipSuggestionRefresh: true }
+    );
 
     if (!result) {
       return;
@@ -1029,21 +1045,34 @@ export function useWizardController({ user }) {
       return;
     }
 
-    const result = await persistCurrentDraft(
-      { includeOptional: false, publishNow: true },
-      currentStep?.id
+    const result = await handleSubmit(
+      {
+        includeOptional: false,
+        optionalCompleted: false,
+      },
+      { skipSuggestionRefresh: true }
     );
+
     if (!result) {
       return;
     }
 
     dispatch({ type: "SKIP_OPTIONAL", payload: { unlockAction: "skip" } });
-    router.push("/assets");
+
+    const targetJobId = result.savedId ?? wizardState.jobId;
+    if (!targetJobId) {
+      showToast("error", "Unable to determine job for refinement.");
+      return;
+    }
+
+    router.push(`/wizard/${targetJobId}/refine`);
   }, [
     allRequiredStepsCompleteInState,
-    currentStep?.id,
-    persistCurrentDraft,
+    dispatch,
+    handleSubmit,
     router,
+    showToast,
+    wizardState.jobId,
   ]);
 
   const handleStepNavigation = useCallback(
@@ -1083,8 +1112,8 @@ export function useWizardController({ user }) {
         return;
       }
 
-      if (wizardState.unsavedChanges) {
-        showToast("warning", "Save your changes before switching screens.");
+      const persisted = await persistUnsavedChangesIfNeeded();
+      if (!persisted) {
         return;
       }
 
@@ -1099,10 +1128,9 @@ export function useWizardController({ user }) {
       fetchSuggestionsForStep,
       goToStep,
       isCurrentStepRequired,
-      showToast,
+      persistUnsavedChangesIfNeeded,
       steps,
       wizardState.currentStepIndex,
-      wizardState.unsavedChanges,
     ]
   );
 
@@ -1317,7 +1345,7 @@ export function useWizardController({ user }) {
     isCurrentStepRequired,
     isLastStep,
     showUnlockCtas,
-    currentOptionalBanner,
+    // currentOptionalBanner,
     assistantMessages: wizardState.assistantMessages,
     visibleAssistantMessages,
     isChatting: wizardState.isChatting,

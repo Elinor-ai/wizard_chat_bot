@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { clsx } from "../../../../../lib/cn";
 import { useUser } from "../../../../../components/user-context";
 import {
   finalizeJob,
@@ -79,6 +80,22 @@ function textareaValueToList(value) {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function hasMeaningfulValue(field, value) {
+  if (ARRAY_FIELD_IDS.has(field.id)) {
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  return value !== undefined && value !== null && value !== "";
 }
 
 function JobPreview({ job }) {
@@ -188,19 +205,89 @@ function JobEditorCard({
   job,
   onChange,
   editable = true,
+  showFieldRevert = false,
+  originalValues = null,
+  refinedValues = null,
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const draft = useMemo(() => normaliseJobDraft(job), [job]);
+  const baseline = useMemo(
+    () => normaliseJobDraft(originalValues ?? {}),
+    [originalValues]
+  );
+  const refinedBaseline = useMemo(
+    () => normaliseJobDraft(refinedValues ?? {}),
+    [refinedValues]
+  );
 
-  const handleFieldChange = (fieldId, transform) => (event) => {
+  const applyChange = useCallback(
+    (fieldId, nextValue) => {
+      const next = { ...draft };
+      if (
+        nextValue === undefined ||
+        nextValue === null ||
+        (typeof nextValue === "string" && nextValue.length === 0)
+      ) {
+        delete next[fieldId];
+      } else {
+        next[fieldId] = nextValue;
+      }
+      onChange(next);
+    },
+    [draft, onChange]
+  );
+
+  const handleFieldChange = (field, transform) => (event) => {
     const rawValue = event?.target ? event.target.value : event;
-    const nextJob = { ...draft };
-    if (ARRAY_FIELD_IDS.has(fieldId)) {
-      nextJob[fieldId] = transform ? transform(rawValue) : textareaValueToList(rawValue);
-    } else {
-      nextJob[fieldId] = rawValue;
+    let nextValue = rawValue;
+    if (ARRAY_FIELD_IDS.has(field.id)) {
+      nextValue =
+        transform ? transform(rawValue) : textareaValueToList(rawValue);
+    } else if (field.type === "number" || field.valueAs === "number") {
+      if (rawValue === "") {
+        nextValue = "";
+      } else {
+        const numeric = Number(rawValue);
+        nextValue = Number.isNaN(numeric) ? "" : numeric;
+      }
+    } else if (field.valueAs === "boolean") {
+      if (rawValue === "") {
+        nextValue = "";
+      } else {
+        nextValue = rawValue === "true";
+      }
     }
-    onChange(nextJob);
+    applyChange(field.id, nextValue);
+  };
+
+  const handleFieldRevert = (field, target = "original") => {
+    const sourceDraft =
+      target === "original" ? baseline : refinedBaseline;
+    let targetValue = sourceDraft[field.id];
+
+    if (ARRAY_FIELD_IDS.has(field.id)) {
+      targetValue = Array.isArray(targetValue) ? [...targetValue] : [];
+    } else if (
+      targetValue === undefined ||
+      targetValue === null ||
+      targetValue === ""
+    ) {
+      targetValue = "";
+    }
+    applyChange(field.id, targetValue);
+  };
+
+  const normalizeForCompare = (value, field) => {
+    if (ARRAY_FIELD_IDS.has(field.id)) {
+      return JSON.stringify((value ?? []).map((item) => String(item)));
+    }
+    if (value === undefined || value === null) {
+      return "";
+    }
+    if (typeof value === "string") {
+      return value.trim();
+    }
+    return String(value);
   };
 
   return (
@@ -224,6 +311,70 @@ function JobEditorCard({
             const value = draft[field.id] ?? "";
             const isList = ARRAY_FIELD_IDS.has(field.id);
             const fieldValue = isList ? jobToTextareaValue(value) : value;
+            const originalValue = baseline[field.id];
+            const refinedValue = refinedBaseline[field.id];
+            const normalizedValue = normalizeForCompare(value, field);
+            const normalizedOriginal = normalizeForCompare(originalValue, field);
+            const normalizedRefined = normalizeForCompare(refinedValue, field);
+            const isSameAsOriginal = showFieldRevert
+              ? normalizedValue === normalizedOriginal
+              : true;
+            const isSameAsRefined = showFieldRevert
+              ? normalizedValue === normalizedRefined
+              : true;
+            const currentBaseline = showFieldRevert
+              ? isSameAsOriginal
+                ? "original"
+                : isSameAsRefined
+                ? "refined"
+                : "custom"
+              : null;
+            const shouldShowBaselineToggle =
+              showFieldRevert &&
+              baseline &&
+              refinedBaseline &&
+              (hasMeaningfulValue(field, originalValue) ||
+                hasMeaningfulValue(field, refinedValue)) &&
+              normalizedOriginal !== normalizedRefined;
+
+            const revertButton =
+              shouldShowBaselineToggle ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex rounded-full border border-neutral-200 bg-neutral-50 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleFieldRevert(field, "refined")}
+                      disabled={isSameAsRefined}
+                      className={clsx(
+                        "rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition",
+                        isSameAsRefined
+                          ? "bg-primary-600 text-white shadow"
+                          : "text-neutral-600 hover:text-primary-600 disabled:text-neutral-300"
+                      )}
+                    >
+                      Refined
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFieldRevert(field, "original")}
+                      disabled={isSameAsOriginal}
+                      className={clsx(
+                        "rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition",
+                        isSameAsOriginal
+                          ? "bg-primary-600 text-white shadow"
+                          : "text-neutral-600 hover:text-primary-600 disabled:text-neutral-300"
+                      )}
+                    >
+                      Original
+                    </button>
+                  </div>
+                  {currentBaseline === "custom" ? (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
+                      Custom edits
+                    </span>
+                  ) : null}
+                </div>
+              ) : null;
 
             if (field.type === "capsule" && Array.isArray(field.options)) {
               return (
@@ -232,7 +383,7 @@ function JobEditorCard({
                   <select
                     className="rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
                     value={fieldValue}
-                    onChange={handleFieldChange(field.id)}
+                    onChange={handleFieldChange(field)}
                   >
                     <option value="">Select</option>
                     {field.options.map((option) => (
@@ -241,6 +392,7 @@ function JobEditorCard({
                       </option>
                     ))}
                   </select>
+                  {revertButton}
                 </label>
               );
             }
@@ -252,8 +404,9 @@ function JobEditorCard({
                   <textarea
                     className="min-h-[120px] rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
                     value={fieldValue}
-                    onChange={handleFieldChange(field.id, textareaValueToList)}
+                    onChange={handleFieldChange(field, textareaValueToList)}
                   />
+                  {revertButton}
                 </label>
               );
             }
@@ -265,8 +418,9 @@ function JobEditorCard({
                   <textarea
                     className="min-h-[120px] rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
                     value={fieldValue}
-                    onChange={handleFieldChange(field.id)}
+                    onChange={handleFieldChange(field)}
                   />
+                  {revertButton}
                 </label>
               );
             }
@@ -277,8 +431,9 @@ function JobEditorCard({
                 <input
                   className="rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
                   value={fieldValue}
-                  onChange={handleFieldChange(field.id)}
+                  onChange={handleFieldChange(field)}
                 />
+                {revertButton}
               </label>
             );
           })}
@@ -355,14 +510,13 @@ export default function RefineJobPage() {
   const jobId = Array.isArray(params?.jobId) ? params.jobId[0] : params?.jobId;
 
   const [isRefining, setIsRefining] = useState(true);
-  const [isRegeneratingRefine, setIsRegeneratingRefine] = useState(false);
   const [refineError, setRefineError] = useState(null);
   const [summary, setSummary] = useState("");
   const [originalDraft, setOriginalDraft] = useState(DEFAULT_JOB_STATE);
   const [refinedDraft, setRefinedDraft] = useState(DEFAULT_JOB_STATE);
   const [initialOriginal, setInitialOriginal] = useState(DEFAULT_JOB_STATE);
   const [initialRefined, setInitialRefined] = useState(DEFAULT_JOB_STATE);
-  const [selectedVersion, setSelectedVersion] = useState("refined");
+  const [viewMode, setViewMode] = useState("refined");
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [channelRecommendations, setChannelRecommendations] = useState([]);
   const [channelUpdatedAt, setChannelUpdatedAt] = useState(null);
@@ -389,11 +543,7 @@ export default function RefineJobPage() {
         setOriginalDraft(original);
         setRefinedDraft(refined);
         setSummary(response.summary ?? "");
-        setSelectedVersion(
-          response.refinedJob && Object.values(response.refinedJob).some(Boolean)
-            ? "refined"
-            : "original"
-        );
+        setViewMode("refined");
         if (response.failure) {
           setRefineError(
             response.failure.message ?? response.failure.reason ?? null
@@ -415,34 +565,8 @@ export default function RefineJobPage() {
     };
   }, [jobId, user]);
 
-  const handleRegenerateRefinement = async () => {
-    if (!user || !jobId) return;
-    setIsRegeneratingRefine(true);
-    setRefineError(null);
-    try {
-      const response = await refineJob({
-        userId: user.id,
-        jobId,
-        forceRefresh: true,
-      });
-      const original = normaliseJobDraft(response.originalJob);
-      const refined = normaliseJobDraft(response.refinedJob);
-      setInitialOriginal(original);
-      setInitialRefined(refined);
-      setOriginalDraft(original);
-      setRefinedDraft(refined);
-      setSummary(response.summary ?? "");
-      setSelectedVersion("refined");
-      if (response.failure) {
-        setRefineError(
-          response.failure.message ?? response.failure.reason ?? null
-        );
-      }
-    } catch (error) {
-      setRefineError(error.message ?? "Failed to regenerate refinement.");
-    } finally {
-      setIsRegeneratingRefine(false);
-    }
+  const toggleViewMode = () => {
+    setViewMode((prev) => (prev === "refined" ? "original" : "refined"));
   };
 
   const handleFinalize = async () => {
@@ -450,14 +574,12 @@ export default function RefineJobPage() {
     setIsFinalizing(true);
     setChannelFailure(null);
     try {
-      const finalJob =
-        selectedVersion === "original"
-          ? normaliseJobDraft(originalDraft)
-          : normaliseJobDraft(refinedDraft);
-      const baseline =
-        selectedVersion === "original"
-          ? normaliseJobDraft(initialOriginal)
-          : normaliseJobDraft(initialRefined);
+      const activeDraft =
+        viewMode === "original" ? originalDraft : refinedDraft;
+      const baselineDraft =
+        viewMode === "original" ? initialOriginal : initialRefined;
+      const finalJob = normaliseJobDraft(activeDraft);
+      const baseline = normaliseJobDraft(baselineDraft);
       const isEdited =
         JSON.stringify(baseline) !== JSON.stringify(finalJob);
 
@@ -465,7 +587,7 @@ export default function RefineJobPage() {
         userId: user.id,
         jobId,
         finalJob,
-        source: isEdited ? "edited" : selectedVersion,
+        source: isEdited ? "edited" : viewMode,
       });
 
       setChannelRecommendations(response.channelRecommendations ?? []);
@@ -543,93 +665,98 @@ export default function RefineJobPage() {
       </header>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={handleRegenerateRefinement}
-          disabled={isRegeneratingRefine}
-          className="rounded-full border border-primary-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isRegeneratingRefine ? "Regenerating…" : "Regenerate refinement"}
-        </button>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <JobEditorCard
-          title="Original job"
-          job={originalDraft}
-          onChange={setOriginalDraft}
-        />
-        <JobEditorCard
-          title="Refined job"
-          job={refinedDraft}
-          onChange={setRefinedDraft}
-        />
-      </div>
-
-      <section className="space-y-3 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-        <h2 className="text-lg font-semibold text-neutral-900">
-          Choose your final draft
-        </h2>
-        <p className="text-sm text-neutral-600">
-          Select which version you want to move forward with. You can still edit
-          the chosen draft before submitting.
-        </p>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
-            <input
-              type="radio"
-              name="final-version"
-              checked={selectedVersion === "refined"}
-              onChange={() => setSelectedVersion("refined")}
-            />
-            Use refined version
-          </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
-            <input
-              type="radio"
-              name="final-version"
-              checked={selectedVersion === "original"}
-              onChange={() => setSelectedVersion("original")}
-            />
-            Keep my original draft
-          </label>
-        </div>
-        <button
-          type="button"
-          onClick={handleFinalize}
-          disabled={isFinalizing}
-          className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-        >
-          {isFinalizing ? "Generating channels…" : "Confirm & generate channels"}
-        </button>
-      </section>
-
-      <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-neutral-900">
-              Channel recommendations
-            </h2>
-            <p className="text-sm text-neutral-600">
-              We suggest these channels based on the final job profile. Regenerate
-              anytime after further edits.
-            </p>
-          </div>
+        <div className="flex rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs font-semibold uppercase tracking-wide">
           <button
             type="button"
-            onClick={handleRegenerateChannels}
-            disabled={isRegeneratingChannels}
-            className="rounded-full border border-primary-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => setViewMode("refined")}
+            className={clsx(
+              "rounded-full px-4 py-2 transition",
+              viewMode === "refined"
+                ? "bg-primary-600 text-white shadow"
+                : "text-neutral-600 hover:text-primary-600"
+            )}
           >
-            {isRegeneratingChannels ? "Refreshing…" : "Regenerate"}
+            Refined version
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("original")}
+            className={clsx(
+              "rounded-full px-4 py-2 transition",
+              viewMode === "original"
+                ? "bg-primary-600 text-white shadow"
+                : "text-neutral-600 hover:text-primary-600"
+            )}
+          >
+            Original version
           </button>
         </div>
-        <ChannelRecommendationList
-          recommendations={channelRecommendations}
-          updatedAt={channelUpdatedAt}
-          failure={channelFailure}
-        />
-      </section>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid w-full max-w-4xl gap-5">
+          <JobEditorCard
+            title={viewMode === "refined" ? "Refined job" : "Original job"}
+            job={viewMode === "refined" ? refinedDraft : originalDraft}
+            onChange={viewMode === "refined" ? setRefinedDraft : setOriginalDraft}
+            showFieldRevert={viewMode === "refined"}
+            originalValues={initialOriginal}
+            refinedValues={initialRefined}
+          />
+        </div>
+
+        <div className="space-y-5">
+          <section className="space-y-3 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+            <h2 className="text-lg font-semibold text-neutral-900">
+              Choose your final draft
+            </h2>
+            <p className="text-sm text-neutral-600">
+              Select which version you want to move forward with. You can still edit
+              the chosen draft before submitting.
+            </p>
+            <p className="text-sm text-neutral-500">
+              We’ll submit whichever version is currently visible. Use the toggle
+              above to switch between drafts, and the per-field controls to bring
+              back original values where needed.
+            </p>
+            <button
+              type="button"
+              onClick={handleFinalize}
+              disabled={isFinalizing}
+              className="w-full rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+            >
+              {isFinalizing ? "Generating channels…" : "Confirm & generate channels"}
+            </button>
+          </section>
+
+          <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-neutral-900">
+                  Channel recommendations
+                </h2>
+                <p className="text-sm text-neutral-600">
+                  We suggest these channels based on the final job profile. Regenerate
+                  anytime after further edits.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRegenerateChannels}
+                disabled={isRegeneratingChannels}
+                className="rounded-full border border-primary-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRegeneratingChannels ? "Refreshing…" : "Regenerate"}
+              </button>
+            </div>
+            <ChannelRecommendationList
+              recommendations={channelRecommendations}
+              updatedAt={channelUpdatedAt}
+              failure={channelFailure}
+            />
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
