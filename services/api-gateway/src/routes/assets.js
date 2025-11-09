@@ -1,16 +1,21 @@
 import { Router } from "express";
 import { wrapAsync, httpError } from "@wizard/utils";
 
+function getAuthenticatedUserId(req) {
+  const userId = req.user?.id;
+  if (!userId) {
+    throw httpError(401, "Unauthorized");
+  }
+  return userId;
+}
+
 export function assetsRouter({ firestore, logger }) {
   const router = Router();
 
   router.get(
     "/",
     wrapAsync(async (req, res) => {
-      const userId = req.headers["x-user-id"];
-      if (!userId || typeof userId !== "string") {
-        throw httpError(401, "Missing x-user-id header");
-      }
+      const userId = getAuthenticatedUserId(req);
 
       const jobs = await firestore.listCollection("jobs", [
         { field: "ownerUserId", operator: "==", value: userId }

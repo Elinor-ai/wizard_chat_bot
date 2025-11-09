@@ -31,14 +31,25 @@ export default function MarketingPage() {
 
   // Sync OAuth session with user context
   useEffect(() => {
-    if (session?.user && !user) {
-      console.log("Home: Syncing session user to context:", session.user);
-      setUser(session.user);
+    if (session?.user) {
+      const mergedUser = {
+        ...session.user,
+        authToken: session.accessToken ?? user?.authToken ?? null,
+      };
+      if (!user || user.id !== mergedUser.id || user.authToken !== mergedUser.authToken) {
+        setUser(mergedUser);
+      }
+    } else if (!session?.user && user) {
+      setUser(null);
     }
   }, [session, user, setUser]);
 
   // Use session user as fallback if user context is empty
-  const displayUser = user || session?.user;
+  const fallbackSessionUser =
+    session?.user && !user
+      ? { ...session.user, authToken: session.accessToken ?? null }
+      : session?.user;
+  const displayUser = user || fallbackSessionUser;
   const isLoading = status === "loading" || !isHydrated;
 
   const handleSignOut = async () => {

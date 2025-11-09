@@ -524,7 +524,7 @@ export default function RefineJobPage() {
   const [isRegeneratingChannels, setIsRegeneratingChannels] = useState(false);
 
   useEffect(() => {
-    if (!user || !jobId) return;
+    if (!user?.authToken || !jobId) return;
 
     let cancelled = false;
     const runRefinement = async () => {
@@ -532,7 +532,7 @@ export default function RefineJobPage() {
       setRefineError(null);
       try {
         const response = await refineJob({
-          userId: user.id,
+          authToken: user.authToken,
           jobId,
         });
         if (cancelled) return;
@@ -563,14 +563,14 @@ export default function RefineJobPage() {
     return () => {
       cancelled = true;
     };
-  }, [jobId, user]);
+  }, [jobId, user?.authToken]);
 
   const toggleViewMode = () => {
     setViewMode((prev) => (prev === "refined" ? "original" : "refined"));
   };
 
   const handleFinalize = async () => {
-    if (!user || !jobId) return;
+    if (!user?.authToken || !jobId) return;
     setIsFinalizing(true);
     setChannelFailure(null);
     try {
@@ -584,7 +584,7 @@ export default function RefineJobPage() {
         JSON.stringify(baseline) !== JSON.stringify(finalJob);
 
       const response = await finalizeJob({
-        userId: user.id,
+        authToken: user.authToken,
         jobId,
         finalJob,
         source: isEdited ? "edited" : viewMode,
@@ -601,11 +601,11 @@ export default function RefineJobPage() {
   };
 
   const handleRegenerateChannels = async () => {
-    if (!user || !jobId) return;
+    if (!user?.authToken || !jobId) return;
     setIsRegeneratingChannels(true);
     try {
       const response = await fetchChannelRecommendations({
-        userId: user.id,
+        authToken: user.authToken,
         jobId,
         forceRefresh: true,
       });
@@ -619,7 +619,7 @@ export default function RefineJobPage() {
     }
   };
 
-  if (!user) {
+  if (!user?.authToken) {
     return (
       <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-neutral-600 shadow-sm shadow-neutral-100">
         Please sign in to manage job publishing.
@@ -693,7 +693,7 @@ export default function RefineJobPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid w-full max-w-4xl gap-5">
           <JobEditorCard
             title={viewMode === "refined" ? "Refined job" : "Original job"}

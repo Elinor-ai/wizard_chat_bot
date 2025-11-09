@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { wrapAsync, httpError } from "@wizard/utils";
 
-function requireUserId(req) {
-  const userId = req.headers["x-user-id"];
-  if (!userId || typeof userId !== "string") {
-    throw httpError(401, "Missing x-user-id header");
+function getAuthenticatedUserId(req) {
+  const userId = req.user?.id;
+  if (!userId) {
+    throw httpError(401, "Unauthorized");
   }
   return userId;
 }
@@ -216,7 +216,7 @@ export function dashboardRouter({ firestore, logger }) {
   router.get(
     "/summary",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const jobs = await loadJobsForUser(firestore, userId);
       logger.info({ userId, jobCount: jobs.length }, "Loaded dashboard summary");
       res.json({ summary: computeSummary(jobs) });
@@ -226,7 +226,7 @@ export function dashboardRouter({ firestore, logger }) {
   router.get(
     "/campaigns",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const jobs = await loadJobsForUser(firestore, userId);
       const campaigns = extractCampaigns(jobs);
       logger.info({ userId, campaignCount: campaigns.length }, "Fetched campaign overview");
@@ -237,7 +237,7 @@ export function dashboardRouter({ firestore, logger }) {
   router.get(
     "/ledger",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const jobs = await loadJobsForUser(firestore, userId);
       const entries = extractLedger(jobs);
       logger.info({ userId, entryCount: entries.length }, "Fetched credit ledger entries");
@@ -248,7 +248,7 @@ export function dashboardRouter({ firestore, logger }) {
   router.get(
     "/activity",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const jobs = await loadJobsForUser(firestore, userId);
       const events = extractActivity(jobs);
       logger.info({ userId, eventCount: events.length }, "Fetched recent dashboard activity");

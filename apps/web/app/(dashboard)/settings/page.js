@@ -25,7 +25,11 @@ export default function SettingsPage() {
   const { user } = useUser();
   const [activeTab, setActiveTab] = useState("profile");
 
-  const currentUser = user || session?.user;
+  const currentUser =
+    user ||
+    (session?.user
+      ? { ...session.user, authToken: session.accessToken ?? null }
+      : null);
 
   const renderTabContent = () => {
     switch (activeTab) {

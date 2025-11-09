@@ -23,7 +23,7 @@ export function AssetList() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!user) {
+    if (!user?.authToken) {
       setAssets([]);
       return;
     }
@@ -37,7 +37,7 @@ export function AssetList() {
       try {
         const response = await fetch(`${API_BASE_URL}/assets`, {
           headers: {
-            "x-user-id": user.id
+            Authorization: `Bearer ${user.authToken}`
           },
           signal: controller.signal
         });

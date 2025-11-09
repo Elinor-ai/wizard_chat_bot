@@ -4,6 +4,7 @@ import { v4 as uuid } from "uuid";
 import bcrypt from "bcryptjs";
 import { wrapAsync, httpError } from "@wizard/utils";
 import { UserSchema } from "@wizard/core";
+import { issueAuthToken } from "../utils/auth-tokens.js";
 
 const signupSchema = z.object({
   email: z.string().email(),
@@ -146,16 +147,18 @@ export function authRouter({ firestore, logger }) {
         updatedAt: now
       });
 
-      // Don't return password hash to client
       const { passwordHash, ...authWithoutPassword } = existing.auth;
+      const sanitizedUser = {
+        ...existing,
+        auth: authWithoutPassword,
+        usage: updatedUsage,
+        security: updatedSecurity
+      };
+      const token = issueAuthToken(sanitizedUser);
 
       res.json({
-        user: {
-          ...existing,
-          auth: authWithoutPassword,
-          usage: updatedUsage,
-          security: updatedSecurity
-        },
+        user: sanitizedUser,
+        token,
         isNew: false
       });
     })
@@ -184,14 +187,16 @@ export function authRouter({ firestore, logger }) {
       const storedUser = await firestore.saveDocument("users", newUser.id, newUser);
       logger.info({ email: payload.email, userId: newUser.id }, "Created new user");
 
-      // Don't return password hash to client
       const { passwordHash: _, ...authWithoutPassword } = storedUser.auth;
+      const sanitizedUser = {
+        ...storedUser,
+        auth: authWithoutPassword
+      };
+      const token = issueAuthToken(sanitizedUser);
 
       res.json({
-        user: {
-          ...storedUser,
-          auth: authWithoutPassword
-        },
+        user: sanitizedUser,
+        token,
         isNew: true
       });
     })
@@ -259,14 +264,16 @@ export function authRouter({ firestore, logger }) {
         logger.info({ email, userId: newUser.id }, "Created new user via Google OAuth");
       }
 
-      // Remove password hash if exists
       const { passwordHash: _, ...authWithoutPassword } = user.auth;
+      const sanitizedUser = {
+        ...user,
+        auth: authWithoutPassword
+      };
+      const token = issueAuthToken(sanitizedUser);
 
       res.json({
-        user: {
-          ...user,
-          auth: authWithoutPassword
-        },
+        user: sanitizedUser,
+        token,
         isNew
       });
     })

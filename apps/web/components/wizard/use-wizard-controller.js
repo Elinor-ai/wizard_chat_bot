@@ -5,6 +5,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
 } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -27,26 +28,69 @@ import {
 } from "./wizard-utils";
 import { createInitialWizardState, wizardReducer } from "./wizard-state";
 import {
+  fetchJobDraft,
   fetchStepSuggestions,
   persistJobDraft,
   sendWizardChatMessage,
 } from "./wizard-services";
+import { loadDraft, saveDraft, clearDraft } from "./draft-storage";
 
 const TOAST_TIMEOUT_MS = 4000;
 
-export function useWizardController({ user }) {
+export function useWizardController({ user, initialJobId = null }) {
   const router = useRouter();
   const [wizardState, dispatch] = useReducer(
     wizardReducer,
-    undefined,
-    createInitialWizardState
+    {
+      userId: user?.id ?? null,
+      jobId: initialJobId ?? null,
+    },
+    (seed) => {
+      const next = createInitialWizardState();
+      if (
+        typeof window === "undefined" ||
+        !seed?.userId
+      ) {
+        return next;
+      }
+      const draft = loadDraft({
+        userId: seed.userId,
+        jobId: seed.jobId ?? null,
+      });
+      if (draft) {
+        next.state = deepClone(draft.state ?? {});
+        next.committedState = deepClone(next.state);
+        next.jobId = seed.jobId ?? null;
+        next.includeOptional = Boolean(draft.includeOptional);
+        next.currentStepIndex = draft.currentStepIndex ?? 0;
+        next.maxVisitedIndex =
+          draft.maxVisitedIndex ??
+          Math.max(draft.currentStepIndex ?? 0, 0);
+      }
+      return next;
+    }
   );
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const suggestionsAbortRef = useRef(null);
   const stateRef = useRef(wizardState.state);
   const previousFieldValuesRef = useRef({});
   const lastSuggestionSnapshotRef = useRef({});
   const toastTimeoutRef = useRef(null);
+  const draftPersistTimeoutRef = useRef(null);
+  const hydrationKey = `${user?.id ?? "anon"}:${initialJobId ?? "new"}`;
+  const migratedJobIdRef = useRef(initialJobId ?? null);
+  const lastHydratedKeyRef = useRef(null);
+  const debugEnabled = process.env.NODE_ENV !== "production";
+  const debug = useCallback(
+    (...messages) => {
+      if (debugEnabled) {
+        // eslint-disable-next-line no-console
+        console.log("[WizardController]", ...messages);
+      }
+    },
+    [debugEnabled]
+  );
 
   useEffect(() => {
     stateRef.current = wizardState.state;
@@ -60,6 +104,9 @@ export function useWizardController({ user }) {
     () => () => {
       if (toastTimeoutRef.current) {
         clearTimeout(toastTimeoutRef.current);
+      }
+      if (draftPersistTimeoutRef.current) {
+        clearTimeout(draftPersistTimeoutRef.current);
       }
     },
     []
@@ -196,6 +243,195 @@ export function useWizardController({ user }) {
   const isCurrentStepRequired =
     wizardState.currentStepIndex < REQUIRED_STEPS.length;
   const isLastStep = wizardState.currentStepIndex === totalSteps - 1;
+
+  useEffect(() => {
+    if (initialJobId || !wizardState.jobId) {
+      return;
+    }
+    router.replace(`/wizard/${wizardState.jobId}`);
+  }, [initialJobId, router, wizardState.jobId]);
+
+  useEffect(() => {
+    if (initialJobId || !user?.id) {
+      return;
+    }
+    const nextJobId = wizardState.jobId;
+    if (!nextJobId) {
+      return;
+    }
+    if (migratedJobIdRef.current === nextJobId) {
+      return;
+    }
+    debug("draft:migrate-to-job", { jobId: nextJobId });
+    saveDraft({
+      userId: user.id,
+      jobId: nextJobId,
+      state: wizardState.state,
+      includeOptional: wizardState.includeOptional,
+      currentStepIndex: wizardState.currentStepIndex,
+      maxVisitedIndex: wizardState.maxVisitedIndex,
+    });
+    clearDraft({ userId: user.id, jobId: null });
+    migratedJobIdRef.current = nextJobId;
+  }, [
+    initialJobId,
+    user?.id,
+    wizardState.jobId,
+    wizardState.state,
+    wizardState.includeOptional,
+    wizardState.currentStepIndex,
+    wizardState.maxVisitedIndex,
+  ]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+    if (initialJobId && !user?.authToken) {
+      return;
+    }
+
+    if (lastHydratedKeyRef.current === hydrationKey) {
+      return;
+    }
+    lastHydratedKeyRef.current = hydrationKey;
+
+    let cancelled = false;
+
+    const hydrate = async () => {
+      debug("hydrate:start", { userId: user.id, initialJobId });
+      setIsHydrated(false);
+
+      if (!initialJobId) {
+        const localDraft = loadDraft({ userId: user.id, jobId: null });
+        if (localDraft) {
+          debug("hydrate:local-new-found", localDraft);
+          dispatch({
+            type: "PATCH_STATE",
+            payload: {
+              state: deepClone(localDraft.state ?? {}),
+              committedState: {},
+              jobId: null,
+              includeOptional: Boolean(localDraft.includeOptional),
+              currentStepIndex: localDraft.currentStepIndex ?? 0,
+              maxVisitedIndex:
+                localDraft.maxVisitedIndex ??
+                Math.max(localDraft.currentStepIndex ?? 0, 0),
+            },
+          });
+        } else {
+          debug("hydrate:local-new-missing");
+          dispatch({
+            type: "PATCH_STATE",
+            payload: {
+              state: {},
+              committedState: {},
+              jobId: null,
+              includeOptional: false,
+              currentStepIndex: 0,
+              maxVisitedIndex: 0,
+            },
+          });
+        }
+        if (!cancelled) {
+          setIsHydrated(true);
+          debug("hydrate:complete-new");
+        }
+        return;
+      }
+
+      try {
+        const serverJob = await fetchJobDraft({
+          authToken: user.authToken,
+          jobId: initialJobId,
+        });
+        if (cancelled) {
+          return;
+        }
+
+        const includeOptional = Boolean(serverJob.includeOptional);
+        const serverState = deepClone(serverJob.state ?? {});
+        const localDraft = loadDraft({ userId: user.id, jobId: initialJobId });
+        const baseIndex =
+          localDraft?.currentStepIndex ??
+          determineStepIndex(serverState, includeOptional);
+        const baseVisited =
+          localDraft?.maxVisitedIndex ??
+          Math.max(baseIndex, wizardState.maxVisitedIndex);
+        const basePayload = {
+          jobId: serverJob.jobId,
+          state: serverState,
+          committedState: serverState,
+          includeOptional,
+          currentStepIndex: baseIndex,
+          maxVisitedIndex: baseVisited,
+        };
+
+        let mergedPayload = basePayload;
+        const serverUpdatedAt =
+          serverJob.updatedAt instanceof Date
+            ? serverJob.updatedAt.getTime()
+            : 0;
+        if (
+          localDraft &&
+          localDraft.updatedAt &&
+          localDraft.updatedAt > serverUpdatedAt
+        ) {
+          debug("hydrate:local-overrides-server", {
+            localUpdatedAt: localDraft.updatedAt,
+            serverUpdatedAt,
+          });
+          mergedPayload = {
+            ...basePayload,
+            state: deepClone(localDraft.state ?? basePayload.state),
+            includeOptional:
+              typeof localDraft.includeOptional === "boolean"
+                ? localDraft.includeOptional
+                : basePayload.includeOptional,
+            currentStepIndex:
+              localDraft.currentStepIndex ?? basePayload.currentStepIndex,
+            maxVisitedIndex:
+              localDraft.maxVisitedIndex ??
+              Math.max(
+                localDraft.currentStepIndex ?? 0,
+                basePayload.maxVisitedIndex
+              ),
+          };
+        }
+
+        dispatch({
+          type: "PATCH_STATE",
+          payload: mergedPayload,
+        });
+        debug("hydrate:server-loaded", { mergedPayload });
+      } catch (error) {
+        if (!cancelled) {
+          dispatch({
+            type: "SET_TOAST",
+            payload: {
+              id: Date.now(),
+              variant: "error",
+              message:
+                error?.message ??
+                "Failed to load the draft. Please try again shortly.",
+            },
+          });
+        }
+        debug("hydrate:error", error);
+      } finally {
+        if (!cancelled) {
+          setIsHydrated(true);
+          debug("hydrate:finally");
+        }
+      }
+    };
+
+    hydrate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrationKey, initialJobId, user?.authToken, user?.id]);
 
   useEffect(() => {
     if (totalSteps === 0) {
@@ -526,8 +762,12 @@ export function useWizardController({ user }) {
       dispatch({ type: "SET_SUGGESTIONS_LOADING", payload: true });
 
       try {
+        if (!user?.authToken) {
+          announceAuthRequired();
+          return;
+        }
         const response = await fetchStepSuggestions({
-          userId: user.id,
+          authToken: user.authToken,
           jobId: effectiveJobId,
           stepId,
           state: workingState,
@@ -734,7 +974,7 @@ export function useWizardController({ user }) {
 
   const persistCurrentDraft = useCallback(
     async (intentOverrides = {}, stepId = currentStep?.id) => {
-      if (!user) {
+      if (!user?.authToken) {
         announceAuthRequired();
         return null;
       }
@@ -764,7 +1004,7 @@ export function useWizardController({ user }) {
 
         const response = await persistMutation.mutateAsync({
           state: creatingJob ? wizardState.state : diff,
-          userId: user.id,
+          authToken: user.authToken,
           jobId: wizardState.jobId,
           intent,
           stepId,
@@ -779,6 +1019,11 @@ export function useWizardController({ user }) {
             includeOptional: intent.includeOptional,
           },
         });
+        debug("persist:success", {
+          jobId: response?.jobId ?? wizardState.jobId,
+          intent,
+          creatingJob,
+        });
 
         showToast("success", "Draft saved successfully.");
 
@@ -788,6 +1033,7 @@ export function useWizardController({ user }) {
           noChanges: !hasChanges,
         };
       } catch (error) {
+        debug("persist:error", error);
         showToast("error", error.message ?? "Failed to save your changes.");
         return null;
       }
@@ -808,6 +1054,56 @@ export function useWizardController({ user }) {
       persistMutation,
     ]
   );
+
+  useEffect(() => {
+    if (!user?.id || !isHydrated) {
+      return;
+    }
+
+    const targetJobId = wizardState.jobId ?? initialJobId ?? null;
+    const hasDraftContent =
+      targetJobId !== null ||
+      Object.keys(wizardState.state ?? {}).length > 0;
+    if (!hasDraftContent) {
+      return;
+    }
+
+    if (draftPersistTimeoutRef.current) {
+      clearTimeout(draftPersistTimeoutRef.current);
+    }
+
+    draftPersistTimeoutRef.current = window.setTimeout(() => {
+      debug("draft:autosave", {
+        jobId: targetJobId,
+        step: wizardState.currentStepIndex,
+        hasState: Object.keys(wizardState.state ?? {}).length,
+      });
+      saveDraft({
+        userId: user.id,
+        jobId: targetJobId,
+        state: wizardState.state,
+        includeOptional: wizardState.includeOptional,
+        currentStepIndex: wizardState.currentStepIndex,
+        maxVisitedIndex: wizardState.maxVisitedIndex,
+      });
+    }, 400);
+
+    return () => {
+      if (draftPersistTimeoutRef.current) {
+        clearTimeout(draftPersistTimeoutRef.current);
+        draftPersistTimeoutRef.current = null;
+      }
+    };
+  }, [
+    user?.id,
+    isHydrated,
+    wizardState.state,
+    wizardState.includeOptional,
+    wizardState.currentStepIndex,
+    wizardState.maxVisitedIndex,
+    wizardState.jobId,
+    initialJobId,
+  ]);
 
   const persistUnsavedChangesIfNeeded = useCallback(async () => {
     if (!wizardState.unsavedChanges) {
@@ -980,8 +1276,12 @@ export function useWizardController({ user }) {
       return;
     }
 
+    if (user?.id) {
+      clearDraft({ userId: user.id, jobId: targetJobId });
+    }
+
     router.push(`/wizard/${targetJobId}/refine`);
-  }, [handleSubmit, router, showToast, wizardState.jobId]);
+  }, [handleSubmit, router, showToast, user?.id, wizardState.jobId]);
 
   const handleAddOptional = useCallback(async () => {
     if (!allRequiredStepsCompleteInState) {
@@ -1065,12 +1365,17 @@ export function useWizardController({ user }) {
       return;
     }
 
+    if (user?.id) {
+      clearDraft({ userId: user.id, jobId: targetJobId });
+    }
+
     router.push(`/wizard/${targetJobId}/refine`);
   }, [
     allRequiredStepsCompleteInState,
     dispatch,
     handleSubmit,
     router,
+    user?.id,
     showToast,
     wizardState.jobId,
   ]);
@@ -1136,7 +1441,7 @@ export function useWizardController({ user }) {
 
   const handleAcceptSuggestion = useCallback(
     async (suggestion) => {
-      if (!user) {
+      if (!user?.authToken) {
         announceAuthRequired();
         return;
       }
@@ -1246,7 +1551,7 @@ export function useWizardController({ user }) {
 
       try {
         const response = await sendWizardChatMessage({
-          userId: user.id,
+          authToken: user.authToken,
           jobId: wizardState.jobId ?? undefined,
           message: trimmed,
           currentStepId: currentStep?.id,
@@ -1379,5 +1684,19 @@ export function useWizardController({ user }) {
     clearHoveredCapsule,
     showToast,
     goToStep,
+    isHydrated,
   };
+}
+
+function determineStepIndex(intakeState = {}, includeOptional = false) {
+  const stepList = includeOptional
+    ? [...REQUIRED_STEPS, ...OPTIONAL_STEPS]
+    : REQUIRED_STEPS;
+  const firstIncomplete = stepList.findIndex((step) =>
+    step.fields.some((field) => !isFieldValueProvided(getDeep(intakeState, field.id), field))
+  );
+  if (firstIncomplete === -1) {
+    return Math.max(stepList.length - 1, 0);
+  }
+  return firstIncomplete;
 }

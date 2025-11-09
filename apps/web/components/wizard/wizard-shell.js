@@ -27,11 +27,11 @@ function capsuleClassName(isActive, isHovered) {
   );
 }
 
-export function WizardShell() {
+export function WizardShell({ jobId = null }) {
   const { user } = useUser();
-  const controller = useWizardController({ user });
+  const controller = useWizardController({ user, initialJobId: jobId });
 
-  if (!user) {
+  if (!user?.authToken) {
     return (
       <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-neutral-600 shadow-sm shadow-neutral-100">
         Please sign in to build a job brief. Once authenticated, your wizard
@@ -84,6 +84,7 @@ export function WizardShell() {
     isSaving,
     activeToast,
     activeToastClassName,
+    isHydrated,
   } = controller;
 
   const optionalStepCount = OPTIONAL_STEPS.length;
@@ -96,18 +97,6 @@ export function WizardShell() {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-6 rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100">
-        {activeToast ? (
-          <div
-            className={clsx(
-              "rounded-xl border px-4 py-3 text-sm font-medium shadow-sm",
-              activeToastClassName ??
-                "border-neutral-200 bg-neutral-50 text-neutral-700"
-            )}
-          >
-            {activeToast.message}
-          </div>
-        ) : null}
-
         <nav className="flex flex-wrap items-center gap-3 text-xs font-medium uppercase tracking-wide text-neutral-500">
           {steps.map((step, index) => {
             const isActive = index === currentStepIndex;
@@ -305,7 +294,6 @@ export function WizardShell() {
               const FieldContainer = isCapsuleField ? "div" : "label";
 
               const containerProps = {
-                key: field.id,
                 className:
                   "flex flex-col gap-2 text-sm font-medium text-neutral-700",
               };
@@ -316,7 +304,7 @@ export function WizardShell() {
               }
 
               return (
-                <FieldContainer {...containerProps}>
+                <FieldContainer key={field.id} {...containerProps}>
                   <span id={labelId}>
                     {field.label}
                     {field.required ? (

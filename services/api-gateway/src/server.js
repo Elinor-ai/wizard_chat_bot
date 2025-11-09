@@ -9,11 +9,12 @@ import { assetsRouter } from "./routes/assets.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { contactRouter } from "./routes/contact.js";
 import { usersRouter } from "./routes/users.js";
+import { requireAuth } from "./middleware/require-auth.js";
 
 const corsConfig = {
   origin: "http://localhost:3000",
   methods: ["GET", "POST", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "x-user-id"]
+  allowedHeaders: ["Content-Type", "Authorization"]
 };
 
 export function createApp({ logger, firestore, llmClient }) {
@@ -31,13 +32,15 @@ export function createApp({ logger, firestore, llmClient }) {
     })
   );
 
+  const authMiddleware = requireAuth({ logger });
+
   app.use("/auth", authRouter({ firestore, logger }));
-  app.use("/wizard", wizardRouter({ firestore, logger, llmClient }));
-  app.use("/chat", chatRouter({ firestore, llmClient, logger }));
-  app.use("/assets", assetsRouter({ firestore, logger }));
-  app.use("/dashboard", dashboardRouter({ firestore, logger }));
-  app.use("/users", usersRouter({ firestore, logger }));
   app.use("/contact", contactRouter({ logger }));
+  app.use("/wizard", authMiddleware, wizardRouter({ firestore, logger, llmClient }));
+  app.use("/chat", authMiddleware, chatRouter({ firestore, llmClient, logger }));
+  app.use("/assets", authMiddleware, assetsRouter({ firestore, logger }));
+  app.use("/dashboard", authMiddleware, dashboardRouter({ firestore, logger }));
+  app.use("/users", authMiddleware, usersRouter({ firestore, logger }));
 
   app.use(notFound);
   app.use(errorHandler(logger));
