@@ -52,6 +52,13 @@ export default function ProfileSection({ user }) {
   };
 
   const handleSave = async () => {
+    if (!user?.authToken) {
+      setMessage({
+        type: 'error',
+        text: 'Your session has expired. Please sign in again.',
+      });
+      return;
+    }
     setIsSaving(true);
     setMessage(null);
 
@@ -91,7 +98,7 @@ export default function ProfileSection({ user }) {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user.id,
+          Authorization: `Bearer ${user.authToken}`,
         },
         body: JSON.stringify({
           profile: formData,
@@ -109,7 +116,7 @@ export default function ProfileSection({ user }) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-user-id': user.id,
+            Authorization: `Bearer ${user.authToken}`,
           },
           body: JSON.stringify({
             currentPassword: passwordForm.currentPassword,
@@ -123,7 +130,11 @@ export default function ProfileSection({ user }) {
         }
       }
 
-      setUser(updatedUser);
+      const mergedUser = {
+        ...updatedUser,
+        authToken: user.authToken,
+      };
+      setUser(mergedUser);
       setIsEditing(false);
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
       setPasswordForm({

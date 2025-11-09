@@ -3,6 +3,14 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { wrapAsync, httpError } from "@wizard/utils";
 
+function getAuthenticatedUserId(req) {
+  const userId = req.user?.id;
+  if (!userId) {
+    throw httpError(401, "Unauthorized");
+  }
+  return userId;
+}
+
 // Schema for updating user profile
 const updateProfileSchema = z.object({
   profile: z
@@ -37,11 +45,7 @@ export function usersRouter({ firestore, logger }) {
   router.get(
     "/me",
     wrapAsync(async (req, res) => {
-      const userId = req.headers["x-user-id"];
-
-      if (!userId) {
-        throw httpError(401, "User ID header required");
-      }
+      const userId = getAuthenticatedUserId(req);
 
       const user = await firestore.getDocument("users", userId);
 
@@ -63,11 +67,7 @@ export function usersRouter({ firestore, logger }) {
   router.patch(
     "/me",
     wrapAsync(async (req, res) => {
-      const userId = req.headers["x-user-id"];
-
-      if (!userId) {
-        throw httpError(401, "User ID header required");
-      }
+      const userId = getAuthenticatedUserId(req);
 
       const payload = updateProfileSchema.parse(req.body ?? {});
 
@@ -126,11 +126,7 @@ export function usersRouter({ firestore, logger }) {
   router.post(
     "/me/change-password",
     wrapAsync(async (req, res) => {
-      const userId = req.headers["x-user-id"];
-
-      if (!userId) {
-        throw httpError(401, "User ID header required");
-      }
+      const userId = getAuthenticatedUserId(req);
 
       const payload = changePasswordSchema.parse(req.body ?? {});
 

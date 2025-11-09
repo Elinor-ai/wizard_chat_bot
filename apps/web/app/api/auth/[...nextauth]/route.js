@@ -33,6 +33,7 @@ const handler = NextAuth({
           const data = await response.json();
           // Store user data in the token for later use
           user.backendUser = data.user;
+          user.backendToken = data.token;
           return true;
         } catch (error) {
           console.error("Error syncing user:", error);
@@ -46,12 +47,18 @@ const handler = NextAuth({
       if (user?.backendUser) {
         token.backendUser = user.backendUser;
       }
+      if (user?.backendToken) {
+        token.backendToken = user.backendToken;
+      }
       return token;
     },
     async session({ session, token }) {
       // Add backend user data to session
       if (token.backendUser) {
         session.user = token.backendUser;
+      }
+      if (token.backendToken) {
+        session.accessToken = token.backendToken;
       }
       return session;
     },

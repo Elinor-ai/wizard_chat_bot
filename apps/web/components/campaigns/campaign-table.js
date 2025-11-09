@@ -16,16 +16,17 @@ function formatCurrency(value) {
 export function CampaignTable() {
   const { user } = useUser();
   const userId = user?.id;
+  const authToken = user?.authToken;
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["dashboard-campaigns", userId],
-    queryFn: () => DashboardApi.fetchCampaigns({ userId }),
-    enabled: Boolean(userId)
+    queryKey: ["dashboard-campaigns", authToken],
+    queryFn: () => DashboardApi.fetchCampaigns({ authToken }),
+    enabled: Boolean(authToken)
   });
 
   const campaigns = useMemo(() => data ?? [], [data]);
 
-  if (!userId) {
+  if (!userId || !authToken) {
     return (
       <section className="rounded-3xl border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-500 shadow-sm shadow-neutral-100">
         Sign in to preview campaign readiness.

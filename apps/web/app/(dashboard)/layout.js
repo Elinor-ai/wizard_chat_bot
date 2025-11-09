@@ -381,14 +381,25 @@ export default function DashboardLayout({ children }) {
 
   // Sync OAuth session with user context
   useEffect(() => {
-    if (session?.user && !user) {
-      console.log("Dashboard: Syncing session user to context:", session.user);
-      setUser(session.user);
+    if (status === "authenticated" && session?.user) {
+      const mergedUser = {
+        ...session.user,
+        authToken: session.accessToken ?? user?.authToken ?? null,
+      };
+      if (!user || user.id !== mergedUser.id || user.authToken !== mergedUser.authToken) {
+        setUser(mergedUser);
+      }
+    } else if (status === "unauthenticated" && user) {
+      setUser(null);
     }
-  }, [session, user, setUser]);
+  }, [session, status, user, setUser]);
 
   // Use session user as fallback if user context is empty
-  const displayUser = user || session?.user;
+  const fallbackSessionUser =
+    session?.user && !user
+      ? { ...session.user, authToken: session.accessToken ?? null }
+      : session?.user;
+  const displayUser = user || fallbackSessionUser;
   const isLoading = status === "loading" || !isHydrated;
   const sidebarMenuId = "sidebar-account-menu";
   const headerMenuId = "header-account-menu";
@@ -529,7 +540,7 @@ export default function DashboardLayout({ children }) {
       <aside
         ref={sidebarContainerRef}
         className={clsx(
-          "fixed inset-y-0 left-0 z-40 flex -translate-x-full flex-col border-r border-neutral-200 bg-white px-6 py-8 shadow-xl transition-[transform,width] duration-200 md:static md:z-auto md:flex md:translate-x-0 md:shadow-none",
+          "fixed inset-y-0 left-0 z-40 flex -translate-x-full flex-col border-r border-neutral-200 bg-white px-6 py-8 shadow-xl transition-[transform,width] duration-200 md:sticky md:top-0 md:self-start md:z-auto md:flex md:translate-x-0 md:shadow-none md:h-screen",
           isSidebarCollapsed ? "md:px-3" : "md:px-6",
           isMobileMenuOpen ? "translate-x-0" : ""
         )}
@@ -594,99 +605,101 @@ export default function DashboardLayout({ children }) {
           </button>
         </div>
 
-        <nav
-          id={sidebarNavId}
-          className="mt-8 flex flex-col gap-2 text-sm font-medium text-neutral-600"
-        >
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={clsx(
-                "flex items-center gap-3 rounded-xl py-2 transition hover:bg-primary-50 hover:text-primary-600",
-                isSidebarCollapsed ? "justify-center px-2" : "px-3",
-                pathname === item.href ? "bg-primary-50 text-primary-600" : ""
-              )}
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <item.Icon className="h-5 w-5" />
-              <span
+        <div className="mt-8 flex flex-1 flex-col overflow-hidden">
+          <nav
+            id={sidebarNavId}
+            className="flex-1 space-y-2 overflow-y-auto pr-1 text-sm font-medium text-neutral-600"
+          >
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
                 className={clsx(
-                  "transition-opacity duration-150",
-                  isSidebarCollapsed ? "hidden" : "block"
+                  "flex items-center gap-3 rounded-xl py-2 transition hover:bg-primary-50 hover:text-primary-600",
+                  isSidebarCollapsed ? "justify-center px-2" : "px-3",
+                  pathname === item.href ? "bg-primary-50 text-primary-600" : ""
                 )}
+                onClick={() => setIsMobileMenuOpen(false)}
               >
-                {item.label}
-              </span>
-            </Link>
-          ))}
-        </nav>
+                <item.Icon className="h-5 w-5" />
+                <span
+                  className={clsx(
+                    "transition-opacity duration-150",
+                    isSidebarCollapsed ? "hidden" : "block"
+                  )}
+                >
+                  {item.label}
+                </span>
+              </Link>
+            ))}
+          </nav>
 
-        {displayUser ? (
-          <div className="mt-auto">
-            <div
-              className={clsx(
-                "relative",
-                isSidebarCollapsed ? "flex justify-center" : ""
-              )}
-            >
-              <button
-                ref={sidebarButtonRef}
-                type="button"
-                onClick={() => {
-                  setShowSidebarUserMenu((prev) => !prev);
-                  setShowUserMenu(false);
-                }}
+          {displayUser ? (
+            <div className="mt-4 border-t border-neutral-100 pt-4">
+              <div
                 className={clsx(
-                  "flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-primary-50",
-                  isSidebarCollapsed ? "justify-center px-0" : "justify-start"
+                  "relative",
+                  isSidebarCollapsed ? "flex justify-center" : ""
                 )}
-                aria-haspopup="menu"
-                aria-expanded={showSidebarUserMenu}
-                aria-controls={showSidebarUserMenu ? sidebarMenuId : undefined}
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
-                  {displayUser.profile?.name?.[0]?.toUpperCase() ||
-                    displayUser.auth?.email?.[0]?.toUpperCase() ||
-                    "U"}
-                </div>
-                {!isSidebarCollapsed ? (
-                  <>
-                    <span>
-                      {displayUser.profile?.name || displayUser.auth?.email}
-                    </span>
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
-                  </>
-                ) : null}
-              </button>
-              <AccountMenuPopup
-                anchorRef={sidebarButtonRef}
-                open={showSidebarUserMenu}
-                onClose={closeAllUserMenus}
-                menuId={sidebarMenuId}
-                boundaryRef={sidebarContainerRef}
-              >
-                <AccountMenuContent
-                  displayUser={displayUser}
+                <button
+                  ref={sidebarButtonRef}
+                  type="button"
+                  onClick={() => {
+                    setShowSidebarUserMenu((prev) => !prev);
+                    setShowUserMenu(false);
+                  }}
+                  className={clsx(
+                    "flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-primary-50",
+                    isSidebarCollapsed ? "justify-center px-0" : "justify-start"
+                  )}
+                  aria-haspopup="menu"
+                  aria-expanded={showSidebarUserMenu}
+                  aria-controls={showSidebarUserMenu ? sidebarMenuId : undefined}
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
+                    {displayUser.profile?.name?.[0]?.toUpperCase() ||
+                      displayUser.auth?.email?.[0]?.toUpperCase() ||
+                      "U"}
+                  </div>
+                  {!isSidebarCollapsed ? (
+                    <>
+                      <span>
+                        {displayUser.profile?.name || displayUser.auth?.email}
+                      </span>
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </>
+                  ) : null}
+                </button>
+                <AccountMenuPopup
+                  anchorRef={sidebarButtonRef}
+                  open={showSidebarUserMenu}
                   onClose={closeAllUserMenus}
-                  handleSignOut={handleSignOut}
-                />
-              </AccountMenuPopup>
+                  menuId={sidebarMenuId}
+                  boundaryRef={sidebarContainerRef}
+                >
+                  <AccountMenuContent
+                    displayUser={displayUser}
+                    onClose={closeAllUserMenus}
+                    handleSignOut={handleSignOut}
+                  />
+                </AccountMenuPopup>
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </aside>
 
       {isMobileMenuOpen ? (

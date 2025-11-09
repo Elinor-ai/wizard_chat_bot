@@ -47,6 +47,10 @@ export default function PreferencesSection({ user }) {
   };
 
   const handleSave = async () => {
+    if (!user?.authToken) {
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      return;
+    }
     setIsSaving(true);
     setMessage(null);
 
@@ -56,7 +60,7 @@ export default function PreferencesSection({ user }) {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user.id,
+          Authorization: `Bearer ${user.authToken}`,
         },
         body: JSON.stringify({
           preferences,
@@ -69,7 +73,10 @@ export default function PreferencesSection({ user }) {
       }
 
       const updatedUser = await response.json();
-      setUser(updatedUser);
+      setUser({
+        ...updatedUser,
+        authToken: user.authToken,
+      });
       setMessage({ type: 'success', text: 'Preferences saved successfully!' });
     } catch (error) {
       console.error('Error updating preferences:', error);

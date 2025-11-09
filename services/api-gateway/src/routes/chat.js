@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { wrapAsync, httpError } from "@wizard/utils";
+import { wrapAsync } from "@wizard/utils";
 import { JobSchema } from "@wizard/core";
 
 const chatRequestSchema = z.object({
@@ -11,21 +11,12 @@ const chatRequestSchema = z.object({
 
 const JOB_COLLECTION = "jobs";
 
-function requireUserId(req) {
-  const userId = req.headers["x-user-id"];
-  if (!userId || typeof userId !== "string") {
-    throw httpError(401, "Missing x-user-id header");
-  }
-  return userId;
-}
-
 export function chatRouter({ firestore, llmClient, logger }) {
   const router = Router();
 
   router.post(
     "/message",
     wrapAsync(async (req, res) => {
-      requireUserId(req);
       const payload = chatRequestSchema.parse(req.body ?? {});
 
       let draftState = {};

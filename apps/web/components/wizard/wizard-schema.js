@@ -232,16 +232,16 @@ export const OPTIONAL_STEPS = [
   },
 ];
 
-export const OPTIONAL_STEP_BANNERS = {
-  "work-style":
-    "💡 Candidates are 2.8× more likely to apply when they understand your remote policy and team structure",
-  compensation:
-    "💡 Jobs with salary ranges get 72% more applications and reduce back-and-forth by 3 days on average",
-  schedule:
-    "💡 Clarity on hours and flexibility increases match quality by 54% and reduces mis-aligned applications",
-  extras:
-    "💡 Clear application instructions and timeline reduce candidate drop-off by 41% and speed up hiring",
-};
+// export const OPTIONAL_STEP_BANNERS = {
+//   "work-style":
+//     "💡 Candidates are 2.8× more likely to apply when they understand your remote policy and team structure",
+//   compensation:
+//     "💡 Jobs with salary ranges get 72% more applications and reduce back-and-forth by 3 days on average",
+//   schedule:
+//     "💡 Clarity on hours and flexibility increases match quality by 54% and reduces mis-aligned applications",
+//   extras:
+//     "💡 Clear application instructions and timeline reduce candidate drop-off by 41% and speed up hiring",
+// };
 
 export const TOAST_VARIANT_CLASSES = {
   info: "border-sky-200 bg-sky-50 text-sky-700",

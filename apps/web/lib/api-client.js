@@ -307,16 +307,63 @@ const dashboardActivityResponseSchema = z.object({
   events: z.array(dashboardActivityEventSchema)
 });
 
-function authHeaders(userId) {
-  if (!userId) {
+const wizardJobResponseSchema = z
+  .object({
+    jobId: z.string(),
+    state: z.record(z.string(), z.unknown()).optional(),
+    includeOptional: z.boolean().optional(),
+    updatedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional(),
+    status: z.string().nullable().optional()
+  })
+  .transform((data) => ({
+    jobId: data.jobId,
+    state: data.state ?? {},
+    includeOptional: Boolean(data.includeOptional),
+    updatedAt: data.updatedAt
+      ? data.updatedAt instanceof Date
+        ? data.updatedAt
+        : new Date(data.updatedAt)
+      : null,
+    status: data.status ?? null
+  }));
+
+function authHeaders(authToken) {
+  if (!authToken) {
     return {};
   }
   return {
-    "x-user-id": userId
+    Authorization: `Bearer ${authToken}`
   };
 }
 
 export const WizardApi = {
+  async fetchJob(jobId, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/wizard/${jobId}`, {
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (!response.ok) {
+      let message = "Failed to load job draft";
+      try {
+        const errorData = await response.json();
+        if (typeof errorData?.error === "string") {
+          message = errorData.error;
+        }
+      } catch (_error) {
+        const text = await response.text();
+        if (text) {
+          message = text;
+        }
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return wizardJobResponseSchema.parse(data);
+  },
+
   async fetchSuggestions(payload, options = {}) {
     const normalizedJobId =
       options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
@@ -325,7 +372,7 @@ export const WizardApi = {
       signal: options.signal,
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       },
       body: JSON.stringify({
         ...payload,
@@ -348,7 +395,7 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       },
       body: JSON.stringify({
         ...payload,
@@ -383,7 +430,7 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       },
       body: JSON.stringify({
         ...payload,
@@ -418,7 +465,7 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       },
       body: JSON.stringify({
         ...payload,
@@ -453,7 +500,7 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       },
       body: JSON.stringify({
         state,
@@ -476,7 +523,7 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       },
       body: JSON.stringify(payload)
     });
@@ -494,7 +541,7 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       },
       body: JSON.stringify(payload)
     });
@@ -513,7 +560,7 @@ export const DashboardApi = {
     const response = await fetch(`${API_BASE_URL}/dashboard/summary`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       }
     });
 
@@ -529,7 +576,7 @@ export const DashboardApi = {
     const response = await fetch(`${API_BASE_URL}/dashboard/campaigns`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       }
     });
 
@@ -545,7 +592,7 @@ export const DashboardApi = {
     const response = await fetch(`${API_BASE_URL}/dashboard/ledger`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       }
     });
 
@@ -561,7 +608,7 @@ export const DashboardApi = {
     const response = await fetch(`${API_BASE_URL}/dashboard/activity`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.userId)
+        ...authHeaders(options.authToken)
       }
     });
 

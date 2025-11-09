@@ -44,7 +44,10 @@ export default function LoginPage() {
       }
 
       const data = await response.json();
-      setUser(data.user);
+      setUser({
+        ...data.user,
+        authToken: data.token,
+      });
       router.push("/");
     } catch (loginError) {
       setError(loginError.message);

@@ -16,14 +16,15 @@ function formatAmount(value) {
 export function CreditLedger() {
   const { user } = useUser();
   const userId = user?.id;
+  const authToken = user?.authToken;
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["dashboard-ledger", userId],
-    queryFn: () => DashboardApi.fetchLedger({ userId }),
-    enabled: Boolean(userId)
+    queryKey: ["dashboard-ledger", authToken],
+    queryFn: () => DashboardApi.fetchLedger({ authToken }),
+    enabled: Boolean(authToken)
   });
 
-  if (!userId) {
+  if (!userId || !authToken) {
     return (
       <section className="rounded-3xl border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-500 shadow-sm shadow-neutral-100">
         Sign in to view your credit transactions.

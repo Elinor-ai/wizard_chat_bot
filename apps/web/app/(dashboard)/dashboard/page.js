@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
 import { DashboardApi } from "../../../lib/api-client";
 import { useUser } from "../../../components/user-context";
 
@@ -14,27 +13,21 @@ function formatNumber(value, { currency = false } = {}) {
 }
 
 export default function DashboardOverviewPage() {
-  const { data: session } = useSession();
-  const { user, setUser } = useUser();
-
-  useEffect(() => {
-    if (session?.user && !user) {
-      setUser(session.user);
-    }
-  }, [session, user, setUser]);
+  const { user } = useUser();
 
   const userId = user?.id;
+  const authToken = user?.authToken;
 
   const summaryQuery = useQuery({
-    queryKey: ["dashboard-summary", userId],
-    queryFn: () => DashboardApi.fetchSummary({ userId }),
-    enabled: Boolean(userId)
+    queryKey: ["dashboard-summary", authToken],
+    queryFn: () => DashboardApi.fetchSummary({ authToken }),
+    enabled: Boolean(authToken)
   });
 
   const activityQuery = useQuery({
-    queryKey: ["dashboard-activity", userId],
-    queryFn: () => DashboardApi.fetchActivity({ userId }),
-    enabled: Boolean(userId)
+    queryKey: ["dashboard-activity", authToken],
+    queryFn: () => DashboardApi.fetchActivity({ authToken }),
+    enabled: Boolean(authToken)
   });
 
   const metricCards = useMemo(() => {
@@ -66,7 +59,7 @@ export default function DashboardOverviewPage() {
     ];
   }, [summaryQuery.data]);
 
-  if (!userId) {
+  if (!userId || !authToken) {
     return (
       <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-neutral-600 shadow-sm shadow-neutral-100">
         Sign in to review your recruiting performance.

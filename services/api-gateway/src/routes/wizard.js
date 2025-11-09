@@ -39,6 +39,7 @@ const ALLOWED_INTAKE_KEYS = [
   "salaryPeriod",
   "currency"
 ];
+const ARRAY_FIELD_KEYS = new Set(["coreDuties", "mustHaves", "benefits"]);
 
 const REQUIRED_FIELD_PATHS = [
   "roleTitle",
@@ -90,10 +91,10 @@ const finalizeRequestSchema = z.object({
   source: z.enum(["original", "refined", "edited"]).optional()
 });
 
-function requireUserId(req) {
-  const userId = req.headers["x-user-id"];
-  if (!userId || typeof userId !== "string") {
-    throw httpError(401, "Missing x-user-id header");
+function getAuthenticatedUserId(req) {
+  const userId = req.user?.id;
+  if (!userId) {
+    throw httpError(401, "Unauthorized");
   }
   return userId;
 }
@@ -207,6 +208,24 @@ function createBaseJob({ jobId, userId, now }) {
   });
 }
 
+function normalizeIntakeValue(existingValue, incomingValue, key) {
+  if (incomingValue === undefined) {
+    return existingValue;
+  }
+
+  if (incomingValue === null) {
+    if (Array.isArray(existingValue) || ARRAY_FIELD_KEYS.has(key)) {
+      return [];
+    }
+    if (typeof existingValue === "string" || !ARRAY_FIELD_KEYS.has(key)) {
+      return "";
+    }
+    return null;
+  }
+
+  return incomingValue;
+}
+
 function mergeIntakeIntoJob(job, incomingState = {}, { now }) {
   const nextJob = deepClone(job);
 
@@ -220,7 +239,7 @@ function mergeIntakeIntoJob(job, incomingState = {}, { now }) {
     if (isPlainObject(incomingValue) && isPlainObject(existingValue)) {
       nextJob[key] = deepMerge(existingValue, incomingValue);
     } else {
-      nextJob[key] = incomingValue;
+      nextJob[key] = normalizeIntakeValue(existingValue, incomingValue, key);
     }
   }
 
@@ -717,7 +736,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
   router.post(
     "/draft",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const payload = draftRequestSchema.parse(req.body ?? {});
 
       const jobId = payload.jobId ?? `job_${uuid()}`;
@@ -772,7 +791,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
   router.post(
     "/suggestions",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const payload = suggestionsRequestSchema.parse(req.body ?? {});
 
       const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
@@ -882,7 +901,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
   router.post(
     "/suggestions/merge",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const payload = mergeRequestSchema.parse(req.body ?? {});
 
       const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
@@ -917,7 +936,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
   router.post(
     "/refine",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const payload = refinementRequestSchema.parse(req.body ?? {});
 
       const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
@@ -1001,7 +1020,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
   router.post(
     "/refine/finalize",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const payload = finalizeRequestSchema.parse(req.body ?? {});
 
       const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
@@ -1111,7 +1130,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
   router.post(
     "/channels/recommendations",
     wrapAsync(async (req, res) => {
-      const userId = requireUserId(req);
+      const userId = getAuthenticatedUserId(req);
       const payload = channelRecommendationRequestSchema.parse(req.body ?? {});
 
       const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
@@ -1198,6 +1217,40 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         updatedAt: doc?.updatedAt ?? null,
         refreshed,
         failure: doc?.lastFailure ?? null
+      });
+    })
+  );
+
+  router.get(
+    "/:jobId",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const { jobId } = req.params;
+      if (!jobId) {
+        throw httpError(400, "Job identifier required");
+      }
+
+      const job = await firestore.getDocument(JOB_COLLECTION, jobId);
+      if (!job) {
+        throw httpError(404, "Job not found");
+      }
+
+      if (job.ownerUserId && job.ownerUserId !== userId) {
+        throw httpError(403, "You do not have access to this job");
+      }
+
+      const parsedJob = JobSchema.parse(job);
+      const latestFields = ALLOWED_INTAKE_KEYS.reduce((acc, key) => {
+        acc[key] = parsedJob[key];
+        return acc;
+      }, {});
+
+      res.json({
+        jobId: parsedJob.id,
+        state: latestFields,
+        includeOptional: Boolean(parsedJob.stateMachine?.optionalComplete),
+        updatedAt: parsedJob.updatedAt ?? parsedJob.createdAt ?? null,
+        status: parsedJob.status ?? null
       });
     })
   );

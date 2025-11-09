@@ -1,7 +1,11 @@
 import { WizardApi } from "../../lib/api-client";
 
+export async function fetchJobDraft({ authToken, jobId }) {
+  return WizardApi.fetchJob(jobId, { authToken });
+}
+
 export async function persistJobDraft({
-  userId,
+  authToken,
   jobId,
   state,
   intent = {},
@@ -9,7 +13,7 @@ export async function persistJobDraft({
   wizardMeta = {},
 }) {
   return WizardApi.persistJob(state, {
-    userId,
+    authToken,
     jobId,
     intent,
     currentStepId: stepId,
@@ -18,7 +22,7 @@ export async function persistJobDraft({
 }
 
 export async function fetchStepSuggestions({
-  userId,
+  authToken,
   jobId,
   stepId,
   state,
@@ -43,7 +47,7 @@ export async function fetchStepSuggestions({
       visibleFieldIds,
     },
     {
-      userId,
+      authToken,
       jobId,
       signal,
     }
@@ -51,7 +55,7 @@ export async function fetchStepSuggestions({
 }
 
 export async function sendWizardChatMessage({
-  userId,
+  authToken,
   jobId,
   message,
   currentStepId,
@@ -62,12 +66,12 @@ export async function sendWizardChatMessage({
       userMessage: message,
       intent: { currentStepId },
     },
-    { userId }
+    { authToken }
   );
 }
 
 export async function fetchChannelRecommendations({
-  userId,
+  authToken,
   jobId,
   forceRefresh = false,
 }) {
@@ -76,22 +80,22 @@ export async function fetchChannelRecommendations({
       jobId,
       forceRefresh,
     },
-    { userId, jobId }
+    { authToken, jobId }
   );
 }
 
-export async function refineJob({ userId, jobId, forceRefresh = false }) {
+export async function refineJob({ authToken, jobId, forceRefresh = false }) {
   return WizardApi.refineJob(
     {
       jobId,
       forceRefresh,
     },
-    { userId, jobId }
+    { authToken, jobId }
   );
 }
 
 export async function finalizeJob({
-  userId,
+  authToken,
   jobId,
   finalJob,
   source,
@@ -102,6 +106,6 @@ export async function finalizeJob({
       finalJob,
       source,
     },
-    { userId, jobId }
+    { authToken, jobId }
   );
 }

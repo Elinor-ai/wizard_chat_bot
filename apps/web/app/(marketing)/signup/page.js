@@ -48,7 +48,10 @@ export default function SignupPage() {
       }
 
       const data = await response.json();
-      setUser(data.user);
+      setUser({
+        ...data.user,
+        authToken: data.token,
+      });
       router.push("/");
     } catch (signupError) {
       setError(signupError.message);
