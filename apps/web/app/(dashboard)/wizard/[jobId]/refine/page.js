@@ -7,6 +7,8 @@ import { useUser } from "../../../../../components/user-context";
 import {
   finalizeJob,
   fetchChannelRecommendations,
+  fetchJobAssets,
+  generateJobAssets,
   refineJob,
 } from "../../../../../components/wizard/wizard-services";
 import {
@@ -449,7 +451,14 @@ function ChannelRecommendationList({
   recommendations,
   updatedAt,
   failure,
+  selectable = false,
+  selectedChannels = [],
+  onToggleChannel
 }) {
+  const selectedSet = useMemo(
+    () => new Set(selectedChannels ?? []),
+    [selectedChannels]
+  );
   if (!recommendations?.length) {
     return failure ? (
       <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
@@ -486,10 +495,79 @@ function ChannelRecommendationList({
               ) : null}
             </div>
             <p className="mt-2 text-sm text-neutral-600">{item.reason}</p>
+            {selectable ? (
+              <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-primary-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-primary-300 text-primary-600 focus:ring-primary-500"
+                  checked={selectedSet.has(item.channel)}
+                  onChange={() => onToggleChannel?.(item.channel)}
+                />
+                Include this channel
+              </label>
+            ) : null}
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+const assetStatusStyles = {
+  READY: "bg-emerald-100 text-emerald-700",
+  GENERATING: "bg-amber-100 text-amber-700",
+  PENDING: "bg-amber-50 text-amber-700",
+  FAILED: "bg-red-100 text-red-700"
+};
+
+function AssetStatusList({ assets = [] }) {
+  if (!assets || assets.length === 0) {
+    return (
+      <p className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 px-4 py-6 text-sm text-neutral-500">
+        No assets yet. Select channels and generate creative assets to populate this list.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="space-y-3">
+      {assets.map((asset) => {
+        const statusClass =
+          assetStatusStyles[asset.status] ?? "bg-neutral-100 text-neutral-600";
+        const summary =
+          asset.content?.summary ??
+          asset.content?.body ??
+          asset.llmRationale ??
+          "Awaiting content…";
+        return (
+          <li
+            key={asset.id}
+            className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">
+                  {asset.formatId.replace(/_/g, " ")}
+                </p>
+                <p className="text-xs text-neutral-500">{asset.channelId}</p>
+              </div>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${statusClass}`}
+              >
+                {asset.status.toLowerCase()}
+              </span>
+            </div>
+            <p className="mt-3 text-sm text-neutral-600">{summary}</p>
+            <p className="mt-2 text-xs text-neutral-400">
+              Updated{" "}
+              {asset.updatedAt
+                ? new Date(asset.updatedAt).toLocaleString()
+                : "—"}
+            </p>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -522,6 +600,53 @@ export default function RefineJobPage() {
   const [channelUpdatedAt, setChannelUpdatedAt] = useState(null);
   const [channelFailure, setChannelFailure] = useState(null);
   const [isRegeneratingChannels, setIsRegeneratingChannels] = useState(false);
+  const [jobAssets, setJobAssets] = useState([]);
+  const [assetRun, setAssetRun] = useState(null);
+  const [assetError, setAssetError] = useState(null);
+  const [isGeneratingAssets, setIsGeneratingAssets] = useState(false);
+  const [isRefreshingAssets, setIsRefreshingAssets] = useState(false);
+  const [shouldPollAssets, setShouldPollAssets] = useState(false);
+  const [selectedChannels, setSelectedChannels] = useState([]);
+  const [finalJobSource, setFinalJobSource] = useState(null);
+
+  const syncSelectedChannels = useCallback((list) => {
+    const available = Array.isArray(list)
+      ? list.map((item) => item.channel).filter(Boolean)
+      : [];
+    if (available.length === 0) {
+      setSelectedChannels([]);
+      return;
+    }
+    setSelectedChannels((prev) => {
+      if (!prev || prev.length === 0) {
+        return available;
+      }
+      const prevSet = new Set(prev);
+      const intersection = available.filter((channel) =>
+        prevSet.has(channel)
+      );
+      return intersection.length > 0 ? intersection : available;
+    });
+  }, []);
+
+  const loadAssets = useCallback(async () => {
+    if (!user?.authToken || !jobId) return;
+    try {
+      const response = await fetchJobAssets({
+        authToken: user.authToken,
+        jobId
+      });
+      setJobAssets(response.assets ?? []);
+      setAssetRun(response.run ?? null);
+      setAssetError(null);
+      const hasPending = (response.assets ?? []).some((asset) =>
+        ["PENDING", "GENERATING"].includes(asset.status)
+      );
+      setShouldPollAssets(hasPending);
+    } catch (error) {
+      setAssetError(error.message ?? "Failed to load assets.");
+    }
+  }, [user?.authToken, jobId]);
 
   useEffect(() => {
     if (!user?.authToken || !jobId) return;
@@ -565,9 +690,30 @@ export default function RefineJobPage() {
     };
   }, [jobId, user?.authToken]);
 
+  useEffect(() => {
+    loadAssets();
+  }, [loadAssets]);
+
+  useEffect(() => {
+    if (!shouldPollAssets) return undefined;
+    const interval = setInterval(() => {
+      loadAssets();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [shouldPollAssets, loadAssets]);
+
   const toggleViewMode = () => {
     setViewMode((prev) => (prev === "refined" ? "original" : "refined"));
   };
+
+  const handleToggleChannel = useCallback((channelId) => {
+    setSelectedChannels((prev) => {
+      if (prev.includes(channelId)) {
+        return prev.filter((id) => id !== channelId);
+      }
+      return [...prev, channelId];
+    });
+  }, []);
 
   const handleFinalize = async () => {
     if (!user?.authToken || !jobId) return;
@@ -582,17 +728,20 @@ export default function RefineJobPage() {
       const baseline = normaliseJobDraft(baselineDraft);
       const isEdited =
         JSON.stringify(baseline) !== JSON.stringify(finalJob);
+      const submissionSource = isEdited ? "edited" : viewMode;
 
       const response = await finalizeJob({
         authToken: user.authToken,
         jobId,
         finalJob,
-        source: isEdited ? "edited" : viewMode,
+        source: submissionSource,
       });
 
       setChannelRecommendations(response.channelRecommendations ?? []);
       setChannelUpdatedAt(response.channelUpdatedAt ?? null);
       setChannelFailure(response.channelFailure ?? null);
+      setFinalJobSource(submissionSource);
+      syncSelectedChannels(response.channelRecommendations ?? []);
     } catch (error) {
       setChannelFailure({ reason: "finalize_failed", message: error.message });
     } finally {
@@ -612,10 +761,47 @@ export default function RefineJobPage() {
       setChannelRecommendations(response.recommendations ?? []);
       setChannelUpdatedAt(response.updatedAt ?? null);
       setChannelFailure(response.failure ?? null);
+      syncSelectedChannels(response.recommendations ?? []);
     } catch (error) {
       setChannelFailure({ reason: "refresh_failed", message: error.message });
     } finally {
       setIsRegeneratingChannels(false);
+    }
+  };
+
+  const handleGenerateAssets = async () => {
+    if (!user?.authToken || !jobId || selectedChannels.length === 0 || !finalJobSource) {
+      return;
+    }
+    setIsGeneratingAssets(true);
+    setAssetError(null);
+    try {
+      const response = await generateJobAssets({
+        authToken: user.authToken,
+        jobId,
+        channelIds: selectedChannels,
+        source: finalJobSource
+      });
+      setJobAssets(response.assets ?? []);
+      setAssetRun(response.run ?? null);
+      const hasPending = (response.assets ?? []).some((asset) =>
+        ["PENDING", "GENERATING"].includes(asset.status)
+      );
+      setShouldPollAssets(hasPending);
+    } catch (error) {
+      setAssetError(error.message ?? "Failed to generate assets.");
+    } finally {
+      setIsGeneratingAssets(false);
+    }
+  };
+
+  const handleRefreshAssets = async () => {
+    if (!user?.authToken || !jobId) return;
+    setIsRefreshingAssets(true);
+    try {
+      await loadAssets();
+    } finally {
+      setIsRefreshingAssets(false);
     }
   };
 
@@ -753,7 +939,69 @@ export default function RefineJobPage() {
               recommendations={channelRecommendations}
               updatedAt={channelUpdatedAt}
               failure={channelFailure}
+              selectable
+              selectedChannels={selectedChannels}
+              onToggleChannel={handleToggleChannel}
             />
+            <p className="text-xs text-neutral-500">
+              Selected channels: {selectedChannels.length}.{" "}
+              {finalJobSource
+                ? "You can adjust the list before generating assets."
+                : "Confirm your final draft before generating assets."}
+            </p>
+            <button
+              type="button"
+              onClick={handleGenerateAssets}
+              disabled={
+                isGeneratingAssets ||
+                selectedChannels.length === 0 ||
+                !finalJobSource
+              }
+              className="w-full rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+            >
+              {isGeneratingAssets ? "Generating assets…" : "Generate creative assets"}
+            </button>
+            {assetError ? (
+              <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {assetError}
+              </p>
+            ) : null}
+          </section>
+
+          <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-neutral-900">
+                  Publishing assets
+                </h2>
+                <p className="text-sm text-neutral-600">
+                  Monitor generation status and copy snippets for each channel.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRefreshAssets}
+                disabled={isRefreshingAssets}
+                className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRefreshingAssets ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+            {assetRun ? (
+              <div className="rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                <p className="font-semibold text-neutral-800">
+                  Latest run: {assetRun.status}
+                </p>
+                <p>
+                  {assetRun.stats?.assetsCompleted ?? 0} /{" "}
+                  {assetRun.stats?.assetsPlanned ?? 0} assets ready
+                </p>
+                {assetRun.error?.message ? (
+                  <p className="text-red-600">{assetRun.error.message}</p>
+                ) : null}
+              </div>
+            ) : null}
+            <AssetStatusList assets={jobAssets} />
           </section>
         </div>
       </div>

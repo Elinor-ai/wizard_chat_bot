@@ -109,3 +109,23 @@ export async function finalizeJob({
     { authToken, jobId }
   );
 }
+
+export async function fetchJobAssets({ authToken, jobId }) {
+  return WizardApi.fetchJobAssets(jobId, { authToken });
+}
+
+export async function generateJobAssets({
+  authToken,
+  jobId,
+  channelIds,
+  source,
+}) {
+  return WizardApi.generateJobAssets(
+    {
+      jobId,
+      channelIds,
+      source,
+    },
+    { authToken }
+  );
+}

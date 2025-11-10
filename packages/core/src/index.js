@@ -15,6 +15,14 @@ export { ChatMessageSchema, ChatThreadSchema } from "./common/chat.js";
 export { LlmSuggestionBucketSchema, EMPTY_SUGGESTIONS } from "./common/llm-suggestions.js";
 export { AssetVersionSchema } from "./common/asset-version.js";
 export { JobAssetSchema } from "./common/asset-artifact.js";
+export {
+  AssetArtifactTypeEnum,
+  AssetFormatEnum,
+  ASSET_BLUEPRINT_VERSION,
+  buildAssetPlan,
+  splitAssetPlan,
+  getBlueprintForChannel
+} from "./common/asset-formats.js";
 export { CampaignSchema } from "./common/campaign.js";
 export {
   CHANNEL_CATALOG,
@@ -47,3 +55,9 @@ export { JobRecord } from "./job-record.js";
 export { JobChannelRecommendationSchema } from "./schemas/job-channel-recommendation.js";
 export { JobRefinementSchema } from "./schemas/job-refinement.js";
 export { JobFinalSchema } from "./schemas/job-final.js";
+export {
+  JobAssetRecordSchema,
+  JobAssetRunSchema,
+  JobAssetStatusEnum,
+  JobAssetRunStatusEnum
+} from "./schemas/job-asset.js";

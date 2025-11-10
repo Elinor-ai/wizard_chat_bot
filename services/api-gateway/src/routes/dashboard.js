@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { wrapAsync, httpError } from "@wizard/utils";
+import { JobAssetRecordSchema } from "@wizard/core";
 
 function getAuthenticatedUserId(req) {
   const userId = req.user?.id;
@@ -15,7 +16,33 @@ function loadJobsForUser(firestore, userId) {
   ]);
 }
 
-function computeSummary(jobs = []) {
+async function loadAssetsForUser(firestore, userId) {
+  const docs = await firestore.queryDocuments(
+    "jobAssets",
+    "ownerUserId",
+    "==",
+    userId
+  );
+  return docs
+    .map((doc) => {
+      const parsed = JobAssetRecordSchema.safeParse(doc);
+      return parsed.success ? parsed.data : null;
+    })
+    .filter(Boolean);
+}
+
+function deriveJobTitle(job) {
+  if (!job) return "Untitled role";
+  if (typeof job.roleTitle === "string" && job.roleTitle.trim().length > 0) {
+    return job.roleTitle.trim();
+  }
+  if (typeof job.companyName === "string" && job.companyName.trim().length > 0) {
+    return `${job.companyName.trim()} role`;
+  }
+  return "Untitled role";
+}
+
+function computeSummary(jobs = [], assets = []) {
   const summary = {
     jobs: {
       total: jobs.length,
@@ -60,16 +87,6 @@ function computeSummary(jobs = []) {
       summary.jobs.active += 1;
     }
 
-    const assets = job.assets ?? [];
-    summary.assets.total += assets.length;
-    assets.forEach((asset) => {
-      if (asset.status === "approved") {
-        summary.assets.approved += 1;
-      } else if (["queued", "review"].includes(asset.status)) {
-        summary.assets.queued += 1;
-      }
-    });
-
     const campaigns = job.campaigns ?? [];
     summary.campaigns.total += campaigns.length;
     campaigns.forEach((campaign) => {
@@ -93,6 +110,15 @@ function computeSummary(jobs = []) {
     const tokensUsed = Number(jobMetrics.tokensUsed ?? 0);
     if (!Number.isNaN(tokensUsed)) {
       summary.usage.tokens += tokensUsed;
+    }
+  });
+
+  assets.forEach((asset) => {
+    summary.assets.total += 1;
+    if (asset.status === "READY") {
+      summary.assets.approved += 1;
+    } else if (asset.status === "PENDING" || asset.status === "GENERATING") {
+      summary.assets.queued += 1;
     }
   });
 
@@ -158,16 +184,12 @@ function extractLedger(jobs = []) {
     );
 }
 
-function extractActivity(jobs = []) {
+function extractActivity(jobs = [], assets = []) {
   const events = [];
+  const jobTitleMap = new Map(jobs.map((job) => [job.id, deriveJobTitle(job)]));
 
   jobs.forEach((job) => {
-    const jobTitle =
-      typeof job.roleTitle === "string" && job.roleTitle.trim().length > 0
-        ? job.roleTitle.trim()
-        : typeof job.companyName === "string" && job.companyName.trim().length > 0
-        ? `${job.companyName.trim()} role`
-        : "Untitled role";
+    const jobTitle = jobTitleMap.get(job.id) ?? "Untitled role";
 
     (job.stateMachine?.history ?? []).forEach((transition, index) => {
       events.push({
@@ -179,17 +201,6 @@ function extractActivity(jobs = []) {
       });
     });
 
-    (job.assets ?? []).forEach((asset) => {
-      const eventTime = asset.updatedAt ?? asset.createdAt ?? job.updatedAt;
-      events.push({
-        id: `${job.id}-asset-${asset.assetId}`,
-        type: "asset",
-        title: `${jobTitle}: ${asset.type.toUpperCase()} ${asset.status}`,
-        detail: `Current version ${asset.currentVersion}`,
-        occurredAt: eventTime
-      });
-    });
-
     (job.campaigns ?? []).forEach((campaign) => {
       events.push({
         id: `${job.id}-campaign-${campaign.campaignId}`,
@@ -198,6 +209,17 @@ function extractActivity(jobs = []) {
         detail: `Budget ${campaign.budget ?? 0}`,
         occurredAt: campaign.createdAt ?? job.updatedAt ?? job.createdAt
       });
+    });
+  });
+
+  assets.forEach((asset) => {
+    const jobTitle = jobTitleMap.get(asset.jobId) ?? "Untitled role";
+    events.push({
+      id: `${asset.jobId}-asset-${asset.id}`,
+      type: "asset",
+      title: `${jobTitle}: ${asset.formatId} ${asset.status}`,
+      detail: asset.channelId,
+      occurredAt: asset.updatedAt ?? asset.createdAt ?? new Date()
     });
   });
 
@@ -217,9 +239,15 @@ export function dashboardRouter({ firestore, logger }) {
     "/summary",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const jobs = await loadJobsForUser(firestore, userId);
-      logger.info({ userId, jobCount: jobs.length }, "Loaded dashboard summary");
-      res.json({ summary: computeSummary(jobs) });
+      const [jobs, assets] = await Promise.all([
+        loadJobsForUser(firestore, userId),
+        loadAssetsForUser(firestore, userId)
+      ]);
+      logger.info(
+        { userId, jobCount: jobs.length, assetCount: assets.length },
+        "Loaded dashboard summary"
+      );
+      res.json({ summary: computeSummary(jobs, assets) });
     })
   );
 
@@ -249,8 +277,11 @@ export function dashboardRouter({ firestore, logger }) {
     "/activity",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const jobs = await loadJobsForUser(firestore, userId);
-      const events = extractActivity(jobs);
+      const [jobs, assets] = await Promise.all([
+        loadJobsForUser(firestore, userId),
+        loadAssetsForUser(firestore, userId)
+      ]);
+      const events = extractActivity(jobs, assets);
       logger.info({ userId, eventCount: events.length }, "Fetched recent dashboard activity");
       res.json({ events });
     })

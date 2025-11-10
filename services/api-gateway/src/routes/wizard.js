@@ -10,15 +10,25 @@ import {
   JobSchema,
   ConfirmedJobDetailsSchema,
   JobSuggestionSchema,
-  deriveJobStatusFromState
+  deriveJobStatusFromState,
+  ChannelIdEnum,
+  JobAssetRecordSchema,
+  JobAssetRunSchema,
+  JobAssetStatusEnum,
+  JobAssetRunStatusEnum
 } from "@wizard/core";
+import { createAssetPlan } from "../llm/domain/asset-plan.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
 const CHANNEL_RECOMMENDATION_COLLECTION = "jobChannelRecommendations";
 const REFINEMENT_COLLECTION = "jobRefinements";
 const FINAL_JOB_COLLECTION = "jobFinalJobs";
+const JOB_ASSET_COLLECTION = "jobAssets";
+const JOB_ASSET_RUN_COLLECTION = "jobAssetRuns";
 const SUPPORTED_CHANNELS = CampaignSchema.shape.channel.options;
+const ASSET_STATUS = JobAssetStatusEnum.enum;
+const RUN_STATUS = JobAssetRunStatusEnum.enum;
 
 const looseObjectSchema = z.object({}).catchall(z.unknown());
 
@@ -40,6 +50,7 @@ const ALLOWED_INTAKE_KEYS = [
   "currency"
 ];
 const ARRAY_FIELD_KEYS = new Set(["coreDuties", "mustHaves", "benefits"]);
+const ENUM_FIELD_KEYS = ["workModel", "employmentType", "seniorityLevel"];
 
 const REQUIRED_FIELD_PATHS = [
   "roleTitle",
@@ -89,6 +100,16 @@ const finalizeRequestSchema = z.object({
   jobId: z.string(),
   finalJob: ConfirmedJobDetailsSchema,
   source: z.enum(["original", "refined", "edited"]).optional()
+});
+
+const assetGenerationRequestSchema = z.object({
+  jobId: z.string(),
+  channelIds: z.array(ChannelIdEnum).min(1),
+  source: z.enum(["original", "refined", "edited"]).optional()
+});
+
+const assetStatusRequestSchema = z.object({
+  jobId: z.string()
 });
 
 function getAuthenticatedUserId(req) {
@@ -717,6 +738,388 @@ function buildJobSnapshot(job) {
   }, {});
 }
 
+function buildPlanKey(channelId, formatId) {
+  return `${channelId}:${formatId}`;
+}
+
+function buildAssetId(jobId, channelId, formatId) {
+  return `${jobId}:${buildPlanKey(channelId, formatId)}`;
+}
+
+function serializeJobAsset(record) {
+  if (!record) return null;
+  return {
+    id: record.id,
+    jobId: record.jobId,
+    channelId: record.channelId,
+    formatId: record.formatId,
+    artifactType: record.artifactType,
+    status: record.status,
+    provider: record.provider ?? null,
+    model: record.model ?? null,
+    llmRationale: record.llmRationale ?? null,
+    content: record.content ?? null,
+    failure: record.failure ?? null,
+    updatedAt: record.updatedAt ?? record.createdAt ?? null
+  };
+}
+
+function serializeAssetRun(run) {
+  if (!run) return null;
+  return {
+    id: run.id,
+    jobId: run.jobId,
+    status: run.status,
+    channelIds: run.channelIds ?? [],
+    formatIds: run.formatIds ?? [],
+    stats: run.stats ?? null,
+    startedAt: run.startedAt ?? null,
+    completedAt: run.completedAt ?? null,
+    error: run.error ?? null
+  };
+}
+
+function normalizeJobAsset(raw) {
+  const parsed = JobAssetRecordSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+function normalizeJobAssetRun(raw) {
+  const parsed = JobAssetRunSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+async function loadJobAssets(firestore, jobId) {
+  const docs = await firestore.queryDocuments(
+    JOB_ASSET_COLLECTION,
+    "jobId",
+    "==",
+    jobId
+  );
+  return docs.map(normalizeJobAsset).filter(Boolean);
+}
+
+async function loadLatestAssetRun(firestore, jobId) {
+  const runs = await firestore.queryDocuments(
+    JOB_ASSET_RUN_COLLECTION,
+    "jobId",
+    "==",
+    jobId
+  );
+  const parsed = runs.map(normalizeJobAssetRun).filter(Boolean);
+  parsed.sort(
+    (a, b) =>
+      new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+  );
+  return parsed[0] ?? null;
+}
+
+async function persistAssetRecord({ firestore, record }) {
+  const payload = JobAssetRecordSchema.parse(record);
+  await firestore.saveDocument(JOB_ASSET_COLLECTION, payload.id, payload);
+  return payload;
+}
+
+async function persistAssetRun({ firestore, run }) {
+  const payload = JobAssetRunSchema.parse(run);
+  await firestore.saveDocument(JOB_ASSET_RUN_COLLECTION, payload.id, payload);
+  return payload;
+}
+
+function incrementRunStats(stats, metadata, succeeded) {
+  if (!stats) return stats;
+  if (succeeded) {
+    stats.assetsCompleted = (stats.assetsCompleted ?? 0) + 1;
+  }
+  if (metadata) {
+    const promptTokens = Number(metadata.promptTokens ?? metadata.prompt_tokens);
+    const responseTokens = Number(
+      metadata.responseTokens ?? metadata.response_tokens
+    );
+    if (!Number.isNaN(promptTokens)) {
+      stats.promptTokens = (stats.promptTokens ?? 0) + promptTokens;
+    }
+    if (!Number.isNaN(responseTokens)) {
+      stats.responseTokens = (stats.responseTokens ?? 0) + responseTokens;
+    }
+  }
+  return stats;
+}
+
+function createAssetRecordsFromPlan({
+  jobId,
+  ownerUserId,
+  plan,
+  sourceJobVersion,
+  now
+}) {
+  const records = new Map();
+  plan.items.forEach((item) => {
+    const record = {
+      id: buildAssetId(jobId, item.channelId, item.formatId),
+      jobId,
+      ownerUserId,
+      channelId: item.channelId,
+      formatId: item.formatId,
+      artifactType: item.artifactType,
+      blueprintVersion: plan.version,
+      status: ASSET_STATUS.PENDING,
+      planId: item.planId,
+      batchKey: item.batchKey,
+      requiresMaster: item.requiresMaster,
+      derivedFromAssetId: item.derivedFromFormatId
+        ? buildAssetId(jobId, item.channelId, item.derivedFromFormatId)
+        : null,
+      derivedFromFormatId: item.derivedFromFormatId ?? null,
+      sourceJobVersion,
+      createdAt: now,
+      updatedAt: now
+    };
+    records.set(item.planId, record);
+  });
+  return records;
+}
+
+function normalizeFinalJobPayload(finalJob = {}) {
+  const normalized = { ...finalJob };
+  ENUM_FIELD_KEYS.forEach((key) => {
+    if (normalized[key] === "") {
+      delete normalized[key];
+    }
+  });
+  return normalized;
+}
+
+function buildChannelMetaMap(channelMeta = []) {
+  const map = {};
+  channelMeta.forEach((meta) => {
+    if (!meta?.id) return;
+    map[meta.id] = meta;
+  });
+  return map;
+}
+
+function buildMasterContext(record) {
+  if (!record) return null;
+  return {
+    plan_id: record.planId ?? buildPlanKey(record.channelId, record.formatId),
+    rationale: record.llmRationale ?? null,
+    content: record.content ?? {}
+  };
+}
+
+async function runAssetGenerationPipeline({
+  firestore,
+  llmClient,
+  plan,
+  assetRecords,
+  jobSnapshot,
+  channelMetaMap,
+  logger
+}) {
+  const stats = {
+    assetsPlanned: plan.items.length,
+    assetsCompleted: 0,
+    promptTokens: 0,
+    responseTokens: 0
+  };
+  let hasFailures = false;
+
+  const markFailure = async (
+    record,
+    reason,
+    message,
+    rawPreview,
+    metadata
+  ) => {
+    const now = new Date();
+    record.status = ASSET_STATUS.FAILED;
+    record.failure = {
+      reason: reason ?? "asset_generation_failed",
+      message: message ?? null,
+      rawPreview: rawPreview ?? null,
+      occurredAt: now
+    };
+    record.updatedAt = now;
+    incrementRunStats(stats, metadata, false);
+    await persistAssetRecord({ firestore, record });
+    hasFailures = true;
+  };
+
+  const markSuccess = async (
+    record,
+    assetPayload,
+    provider,
+    model,
+    metadata
+  ) => {
+    const now = new Date();
+    record.status = ASSET_STATUS.READY;
+    record.provider = provider ?? null;
+    record.model = model ?? null;
+    record.llmRationale = assetPayload?.rationale ?? null;
+    record.content = assetPayload?.content ?? null;
+    record.failure = undefined;
+    record.updatedAt = now;
+    incrementRunStats(stats, metadata, true);
+    await persistAssetRecord({ firestore, record });
+  };
+
+  const markGenerating = async (record) => {
+    if (!record) return;
+    record.status = ASSET_STATUS.GENERATING;
+    record.updatedAt = new Date();
+    await persistAssetRecord({ firestore, record });
+  };
+
+  const masters = plan.masters ?? [];
+  for (const item of masters) {
+    const record = assetRecords.get(item.planId);
+    if (!record) {
+      continue;
+    }
+    await markGenerating(record);
+    const result = await llmClient.askAssetMaster({
+      planItem: item,
+      channelMeta: channelMetaMap[item.channelId],
+      jobSnapshot
+    });
+    if (result?.asset) {
+      await markSuccess(
+        record,
+        result.asset,
+        result.provider,
+        result.model,
+        result.metadata
+      );
+    } else {
+      const error = result?.error ?? {};
+      await markFailure(
+        record,
+        error.reason ?? "asset_master_failed",
+        error.message ?? null,
+        error.rawPreview ?? null,
+        result?.metadata
+      );
+    }
+  }
+
+  const standalone = plan.standalone ?? [];
+  const standaloneByChannel = new Map();
+  standalone.forEach((item) => {
+    const list = standaloneByChannel.get(item.channelId) ?? [];
+    list.push(item);
+    standaloneByChannel.set(item.channelId, list);
+  });
+
+  for (const [channelId, items] of standaloneByChannel.entries()) {
+    const records = items
+      .map((item) => assetRecords.get(item.planId))
+      .filter(Boolean);
+    for (const record of records) {
+      await markGenerating(record);
+    }
+
+    const result = await llmClient.askAssetChannelBatch({
+      planItems: items,
+      jobSnapshot,
+      channelMetaMap
+    });
+
+    if (result?.error) {
+      for (const record of records) {
+        await markFailure(
+          record,
+          result.error.reason ?? "asset_channel_batch_failed",
+          result.error.message ?? null,
+          result.error.rawPreview ?? null,
+          result.metadata
+        );
+      }
+      continue;
+    }
+
+    const assetMap = new Map();
+    (result.assets ?? []).forEach((asset) => {
+      const planId = asset.planId ?? asset.plan_id ?? null;
+      if (!planId) return;
+      assetMap.set(planId, asset);
+    });
+
+    for (const item of items) {
+      const record = assetRecords.get(item.planId);
+      if (!record) continue;
+      const assetPayload = assetMap.get(item.planId);
+      if (!assetPayload) {
+        await markFailure(
+          record,
+          "asset_missing",
+          `LLM batch missing payload for ${item.planId}`,
+          null,
+          result.metadata
+        );
+        continue;
+      }
+      await markSuccess(
+        record,
+        assetPayload,
+        result.provider,
+        result.model,
+        result.metadata
+      );
+    }
+  }
+
+  const adaptations = plan.adaptations ?? [];
+  for (const item of adaptations) {
+    const record = assetRecords.get(item.planId);
+    if (!record) continue;
+    const masterPlanId = buildPlanKey(item.channelId, item.derivedFromFormatId);
+    const masterRecord = assetRecords.get(masterPlanId);
+    if (!masterRecord || masterRecord.status !== ASSET_STATUS.READY) {
+      await markFailure(
+        record,
+        "missing_master_asset",
+        "Master asset missing or not ready",
+        null,
+        null
+      );
+      continue;
+    }
+    await markGenerating(record);
+    const result = await llmClient.askAssetAdapt({
+      planItem: item,
+      masterAsset: buildMasterContext(masterRecord),
+      jobSnapshot,
+      channelMeta: channelMetaMap[item.channelId]
+    });
+    if (result?.asset) {
+      await markSuccess(
+        record,
+        result.asset,
+        result.provider,
+        result.model,
+        result.metadata
+      );
+    } else {
+      const error = result?.error ?? {};
+      await markFailure(
+        record,
+        error.reason ?? "asset_adapt_failed",
+        error.message ?? null,
+        error.rawPreview ?? null,
+        result?.metadata
+      );
+    }
+  }
+
+  return {
+    stats,
+    hasFailures,
+    records: Array.from(assetRecords.values())
+  };
+}
+
 function valueProvided(value) {
   if (Array.isArray(value)) {
     return value.length > 0;
@@ -1030,7 +1433,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
 
       const parsedJob = JobSchema.parse(job);
       const now = new Date();
-      const finalJob = payload.finalJob;
+      const finalJob = normalizeFinalJobPayload(payload.finalJob);
       const source = payload.source ?? "refined";
 
       const progressCheck = computeRequiredProgress(finalJob);
@@ -1123,6 +1526,156 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         channelRecommendations: channelDoc?.recommendations ?? [],
         channelUpdatedAt: channelDoc?.updatedAt ?? null,
         channelFailure: channelDoc?.lastFailure ?? null
+      });
+    })
+  );
+
+  router.post(
+    "/assets/generate",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const payload = assetGenerationRequestSchema.parse(req.body ?? {});
+
+      const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+      if (!job) {
+        throw httpError(404, "Job not found");
+      }
+      if (job.ownerUserId && job.ownerUserId !== userId) {
+        throw httpError(403, "You do not have access to this job");
+      }
+
+      const finalJob = await loadFinalJobDocument(firestore, payload.jobId);
+      if (!finalJob?.job) {
+        throw httpError(
+          409,
+          "Finalize the job before generating assets."
+        );
+      }
+
+      const channelIds = Array.from(new Set(payload.channelIds));
+      const plan = createAssetPlan({ channelIds });
+      if (!plan.items || plan.items.length === 0) {
+        throw httpError(
+          400,
+          "No asset formats available for the selected channels."
+        );
+      }
+
+      const now = new Date();
+      const sourceJobVersion = payload.source ?? finalJob.source ?? "refined";
+      const jobSnapshot = finalJob.job ?? buildJobSnapshot(job);
+      const assetRecords = createAssetRecordsFromPlan({
+        jobId: payload.jobId,
+        ownerUserId: job.ownerUserId ?? userId,
+        plan,
+        sourceJobVersion,
+        now
+      });
+
+      for (const record of assetRecords.values()) {
+        await persistAssetRecord({ firestore, record });
+      }
+
+      let run = {
+        id: `run_${uuid()}`,
+        jobId: payload.jobId,
+        ownerUserId: job.ownerUserId ?? userId,
+        blueprintVersion: plan.version,
+        channelIds,
+        formatIds: plan.items.map((item) => item.formatId),
+        status: RUN_STATUS.RUNNING,
+        stats: {
+          assetsPlanned: plan.items.length,
+          assetsCompleted: 0,
+          promptTokens: 0,
+          responseTokens: 0
+        },
+        startedAt: now,
+        completedAt: null
+      };
+
+      run = await persistAssetRun({ firestore, run });
+
+      try {
+        const { stats, hasFailures, records } =
+          await runAssetGenerationPipeline({
+            firestore,
+            llmClient,
+            plan,
+            assetRecords,
+            jobSnapshot,
+            channelMetaMap: buildChannelMetaMap(plan.channelMeta),
+            logger
+          });
+
+        run.stats = stats;
+        run.status = hasFailures
+          ? RUN_STATUS.FAILED
+          : RUN_STATUS.COMPLETED;
+        run.completedAt = new Date();
+        if (!hasFailures) {
+          run.error = undefined;
+        } else {
+          run.error = {
+            reason: "partial_failure",
+            message: "One or more assets failed to generate"
+          };
+        }
+        run = await persistAssetRun({ firestore, run });
+
+        res.json({
+          jobId: payload.jobId,
+          run: serializeAssetRun(run),
+          assets: records.map(serializeJobAsset)
+        });
+      } catch (error) {
+        logger.error(
+          { err: error, jobId: payload.jobId },
+          "Asset generation pipeline crashed"
+        );
+        run.status = RUN_STATUS.FAILED;
+        run.completedAt = new Date();
+        run.error = {
+          reason: "asset_pipeline_failed",
+          message: error?.message ?? "Asset pipeline failed"
+        };
+        await persistAssetRun({ firestore, run });
+        throw httpError(500, "Asset generation failed");
+      }
+    })
+  );
+
+  router.get(
+    "/assets",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const jobIdRaw = Array.isArray(req.query.jobId)
+        ? req.query.jobId[0]
+        : req.query.jobId;
+      if (!jobIdRaw || typeof jobIdRaw !== "string") {
+        throw httpError(400, "jobId query parameter required");
+      }
+      const payload = assetStatusRequestSchema.parse({
+        jobId: jobIdRaw
+      });
+
+      const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+      if (!job) {
+        throw httpError(404, "Job not found");
+      }
+      if (job.ownerUserId && job.ownerUserId !== userId) {
+        throw httpError(403, "You do not have access to this job");
+      }
+
+      const [assets, run] = await Promise.all([
+        loadJobAssets(firestore, payload.jobId),
+        loadLatestAssetRun(firestore, payload.jobId)
+      ]);
+
+      res.json({
+        jobId: payload.jobId,
+        assets: assets.map(serializeJobAsset),
+        run: serializeAssetRun(run)
       });
     })
   );

@@ -20,3 +20,7 @@ export function logChannelPreview(provider, rawContent) {
 export function logRefinementPreview(provider, rawContent) {
   logPreview(provider, rawContent, "LLM job refinement raw response");
 }
+
+export function logAssetPreview(provider, rawContent) {
+  logPreview(provider, rawContent, "LLM asset generation raw response");
+}
