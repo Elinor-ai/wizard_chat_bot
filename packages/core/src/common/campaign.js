@@ -1,20 +1,11 @@
 import { z } from "zod";
 import { NonNegativeNumber, TimestampSchema } from "./zod.js";
+import { ChannelIdEnum } from "./channels.js";
 
 export const CampaignSchema = z.object({
   id: z.string().uuid(),
   jobId: z.string(),
-  channel: z.enum([
-    "job_board",
-    "facebook",
-    "tiktok",
-    "reddit",
-    "instagram",
-    "discord",
-    "linkedin",
-    "telegram",
-    "other"
-  ]),
+  channel: ChannelIdEnum,
   status: z.enum(["DRAFT", "SCHEDULED", "RUNNING", "PAUSED", "COMPLETED", "FAILED"]),
   budget: NonNegativeNumber,
   objective: z.enum(["apply_volume", "qualified_apply", "hire_speed"]).optional(),

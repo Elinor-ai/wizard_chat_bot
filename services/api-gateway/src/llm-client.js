@@ -214,9 +214,46 @@ function buildChatFallback({ draftState }) {
   return `Understood. I'll take that into account${title}${location ? ` ${location}` : ""}.`;
 }
 
+async function askChannelPicker(context) {
+  try {
+    const result = await orchestrator.run("channel_picker", context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model,
+        },
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      jobTitle: result.jobTitle ?? null,
+      geo: result.geo ?? null,
+      roleFamily: result.roleFamily ?? null,
+      topChannel: result.topChannel ?? null,
+      recommendedMedium: result.recommendedMedium ?? null,
+      copyHint: result.copyHint ?? null,
+      alternatives: result.alternatives ?? [],
+      complianceFlags: result.complianceFlags ?? [],
+      metadata: result.metadata ?? null,
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "askChannelPicker orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error),
+      },
+    };
+  }
+}
+
 export const llmClient = {
   askChat,
   askSuggestions,
   askChannelRecommendations,
   askRefineJob,
+  askChannelPicker,
 };

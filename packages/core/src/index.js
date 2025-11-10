@@ -16,6 +16,12 @@ export { LlmSuggestionBucketSchema, EMPTY_SUGGESTIONS } from "./common/llm-sugge
 export { AssetVersionSchema } from "./common/asset-version.js";
 export { JobAssetSchema } from "./common/asset-artifact.js";
 export { CampaignSchema } from "./common/campaign.js";
+export {
+  CHANNEL_CATALOG,
+  CHANNEL_CATALOG_MAP,
+  CHANNEL_IDS,
+  ChannelIdEnum
+} from "./common/channels.js";
 export { CreditLedgerEntrySchema } from "./common/credit-ledger.js";
 export { EventEnvelopeSchema } from "./common/event-envelope.js";
 export {

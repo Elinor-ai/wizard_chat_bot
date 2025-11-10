@@ -1,10 +1,12 @@
 import { buildSuggestionInstructions } from "./prompts/suggest.js";
 import { buildRefinementInstructions } from "./prompts/refine.js";
 import { buildChannelRecommendationInstructions } from "./prompts/channels.js";
+import { buildChannelPickerInstructions } from "./prompts/channel-picker.js";
 import { buildChatPayload } from "./prompts/chat.js";
 import { parseSuggestionResult } from "./parsers/suggest.js";
 import { parseRefinementResult } from "./parsers/refine.js";
 import { parseChannelResult } from "./parsers/channels.js";
+import { parseChannelPickerResult } from "./parsers/channel-picker.js";
 import { parseChatResult } from "./parsers/chat.js";
 import {
   logChannelPreview,
@@ -45,6 +47,17 @@ export const TASK_REGISTRY = {
     mode: "json",
     temperature: 0.2,
     maxTokens: { default: 600, gemini: 8192 },
+    retries: 2,
+    strictOnRetry: true,
+    previewLogger: logChannelPreview,
+  },
+  channel_picker: {
+    system: "You are a channel picker for recruiting. Follow the provided instructions exactly and output only valid JSON.",
+    builder: buildChannelPickerInstructions,
+    parser: parseChannelPickerResult,
+    mode: "json",
+    temperature: 0.2,
+    maxTokens: { default: 1000, gemini: 8192 },
     retries: 2,
     strictOnRetry: true,
     previewLogger: logChannelPreview,
