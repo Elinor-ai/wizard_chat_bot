@@ -353,6 +353,7 @@ const dashboardCampaignSchema = z.object({
   campaignId: z.string(),
   jobId: z.string(),
   jobTitle: z.string(),
+  logoUrl: z.string().optional().nullable(),
   channel: z.string(),
   status: z.string(),
   budget: z.number(),

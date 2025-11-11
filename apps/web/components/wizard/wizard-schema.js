@@ -193,6 +193,14 @@ export const OPTIONAL_STEPS = [
     subtitle: "This is where you hook the right-fit candidates.",
     fields: [
       {
+        id: "logoUrl",
+        label: "Brand logo",
+        helper: "Upload a PNG/JPG or paste a public URL. We’ll reuse it across every preview.",
+        required: false,
+        type: "logo",
+        placeholder: "https://cdn.your-company.com/logo.png"
+      },
+      {
         id: "benefits",
         label: "What benefits or perks do you offer?",
         helper:

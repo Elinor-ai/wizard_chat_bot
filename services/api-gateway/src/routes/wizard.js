@@ -35,6 +35,7 @@ const looseObjectSchema = z.object({}).catchall(z.unknown());
 const ALLOWED_INTAKE_KEYS = [
   "roleTitle",
   "companyName",
+  "logoUrl",
   "location",
   "zipCode",
   "industry",
@@ -214,6 +215,7 @@ function createBaseJob({ jobId, userId, now }) {
     },
     roleTitle: "",
     companyName: "",
+    logoUrl: "",
     location: "",
     jobDescription: "",
     coreDuties: [],
@@ -887,6 +889,14 @@ function normalizeFinalJobPayload(finalJob = {}) {
       delete normalized[key];
     }
   });
+  if (typeof normalized.logoUrl === "string") {
+    const trimmed = normalized.logoUrl.trim();
+    if (trimmed.length === 0) {
+      delete normalized.logoUrl;
+    } else {
+      normalized.logoUrl = trimmed;
+    }
+  }
   return normalized;
 }
 

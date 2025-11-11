@@ -74,6 +74,7 @@ export const ConfirmedJobDetailsSchema = z
   .object({
     roleTitle: z.string().optional(),
     companyName: z.string().optional(),
+    logoUrl: z.string().optional(),
     location: z.string().optional(),
     zipCode: z.string().optional(),
     industry: z.string().optional(),
@@ -117,6 +118,7 @@ export const JobSchema = z.object({
   stateMachine: StateMachineSchema,
   roleTitle: z.string().default(""),
   companyName: z.string().default(""),
+  logoUrl: z.string().default(""),
   location: z.string().default(""),
   zipCode: z.string().optional(),
   industry: z.string().optional(),

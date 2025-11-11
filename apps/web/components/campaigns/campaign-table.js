@@ -88,8 +88,25 @@ export function CampaignTable() {
               {campaigns.map((campaign) => (
                 <tr key={campaign.campaignId}>
                   <td className="px-4 py-4">
-                    <p className="font-semibold text-neutral-800">{campaign.jobTitle}</p>
-                    <p className="text-xs text-neutral-400">{campaign.jobId}</p>
+                    <div className="flex items-center gap-3">
+                      <div className="h-11 w-11 overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
+                        {campaign.logoUrl ? (
+                          <img
+                            src={campaign.logoUrl}
+                            alt="Job logo"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-neutral-500">
+                            {campaign.jobTitle?.charAt(0)?.toUpperCase() ?? "J"}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-neutral-800">{campaign.jobTitle}</p>
+                        <p className="text-xs text-neutral-400">{campaign.jobId}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-4 capitalize">{campaign.channel}</td>
                   <td className="px-4 py-4">{formatCurrency(campaign.budget)}</td>

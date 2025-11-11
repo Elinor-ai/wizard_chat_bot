@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { clsx } from "../../../../../lib/cn";
 import { useUser } from "../../../../../components/user-context";
@@ -8,6 +8,7 @@ import {
   finalizeJob,
   fetchChannelRecommendations,
   fetchJobAssets,
+  fetchJobDraft,
   generateJobAssets,
   refineJob,
 } from "../../../../../components/wizard/wizard-services";
@@ -26,9 +27,33 @@ const ARRAY_FIELD_IDS = new Set([
   "benefits",
 ]);
 
+const FLOW_STEPS = [
+  {
+    id: "refine",
+    label: "Refine job",
+    description: "Polish the draft and confirm the final version."
+  },
+  {
+    id: "channels",
+    label: "Pick channels",
+    description: "Let the copilot recommend channels and choose where to promote."
+  },
+  {
+    id: "assets",
+    label: "Generate assets",
+    description: "Produce campaign-ready copy and creative briefs."
+  }
+];
+
+const STEP_INDEX = FLOW_STEPS.reduce((acc, step, index) => {
+  acc[step.id] = index;
+  return acc;
+}, {});
+
 const DEFAULT_JOB_STATE = {
   roleTitle: "",
   companyName: "",
+  logoUrl: "",
   location: "",
   zipCode: "",
   industry: "",
@@ -44,6 +69,14 @@ const DEFAULT_JOB_STATE = {
   currency: "",
 };
 
+function normalizeLogoUrl(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : "";
+}
+
 function normaliseJobDraft(input) {
   const base = { ...DEFAULT_JOB_STATE };
   if (!input || typeof input !== "object") {
@@ -51,6 +84,10 @@ function normaliseJobDraft(input) {
   }
   Object.keys(base).forEach((key) => {
     const value = input[key];
+    if (key === "logoUrl") {
+      base[key] = normalizeLogoUrl(value);
+      return;
+    }
     if (ARRAY_FIELD_IDS.has(key)) {
       if (Array.isArray(value)) {
         base[key] = value.map((item) =>
@@ -102,7 +139,7 @@ function hasMeaningfulValue(field, value) {
 
 function JobPreview({ job }) {
   const summary = useMemo(() => normaliseJobDraft(job), [job]);
-  const { roleTitle, companyName, location } = summary;
+  const { roleTitle, companyName, location, logoUrl } = summary;
   const tags = [summary.seniorityLevel, summary.employmentType, summary.workModel]
     .filter((tag) => tag && tag.length > 0);
 
@@ -129,15 +166,39 @@ function JobPreview({ job }) {
     },
   ].filter((section) => section.items && section.items.length > 0);
 
+  const initials =
+    (companyName || roleTitle || "J")
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase())
+      .slice(0, 2)
+      .join("") || "J";
+
   return (
     <div className="space-y-6">
-      <section className="space-y-2">
-        <h3 className="text-xl font-semibold text-neutral-900">
-          {roleTitle || "Untitled role"}
-        </h3>
-        <p className="text-sm text-neutral-600">
-          {[companyName, location].filter(Boolean).join(" • ")}
-        </p>
+      <section className="space-y-3">
+        <div className="flex items-start gap-4">
+          <div className="h-14 w-14 overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100 shadow-sm shadow-neutral-200">
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={`${companyName ?? "Company"} logo`}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-lg font-semibold text-neutral-500">
+                {initials}
+              </div>
+            )}
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-xl font-semibold text-neutral-900">
+              {roleTitle || "Untitled role"}
+            </h3>
+            <p className="text-sm text-neutral-600">
+              {[companyName, location].filter(Boolean).join(" • ")}
+            </p>
+          </div>
+        </div>
         {tags.length > 0 ? (
           <div className="flex flex-wrap gap-2 pt-1">
             {tags.map((tag) => (
@@ -520,54 +581,307 @@ const assetStatusStyles = {
   FAILED: "bg-red-100 text-red-700"
 };
 
-function AssetStatusList({ assets = [] }) {
+const ASSET_VARIANT_MAP = {
+  LINKEDIN_JOB_POSTING: "linkedin_job",
+  LINKEDIN_FEED_POST: "linkedin_feed",
+  GENERIC_JOB_POSTING: "linkedin_job",
+  SOCIAL_IMAGE_POST: "social_image",
+  SOCIAL_STORY_SCRIPT: "story",
+  SHORT_VIDEO_MASTER: "story",
+  SHORT_VIDEO_TIKTOK: "story",
+  SHORT_VIDEO_INSTAGRAM: "story",
+  SHORT_VIDEO_YOUTUBE: "story"
+};
+
+function AssetPreviewGrid({ assets = [], logoUrl }) {
   if (!assets || assets.length === 0) {
     return (
       <p className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 px-4 py-6 text-sm text-neutral-500">
-        No assets yet. Select channels and generate creative assets to populate this list.
+        No assets yet. Generate creatives to see them here.
       </p>
     );
   }
 
   return (
-    <ul className="space-y-3">
-      {assets.map((asset) => {
-        const statusClass =
-          assetStatusStyles[asset.status] ?? "bg-neutral-100 text-neutral-600";
-        const summary =
-          asset.content?.summary ??
-          asset.content?.body ??
-          asset.llmRationale ??
-          "Awaiting content…";
+    <div className="grid gap-4 md:grid-cols-2">
+      {assets.map((asset) => (
+        <AssetPreviewCard key={asset.id} asset={asset} logoUrl={logoUrl} />
+      ))}
+    </div>
+  );
+}
+
+function AssetPreviewCard({ asset, logoUrl }) {
+  const variant = ASSET_VARIANT_MAP[asset.formatId] ?? "generic";
+  const content = asset.content ?? {};
+  const badgeClass = assetStatusStyles[asset.status] ?? assetStatusStyles.PENDING;
+  const normalizedAssetLogo =
+    typeof asset.logoUrl === "string" && asset.logoUrl.length > 0
+      ? asset.logoUrl
+      : null;
+  const normalizedJobLogo =
+    typeof logoUrl === "string" && logoUrl.length > 0 ? logoUrl : null;
+  const finalLogo = normalizedAssetLogo ?? normalizedJobLogo;
+
+  return (
+    <div className="space-y-2 rounded-3xl border border-neutral-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-neutral-900">
+            {asset.formatId.replace(/_/g, " ")}
+          </p>
+          <p className="text-xs text-neutral-500">{asset.channelId.replace(/_/g, " ")}</p>
+        </div>
+        <span
+          className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase ${badgeClass}`}
+        >
+          {asset.status.toLowerCase()}
+        </span>
+      </div>
+      {variant === "linkedin_job" ? (
+        <LinkedInJobCard content={content} logoUrl={finalLogo} />
+      ) : variant === "linkedin_feed" ? (
+        <LinkedInFeedCard content={content} logoUrl={finalLogo} />
+      ) : variant === "social_image" ? (
+        <SocialImageCard content={content} logoUrl={finalLogo} />
+      ) : variant === "story" ? (
+        <StoryCard content={content} logoUrl={finalLogo} />
+      ) : (
+        <GenericAssetCard content={content} logoUrl={finalLogo} />
+      )}
+    </div>
+  );
+}
+
+function LinkedInJobCard({ content, logoUrl }) {
+  const bullets = Array.isArray(content.bullets) ? content.bullets.slice(0, 3) : [];
+  return (
+    <div className="overflow-hidden rounded-2xl border border-neutral-100">
+      <div className="flex items-center gap-3 border-b border-neutral-100 bg-neutral-50 px-4 py-3">
+        <div className="h-10 w-10 overflow-hidden rounded bg-primary-100">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Company logo" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-primary-700">
+              {(content.companyName ?? content.title ?? "J").charAt(0).toUpperCase()}
+            </div>
+          )}
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-neutral-900">
+            {content.title || "Untitled posting"}
+          </p>
+          {content.subtitle ? (
+            <p className="text-xs text-neutral-500">{content.subtitle}</p>
+          ) : null}
+        </div>
+      </div>
+      <div className="space-y-3 px-4 py-4">
+        {content.body ? (
+          <p className="text-sm text-neutral-700 whitespace-pre-wrap">{content.body}</p>
+        ) : null}
+        {bullets.length > 0 ? (
+          <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+            {bullets.map((item, index) => (
+              <li key={`job-bullet-${index}`}>{item}</li>
+            ))}
+          </ul>
+        ) : null}
+        {content.callToAction ? (
+          <div className="rounded-full bg-primary-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600">
+            {content.callToAction}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function LinkedInFeedCard({ content, logoUrl }) {
+  const hashtags = Array.isArray(content.hashtags) ? content.hashtags : [];
+  return (
+    <div className="space-y-3 rounded-2xl border border-neutral-100 bg-white px-4 py-4 shadow-inner">
+      <div className="flex items-center gap-3">
+        <div className="h-9 w-9 overflow-hidden rounded-full bg-primary-100">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Company logo" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-primary-700">
+              {(content.companyName ?? "J").charAt(0).toUpperCase()}
+            </div>
+          )}
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-neutral-900">Your Company</p>
+          <p className="text-xs text-neutral-500">Promoted</p>
+        </div>
+      </div>
+      {content.body ? (
+        <p className="text-sm text-neutral-800 whitespace-pre-wrap">{content.body}</p>
+      ) : (
+        <p className="text-sm text-neutral-500">No copy provided.</p>
+      )}
+      {hashtags.length ? (
+        <p className="text-xs text-neutral-500">
+          {hashtags.map((tag) => `#${String(tag).replace(/^#/g, "")}`).join(" ")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function SocialImageCard({ content, logoUrl }) {
+  return (
+    <div className="flex justify-center">
+      <div className="relative h-64 w-40 rounded-[28px] border-4 border-neutral-900 bg-neutral-900 text-white shadow-lg">
+        <div className="absolute inset-0 rounded-[24px] bg-gradient-to-b from-primary-500/70 to-neutral-900/80 px-3 py-4 text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <p className="uppercase tracking-wide text-[10px] text-white/80">Story preview</p>
+            {logoUrl ? (
+              <span className="h-5 w-5 overflow-hidden rounded-full border border-white/30">
+                <img src={logoUrl} alt="Logo" className="h-full w-full object-cover" />
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            <p className="font-semibold">{content.title ?? "Hook headline"}</p>
+            {content.body ? <p className="text-white/80">{content.body}</p> : null}
+          </div>
+          {content.callToAction ? (
+            <div className="absolute bottom-4 left-3 right-3 rounded-full bg-white/90 py-2 text-center text-xs font-bold uppercase text-neutral-900">
+              {content.callToAction}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StoryCard({ content, logoUrl }) {
+  const beats = Array.isArray(content.script)
+    ? content.script
+    : content.script_beats ?? [];
+  return (
+    <div className="rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-4">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        <span>Story beats</span>
+        {logoUrl ? (
+          <span className="h-5 w-5 overflow-hidden rounded-full border border-neutral-200 bg-white">
+            <img src={logoUrl} alt="Logo" className="h-full w-full object-cover" />
+          </span>
+        ) : null}
+      </div>
+      <ol className="mt-2 space-y-2 text-sm text-neutral-700">
+        {beats.slice(0, 4).map((beat, index) => (
+          <li key={`beat-${index}`} className="rounded-lg bg-white/70 px-3 py-2 shadow-sm">
+            <p className="font-semibold">{beat.beat ?? `Beat ${index + 1}`}</p>
+            {beat.dialogue ? <p className="text-neutral-600">{beat.dialogue}</p> : null}
+            {beat.visual ? (
+              <p className="text-xs text-neutral-500">Visual: {beat.visual}</p>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function GenericAssetCard({ content, logoUrl }) {
+  const bullets = Array.isArray(content.bullets) ? content.bullets : [];
+  return (
+    <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 px-4 py-4 text-sm text-neutral-700">
+      {logoUrl ? (
+        <div className="mb-3 h-10 w-10 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+          <img src={logoUrl} alt="Logo" className="h-full w-full object-cover" />
+        </div>
+      ) : null}
+      {content.body ? (
+        <p className="whitespace-pre-wrap">{content.body}</p>
+      ) : (
+        <p>No copy available yet.</p>
+      )}
+      {bullets.length > 0 ? (
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
+          {bullets.slice(0, 4).map((item, index) => (
+            <li key={`generic-bullet-${index}`}>{item}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function StepProgress({ steps, currentStep, maxEnabledIndex = 0, onStepChange }) {
+  const currentIndex = STEP_INDEX[currentStep] ?? 0;
+  return (
+    <ol className="grid grid-cols-1 gap-3 text-sm text-neutral-600 sm:grid-cols-3">
+      {steps.map((step, index) => {
+        const status =
+          index < currentIndex ? "done" : index === currentIndex ? "active" : "pending";
+        const isEnabled = index <= maxEnabledIndex;
+        const handleClick = () => {
+          if (!isEnabled || index === currentIndex) {
+            return;
+          }
+          onStepChange?.(step.id);
+        };
         return (
           <li
-            key={asset.id}
-            className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm"
+            key={step.id}
+            className="w-full"
           >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-neutral-900">
-                  {asset.formatId.replace(/_/g, " ")}
+            <button
+              type="button"
+              onClick={handleClick}
+              disabled={!isEnabled || index === currentIndex}
+              className={clsx(
+                "w-full rounded-2xl border px-4 py-3 text-left transition",
+                status === "done"
+                  ? "border-primary-200 bg-primary-50"
+                  : status === "active"
+                  ? "border-primary-600 bg-white shadow-sm"
+                  : "border-neutral-200 bg-neutral-50",
+                !isEnabled || index === currentIndex
+                  ? "cursor-default"
+                  : "cursor-pointer hover:shadow-sm hover:border-primary-300",
+                !isEnabled && index !== currentIndex ? "opacity-60" : ""
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={clsx(
+                    "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
+                    status === "done"
+                      ? "bg-primary-600 text-white"
+                      : status === "active"
+                      ? "bg-primary-100 text-primary-700"
+                      : "bg-neutral-200 text-neutral-600"
+                  )}
+                >
+                  {index + 1}
+                </span>
+                <p
+                  className={clsx(
+                    "font-semibold",
+                    status === "active" ? "text-primary-700" : "text-neutral-700"
+                  )}
+                >
+                  {step.label}
                 </p>
-                <p className="text-xs text-neutral-500">{asset.channelId}</p>
               </div>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${statusClass}`}
-              >
-                {asset.status.toLowerCase()}
-              </span>
-            </div>
-            <p className="mt-3 text-sm text-neutral-600">{summary}</p>
-            <p className="mt-2 text-xs text-neutral-400">
-              Updated{" "}
-              {asset.updatedAt
-                ? new Date(asset.updatedAt).toLocaleString()
-                : "—"}
-            </p>
+              <p className="mt-1 text-xs">
+                {status === "pending"
+                  ? step.description
+                  : status === "active"
+                  ? "In progress"
+                  : "Completed"}
+              </p>
+            </button>
           </li>
         );
       })}
-    </ul>
+    </ol>
   );
 }
 
@@ -604,10 +918,13 @@ export default function RefineJobPage() {
   const [assetRun, setAssetRun] = useState(null);
   const [assetError, setAssetError] = useState(null);
   const [isGeneratingAssets, setIsGeneratingAssets] = useState(false);
-  const [isRefreshingAssets, setIsRefreshingAssets] = useState(false);
   const [shouldPollAssets, setShouldPollAssets] = useState(false);
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [finalJobSource, setFinalJobSource] = useState(null);
+  const [currentStep, setCurrentStep] = useState("refine");
+  const [jobLogoUrl, setJobLogoUrl] = useState("");
+  const channelsInitializedRef = useRef(false);
+  const jobLogoUrlRef = useRef("");
 
   const syncSelectedChannels = useCallback((list) => {
     const available = Array.isArray(list)
@@ -648,8 +965,150 @@ export default function RefineJobPage() {
     }
   }, [user?.authToken, jobId]);
 
+  const hasManualStepChangeRef = useRef(false);
+
   useEffect(() => {
-    if (!user?.authToken || !jobId) return;
+    jobLogoUrlRef.current = normalizeLogoUrl(jobLogoUrl);
+  }, [jobLogoUrl]);
+
+  useEffect(() => {
+    hasManualStepChangeRef.current = false;
+  }, [jobId]);
+
+  const maxEnabledIndex = useMemo(() => {
+    const hasChannelAccess =
+      Boolean(finalJobSource) ||
+      channelRecommendations.length > 0 ||
+      jobAssets.length > 0 ||
+      Boolean(assetRun);
+    if (!hasChannelAccess) {
+      return 0;
+    }
+    const hasAssetAccess = jobAssets.length > 0 || Boolean(assetRun);
+    return hasAssetAccess ? 2 : 1;
+  }, [
+    finalJobSource,
+    channelRecommendations.length,
+    jobAssets.length,
+    assetRun
+  ]);
+
+  const isStepTransitioning = useMemo(() => {
+    if (currentStep === "channels" && (isFinalizing || isRegeneratingChannels)) {
+      return true;
+    }
+    if (currentStep === "assets" && isGeneratingAssets) {
+      return true;
+    }
+    return false;
+  }, [currentStep, isFinalizing, isRegeneratingChannels, isGeneratingAssets]);
+
+  const navigateToStep = useCallback(
+    (stepId, { force = false } = {}) => {
+      const targetIndex = STEP_INDEX[stepId];
+      if (targetIndex === undefined) {
+        return;
+      }
+      if (!force && targetIndex > maxEnabledIndex) {
+        return;
+      }
+      hasManualStepChangeRef.current = true;
+      setCurrentStep(stepId);
+    },
+    [maxEnabledIndex]
+  );
+
+  const handleStepChange = useCallback(
+    (stepId) => {
+      navigateToStep(stepId);
+    },
+    [navigateToStep]
+  );
+
+  const blockingSpinnerLabel = useMemo(() => {
+    if (isFinalizing) {
+      return "Preparing channel recommendations…";
+    }
+    if (currentStep === "channels" && isRegeneratingChannels) {
+      return "Refreshing channel recommendations…";
+    }
+    if (isGeneratingAssets) {
+      return "Generating campaign assets…";
+    }
+    return null;
+  }, [isFinalizing, currentStep, isRegeneratingChannels, isGeneratingAssets]);
+
+  useEffect(() => {
+    const currentIndex = STEP_INDEX[currentStep] ?? 0;
+    if (currentIndex > maxEnabledIndex && !isStepTransitioning) {
+      const fallbackIndex = Math.min(maxEnabledIndex, FLOW_STEPS.length - 1);
+      const fallbackStep = FLOW_STEPS[fallbackIndex]?.id ?? FLOW_STEPS[0].id;
+      if (fallbackStep && fallbackStep !== currentStep) {
+        setCurrentStep(fallbackStep);
+      }
+      return;
+    }
+    if (
+      !hasManualStepChangeRef.current &&
+      !isStepTransitioning &&
+      currentIndex < maxEnabledIndex
+    ) {
+      const targetStep = FLOW_STEPS[maxEnabledIndex]?.id;
+      if (targetStep && targetStep !== currentStep) {
+        setCurrentStep(targetStep);
+      }
+    }
+  }, [currentStep, maxEnabledIndex, isStepTransitioning]);
+
+  useEffect(() => {
+    if (!user?.authToken || !jobId) return undefined;
+    let cancelled = false;
+    const hydrateJobDraft = async () => {
+      try {
+        const response = await fetchJobDraft({
+          authToken: user.authToken,
+          jobId
+        });
+        if (cancelled) return;
+        const nextLogoFromState = normalizeLogoUrl(response?.state?.logoUrl);
+        setJobLogoUrl((prev) => {
+          if (nextLogoFromState === prev) {
+            return prev;
+          }
+          return nextLogoFromState;
+        });
+      } catch (error) {
+        console.warn("Failed to fetch job draft for branding assets", error);
+      }
+    };
+
+    hydrateJobDraft();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.authToken, jobId]);
+
+  useEffect(() => {
+    const normalized = normalizeLogoUrl(jobLogoUrl);
+    if (!normalized) {
+      return;
+    }
+    const ensureLogo = (setter) => {
+      setter((prev) => {
+        if (normalizeLogoUrl(prev?.logoUrl)) {
+          return prev;
+        }
+        return { ...prev, logoUrl: normalized };
+      });
+    };
+    ensureLogo(setInitialOriginal);
+    ensureLogo(setInitialRefined);
+    ensureLogo(setOriginalDraft);
+    ensureLogo(setRefinedDraft);
+  }, [jobLogoUrl]);
+
+useEffect(() => {
+  if (!user?.authToken || !jobId) return;
 
     let cancelled = false;
     const runRefinement = async () => {
@@ -663,10 +1122,27 @@ export default function RefineJobPage() {
         if (cancelled) return;
         const original = normaliseJobDraft(response.originalJob);
         const refined = normaliseJobDraft(response.refinedJob);
-        setInitialOriginal(original);
-        setInitialRefined(refined);
-        setOriginalDraft(original);
-        setRefinedDraft(refined);
+        const fallbackLogo = normalizeLogoUrl(jobLogoUrlRef.current);
+        const refinedLogo = normalizeLogoUrl(refined.logoUrl);
+        const originalLogo = normalizeLogoUrl(original.logoUrl);
+        const refinedWithBranding = {
+          ...refined,
+          logoUrl: refinedLogo || originalLogo || fallbackLogo
+        };
+        const originalWithBranding = {
+          ...original,
+          logoUrl: originalLogo || refinedLogo || fallbackLogo
+        };
+        const appliedLogo =
+          normalizeLogoUrl(refinedWithBranding.logoUrl) ||
+          normalizeLogoUrl(originalWithBranding.logoUrl);
+        if (appliedLogo && appliedLogo !== jobLogoUrlRef.current) {
+          setJobLogoUrl(appliedLogo);
+        }
+        setInitialOriginal(originalWithBranding);
+        setInitialRefined(refinedWithBranding);
+        setOriginalDraft(originalWithBranding);
+        setRefinedDraft(refinedWithBranding);
         setSummary(response.summary ?? "");
         setViewMode("refined");
         if (response.failure) {
@@ -688,23 +1164,19 @@ export default function RefineJobPage() {
     return () => {
       cancelled = true;
     };
-  }, [jobId, user?.authToken]);
+}, [jobId, user?.authToken]);
 
-  useEffect(() => {
+useEffect(() => {
+  loadAssets();
+}, [loadAssets]);
+
+useEffect(() => {
+  if (!shouldPollAssets) return undefined;
+  const interval = setInterval(() => {
     loadAssets();
-  }, [loadAssets]);
-
-  useEffect(() => {
-    if (!shouldPollAssets) return undefined;
-    const interval = setInterval(() => {
-      loadAssets();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [shouldPollAssets, loadAssets]);
-
-  const toggleViewMode = () => {
-    setViewMode((prev) => (prev === "refined" ? "original" : "refined"));
-  };
+  }, 5000);
+  return () => clearInterval(interval);
+}, [shouldPollAssets, loadAssets]);
 
   const handleToggleChannel = useCallback((channelId) => {
     setSelectedChannels((prev) => {
@@ -719,6 +1191,8 @@ export default function RefineJobPage() {
     if (!user?.authToken || !jobId) return;
     setIsFinalizing(true);
     setChannelFailure(null);
+    channelsInitializedRef.current = false;
+    navigateToStep("channels", { force: true });
     try {
       const activeDraft =
         viewMode === "original" ? originalDraft : refinedDraft;
@@ -744,12 +1218,13 @@ export default function RefineJobPage() {
       syncSelectedChannels(response.channelRecommendations ?? []);
     } catch (error) {
       setChannelFailure({ reason: "finalize_failed", message: error.message });
+      navigateToStep("refine", { force: true });
     } finally {
       setIsFinalizing(false);
     }
   };
 
-  const handleRegenerateChannels = async () => {
+  const handleRegenerateChannels = useCallback(async () => {
     if (!user?.authToken || !jobId) return;
     setIsRegeneratingChannels(true);
     try {
@@ -767,7 +1242,32 @@ export default function RefineJobPage() {
     } finally {
       setIsRegeneratingChannels(false);
     }
-  };
+  }, [user?.authToken, jobId, syncSelectedChannels]);
+
+  useEffect(() => {
+    if (currentStep === "refine") {
+      channelsInitializedRef.current = false;
+      return;
+    }
+    if (
+      currentStep === "channels" &&
+      channelRecommendations.length === 0 &&
+      !isRegeneratingChannels &&
+      !channelFailure &&
+      finalJobSource &&
+      !channelsInitializedRef.current
+    ) {
+      channelsInitializedRef.current = true;
+      handleRegenerateChannels();
+    }
+  }, [
+    currentStep,
+    channelRecommendations.length,
+    isRegeneratingChannels,
+    channelFailure,
+    finalJobSource,
+    handleRegenerateChannels
+  ]);
 
   const handleGenerateAssets = async () => {
     if (!user?.authToken || !jobId || selectedChannels.length === 0 || !finalJobSource) {
@@ -775,6 +1275,7 @@ export default function RefineJobPage() {
     }
     setIsGeneratingAssets(true);
     setAssetError(null);
+    navigateToStep("assets", { force: true });
     try {
       const response = await generateJobAssets({
         authToken: user.authToken,
@@ -790,18 +1291,9 @@ export default function RefineJobPage() {
       setShouldPollAssets(hasPending);
     } catch (error) {
       setAssetError(error.message ?? "Failed to generate assets.");
+      navigateToStep("channels", { force: true });
     } finally {
       setIsGeneratingAssets(false);
-    }
-  };
-
-  const handleRefreshAssets = async () => {
-    if (!user?.authToken || !jobId) return;
-    setIsRefreshingAssets(true);
-    try {
-      await loadAssets();
-    } finally {
-      setIsRefreshingAssets(false);
     }
   };
 
@@ -829,20 +1321,11 @@ export default function RefineJobPage() {
     <div className="space-y-6">
       <header className="space-y-3">
         <h1 className="text-3xl font-semibold text-neutral-900">
-          Refine and publish your job
+          Refine & publish your job
         </h1>
         <p className="text-sm text-neutral-600">
-          Review the LLM-enhanced draft, make final edits, and generate channel
-          recommendations tailored to your role.
+          Follow the guided steps to polish the draft, pick channels, and generate creative assets.
         </p>
-        {summary ? (
-          <div className="rounded-2xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-700">
-            <p className="font-semibold uppercase tracking-wide text-xs text-primary-500">
-              Summary of improvements
-            </p>
-            <p className="mt-1 whitespace-pre-wrap text-sm">{summary}</p>
-          </div>
-        ) : null}
         {refineError ? (
           <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
             {refineError}
@@ -850,161 +1333,192 @@ export default function RefineJobPage() {
         ) : null}
       </header>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs font-semibold uppercase tracking-wide">
-          <button
-            type="button"
-            onClick={() => setViewMode("refined")}
-            className={clsx(
-              "rounded-full px-4 py-2 transition",
-              viewMode === "refined"
-                ? "bg-primary-600 text-white shadow"
-                : "text-neutral-600 hover:text-primary-600"
-            )}
-          >
-            Refined version
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("original")}
-            className={clsx(
-              "rounded-full px-4 py-2 transition",
-              viewMode === "original"
-                ? "bg-primary-600 text-white shadow"
-                : "text-neutral-600 hover:text-primary-600"
-            )}
-          >
-            Original version
-          </button>
-        </div>
-      </div>
+      <StepProgress
+        steps={FLOW_STEPS}
+        currentStep={currentStep}
+        maxEnabledIndex={maxEnabledIndex}
+        onStepChange={handleStepChange}
+      />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid w-full max-w-4xl gap-5">
-          <JobEditorCard
-            title={viewMode === "refined" ? "Refined job" : "Original job"}
-            job={viewMode === "refined" ? refinedDraft : originalDraft}
-            onChange={viewMode === "refined" ? setRefinedDraft : setOriginalDraft}
-            showFieldRevert={viewMode === "refined"}
-            originalValues={initialOriginal}
-            refinedValues={initialRefined}
-          />
-        </div>
-
-        <div className="space-y-5">
-          <section className="space-y-3 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-            <h2 className="text-lg font-semibold text-neutral-900">
-              Choose your final draft
-            </h2>
-            <p className="text-sm text-neutral-600">
-              Select which version you want to move forward with. You can still edit
-              the chosen draft before submitting.
-            </p>
-            <p className="text-sm text-neutral-500">
-              We’ll submit whichever version is currently visible. Use the toggle
-              above to switch between drafts, and the per-field controls to bring
-              back original values where needed.
-            </p>
-            <button
-              type="button"
-              onClick={handleFinalize}
-              disabled={isFinalizing}
-              className="w-full rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-            >
-              {isFinalizing ? "Generating channels…" : "Confirm & generate channels"}
-            </button>
-          </section>
-
-          <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-neutral-900">
-                  Channel recommendations
-                </h2>
-                <p className="text-sm text-neutral-600">
-                  We suggest these channels based on the final job profile. Regenerate
-                  anytime after further edits.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleRegenerateChannels}
-                disabled={isRegeneratingChannels}
-                className="rounded-full border border-primary-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isRegeneratingChannels ? "Refreshing…" : "Regenerate"}
-              </button>
-            </div>
-            <ChannelRecommendationList
-              recommendations={channelRecommendations}
-              updatedAt={channelUpdatedAt}
-              failure={channelFailure}
-              selectable
-              selectedChannels={selectedChannels}
-              onToggleChannel={handleToggleChannel}
-            />
-            <p className="text-xs text-neutral-500">
-              Selected channels: {selectedChannels.length}.{" "}
-              {finalJobSource
-                ? "You can adjust the list before generating assets."
-                : "Confirm your final draft before generating assets."}
-            </p>
-            <button
-              type="button"
-              onClick={handleGenerateAssets}
-              disabled={
-                isGeneratingAssets ||
-                selectedChannels.length === 0 ||
-                !finalJobSource
-              }
-              className="w-full rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-            >
-              {isGeneratingAssets ? "Generating assets…" : "Generate creative assets"}
-            </button>
-            {assetError ? (
-              <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-                {assetError}
+      {blockingSpinnerLabel ? (
+        <LoadingState label={blockingSpinnerLabel} />
+      ) : (
+        <>
+          {currentStep === "refine" && summary ? (
+            <div className="rounded-2xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-700">
+              <p className="font-semibold uppercase tracking-wide text-xs text-primary-500">
+                Summary of improvements
               </p>
-            ) : null}
-          </section>
-
-          <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-neutral-900">
-                  Publishing assets
-                </h2>
-                <p className="text-sm text-neutral-600">
-                  Monitor generation status and copy snippets for each channel.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleRefreshAssets}
-                disabled={isRefreshingAssets}
-                className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isRefreshingAssets ? "Refreshing…" : "Refresh"}
-              </button>
+              <p className="mt-1 whitespace-pre-wrap text-sm">{summary}</p>
             </div>
-            {assetRun ? (
-              <div className="rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-                <p className="font-semibold text-neutral-800">
-                  Latest run: {assetRun.status}
-                </p>
-                <p>
-                  {assetRun.stats?.assetsCompleted ?? 0} /{" "}
-                  {assetRun.stats?.assetsPlanned ?? 0} assets ready
-                </p>
-                {assetRun.error?.message ? (
-                  <p className="text-red-600">{assetRun.error.message}</p>
-                ) : null}
+          ) : null}
+
+          {currentStep === "refine" ? (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs font-semibold uppercase tracking-wide">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("refined")}
+                    className={clsx(
+                      "rounded-full px-4 py-2 transition",
+                      viewMode === "refined"
+                        ? "bg-primary-600 text-white shadow"
+                        : "text-neutral-600 hover:text-primary-600"
+                    )}
+                  >
+                    Refined version
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("original")}
+                    className={clsx(
+                      "rounded-full px-4 py-2 transition",
+                      viewMode === "original"
+                        ? "bg-primary-600 text-white shadow"
+                        : "text-neutral-600 hover:text-primary-600"
+                    )}
+                  >
+                    Original version
+                  </button>
+                </div>
               </div>
-            ) : null}
-            <AssetStatusList assets={jobAssets} />
-          </section>
-        </div>
-      </div>
+
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="grid w-full max-w-4xl gap-5">
+                  <JobEditorCard
+                    title={viewMode === "refined" ? "Refined job" : "Original job"}
+                    job={viewMode === "refined" ? refinedDraft : originalDraft}
+                    onChange={viewMode === "refined" ? setRefinedDraft : setOriginalDraft}
+                    showFieldRevert={viewMode === "refined"}
+                    originalValues={initialOriginal}
+                    refinedValues={initialRefined}
+                  />
+                </div>
+
+                <section className="space-y-3 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+                  <h2 className="text-lg font-semibold text-neutral-900">
+                    Choose your final draft
+                  </h2>
+                  <p className="text-sm text-neutral-600">
+                    Select which version you want to move forward with. You can still edit
+                    the chosen draft before submitting.
+                  </p>
+                  <p className="text-sm text-neutral-500">
+                    We’ll submit whichever version is currently visible. Use the toggle
+                    above to switch between drafts, and the per-field controls to bring
+                    back original values where needed.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleFinalize}
+                    disabled={isFinalizing}
+                    className="w-full rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                  >
+                    {isFinalizing ? "Gathering recommendations…" : "Confirm & pick channels"}
+                  </button>
+                </section>
+              </div>
+            </>
+          ) : null}
+
+          {currentStep === "channels" ? (
+            <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-neutral-900">
+                    Channel recommendations
+                  </h2>
+                  <p className="text-sm text-neutral-600">
+                    We suggest these channels based on the final job profile. Regenerate
+                    anytime after further edits.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigateToStep("refine")}
+                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
+                  >
+                    Back to refinement
+                  </button>
+                </div>
+              </div>
+              <ChannelRecommendationList
+                recommendations={channelRecommendations}
+                updatedAt={channelUpdatedAt}
+                failure={channelFailure}
+                selectable
+                selectedChannels={selectedChannels}
+                onToggleChannel={handleToggleChannel}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4">
+                <p className="text-xs text-neutral-500">
+                  {selectedChannels.length > 0
+                    ? `${selectedChannels.length} channel${selectedChannels.length > 1 ? "s" : ""} selected.`
+                    : "Select at least one channel to continue."}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleGenerateAssets}
+                  disabled={
+                    isGeneratingAssets ||
+                    selectedChannels.length === 0 ||
+                    !finalJobSource
+                  }
+                  className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                >
+                  {isGeneratingAssets ? "Generating assets…" : "Generate creative assets"}
+                </button>
+              </div>
+              {assetError ? (
+                <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                  {assetError}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {currentStep === "assets" ? (
+            <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-neutral-900">
+                    Publishing assets
+                  </h2>
+                  <p className="text-sm text-neutral-600">
+                    Monitor generation status and copy snippets for each channel.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigateToStep("channels")}
+                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
+                  >
+                    Back to channels
+                  </button>
+                </div>
+              </div>
+              {assetRun ? (
+                <div className="rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                  <p className="font-semibold text-neutral-800">
+                    Latest run: {assetRun.status}
+                  </p>
+                  <p>
+                    {assetRun.stats?.assetsCompleted ?? 0} /{" "}
+                    {assetRun.stats?.assetsPlanned ?? 0} assets ready
+                  </p>
+                  {assetRun.error?.message ? (
+                    <p className="text-red-600">{assetRun.error.message}</p>
+                  ) : null}
+                </div>
+              ) : null}
+              <AssetPreviewGrid assets={jobAssets} logoUrl={jobLogoUrl} />
+            </section>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

@@ -51,23 +51,39 @@ export function assetsRouter({ firestore, logger }) {
       const normalized = assets
         .map(normalizeAsset)
         .filter(Boolean)
-        .map((asset) => ({
-          id: asset.id,
-          jobId: asset.jobId,
-          jobTitle: deriveJobTitle(jobMap.get(asset.jobId)),
-          channelId: asset.channelId,
-          formatId: asset.formatId,
-          artifactType: asset.artifactType,
-          status: asset.status,
-          provider: asset.provider ?? null,
-          model: asset.model ?? null,
-          updatedAt: asset.updatedAt ?? asset.createdAt ?? null,
-          summary:
-            asset.content?.summary ??
-            asset.content?.body ??
-            asset.llmRationale ??
-            null
-        }));
+        .map((asset) => {
+          const job = jobMap.get(asset.jobId);
+          let jobLogo = null;
+          if (job) {
+            if (typeof job.logoUrl === "string" && job.logoUrl.trim().length > 0) {
+              jobLogo = job.logoUrl;
+            } else if (
+              typeof job.confirmed?.logoUrl === "string" &&
+              job.confirmed.logoUrl.trim().length > 0
+            ) {
+              jobLogo = job.confirmed.logoUrl;
+            }
+          }
+
+          return {
+            id: asset.id,
+            jobId: asset.jobId,
+            jobTitle: deriveJobTitle(job),
+            logoUrl: jobLogo,
+            channelId: asset.channelId,
+            formatId: asset.formatId,
+            artifactType: asset.artifactType,
+            status: asset.status,
+            provider: asset.provider ?? null,
+            model: asset.model ?? null,
+            updatedAt: asset.updatedAt ?? asset.createdAt ?? null,
+            summary:
+              asset.content?.summary ??
+              asset.content?.body ??
+              asset.llmRationale ??
+              null
+          };
+        });
 
       logger.info(
         { userId, assetCount: normalized.length },

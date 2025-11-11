@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { clsx } from "../../lib/cn";
 import { useUser } from "../user-context";
 import { WizardSuggestionPanel } from "./wizard-suggestion-panel";
@@ -86,6 +87,8 @@ export function WizardShell({ jobId = null }) {
     activeToastClassName,
     isHydrated,
   } = controller;
+
+  const [logoErrors, setLogoErrors] = useState({});
 
   const optionalStepCount = OPTIONAL_STEPS.length;
   const progressPercent =
@@ -301,6 +304,145 @@ export function WizardShell({ jobId = null }) {
               if (isCapsuleField) {
                 containerProps.role = "group";
                 containerProps["aria-labelledby"] = labelId;
+              }
+
+              if (field.type === "logo") {
+                const errorMessage = logoErrors[field.id];
+
+                const handleLogoUrlChange = (event) => {
+                  const nextValue = event.target.value.trim();
+                  setLogoErrors((prev) => ({ ...prev, [field.id]: undefined }));
+                  onFieldChange(
+                    field.id,
+                    nextValue.length > 0 ? nextValue : undefined
+                  );
+                };
+
+                const handleFileInput = (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+
+                  if (!file.type?.startsWith("image/")) {
+                    setLogoErrors((prev) => ({
+                      ...prev,
+                      [field.id]:
+                        "Please upload an image file (PNG, JPG, SVG, or WebP).",
+                    }));
+                    return;
+                  }
+
+                  const maxBytes = 1024 * 1024; // 1MB
+                  if (file.size > maxBytes) {
+                    setLogoErrors((prev) => ({
+                      ...prev,
+                      [field.id]: "Logo file is too large. Keep it under 1MB.",
+                    }));
+                    return;
+                  }
+
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    if (typeof reader.result === "string") {
+                      setLogoErrors((prev) => ({ ...prev, [field.id]: undefined }));
+                      onFieldChange(field.id, reader.result);
+                    } else {
+                      setLogoErrors((prev) => ({
+                        ...prev,
+                        [field.id]: "Couldn't process that image. Please try another file."
+                      }));
+                    }
+                  };
+                  reader.onerror = () => {
+                    setLogoErrors((prev) => ({
+                      ...prev,
+                      [field.id]: "Failed to read the file. Please try again.",
+                    }));
+                  };
+                  reader.readAsDataURL(file);
+                  event.target.value = "";
+                };
+
+                const handleClearLogo = () => {
+                  onFieldChange(field.id, undefined);
+                  setLogoErrors((prev) => ({ ...prev, [field.id]: undefined }));
+                };
+
+                return (
+                  <div
+                    key={field.id}
+                    className="flex flex-col gap-2 text-sm font-medium text-neutral-700"
+                  >
+                    <span id={labelId}>
+                      {field.label}
+                      {field.required ? (
+                        <span className="ml-1 text-primary-600">*</span>
+                      ) : null}
+                    </span>
+                    {field.helper ? (
+                      <span className="text-xs font-normal text-neutral-500">
+                        {field.helper}
+                      </span>
+                    ) : null}
+                    <input
+                      className={sharedInputClasses}
+                      type="url"
+                      placeholder={
+                        field.placeholder ?? "https://company.com/logo.png"
+                      }
+                      value={
+                        typeof inputValue === "string" &&
+                        inputValue.startsWith("data:")
+                          ? ""
+                          : inputValue ?? ""
+                      }
+                      onChange={handleLogoUrlChange}
+                      autoComplete="off"
+                    />
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500">
+                      <label className="flex items-center gap-2">
+                        <span className="rounded-full border border-neutral-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-600">
+                          Upload
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                          onChange={handleFileInput}
+                          className="hidden"
+                        />
+                      </label>
+                      <span>PNG, JPG, SVG, or WebP up to 1MB.</span>
+                    </div>
+                    {errorMessage ? (
+                      <p className="text-xs font-medium text-red-600">
+                        {errorMessage}
+                      </p>
+                    ) : null}
+                    {inputValue ? (
+                      <div className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+                        <div className="h-12 w-12 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                          <img
+                            src={inputValue}
+                            alt="Job logo preview"
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <div className="flex flex-1 items-center justify-between gap-3 text-xs text-neutral-600">
+                          <span className="truncate">
+                            {String(inputValue).slice(0, 60)}
+                            {String(inputValue).length > 60 ? "…" : ""}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleClearLogo}
+                            className="rounded-full border border-neutral-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 transition hover:border-red-300 hover:text-red-500"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
               }
 
               return (

@@ -136,6 +136,13 @@ function extractCampaigns(jobs = []) {
           : typeof job.companyName === "string" && job.companyName.trim().length > 0
           ? `${job.companyName.trim()} role`
           : "Untitled role",
+      logoUrl:
+        typeof job.logoUrl === "string" && job.logoUrl.trim().length > 0
+          ? job.logoUrl
+          : typeof job.confirmed?.logoUrl === "string" &&
+              job.confirmed.logoUrl.trim().length > 0
+            ? job.confirmed.logoUrl
+            : null,
       channel: campaign.channel,
       status: campaign.status,
       budget: campaign.budget ?? 0,

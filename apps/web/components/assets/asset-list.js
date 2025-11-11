@@ -107,18 +107,37 @@ export function AssetList() {
             <tbody className="divide-y divide-neutral-100 text-neutral-600">
               {assets.map((asset) => {
                 const summary = asset.summary ?? "—";
+                const initials =
+                  asset.jobTitle?.charAt?.(0)?.toUpperCase() ?? "J";
                 const badgeClass =
                   statusColor[asset.status] ?? statusColor.DEFAULT;
                 return (
                   <tr key={asset.id} className="bg-white">
                     <td className="px-4 py-4">
-                      <p className="font-semibold text-neutral-800">
-                        {asset.formatId?.replace(/_/g, " ")}
-                      </p>
-                      <p className="text-xs text-neutral-400">
-                        {asset.channelId}
-                      </p>
-                      <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
+                          {asset.logoUrl ? (
+                            <img
+                              src={asset.logoUrl}
+                              alt="Job logo"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-neutral-500">
+                              {initials}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-neutral-800">
+                            {asset.formatId?.replace(/_/g, " ")}
+                          </p>
+                          <p className="text-xs text-neutral-400">
+                            {asset.channelId}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs text-neutral-500 line-clamp-2">
                         {summary}
                       </p>
                     </td>
