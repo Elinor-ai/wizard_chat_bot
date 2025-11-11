@@ -21,6 +21,29 @@ const getRequestSchema = z.object({
   jobId: z.string()
 });
 
+function previewContent(content, limit = 120) {
+  if (typeof content !== "string") {
+    return "";
+  }
+  const trimmed = content.trim();
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, limit - 3)}...`;
+}
+
+function summarizeMessages(messages = []) {
+  return messages.map((message) => ({
+    id: message?.id,
+    role: message?.role,
+    createdAt:
+      message?.createdAt instanceof Date
+        ? message.createdAt.toISOString()
+        : message?.createdAt ?? null,
+    preview: previewContent(message?.content ?? ""),
+  }));
+}
+
 function getAuthenticatedUserId(req) {
   const userId = req.user?.id;
   if (!userId) {
@@ -110,10 +133,26 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         jobId: query.jobId,
         limit: 20
       });
-      res.json({
+      logger.info(
+        {
+          jobId: query.jobId,
+          messageCount: history.length,
+          messages: summarizeMessages(history)
+        },
+        "copilot.history.loaded"
+      );
+      const payload = {
         jobId: query.jobId,
         messages: serializeMessages(history)
-      });
+      };
+      res.json(payload);
+      logger.info(
+        {
+          jobId: query.jobId,
+          messageCount: payload.messages.length
+        },
+        "copilot.history.responded"
+      );
     })
   );
 
@@ -132,6 +171,15 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         loadCopilotHistory({ firestore, jobId: payload.jobId, limit: 8 }),
         loadSuggestionSnapshot({ firestore, jobId: payload.jobId })
       ]);
+      logger.info(
+        {
+          jobId: payload.jobId,
+          userId,
+          existingMessages: summarizeMessages(conversation),
+          incomingUserPreview: previewContent(payload.userMessage, 200)
+        },
+        "copilot.chat.request"
+      );
 
       const toolContext = {
         firestore,
@@ -174,12 +222,29 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         limit: 20,
         now: new Date()
       });
+      logger.info(
+        {
+          jobId: payload.jobId,
+          userId,
+          appendedMessages: summarizeMessages(history)
+        },
+        "copilot.chat.appended"
+      );
 
-      res.json({
+      const responsePayload = {
         jobId: payload.jobId,
         messages: serializeMessages(history),
         actions: agentResult.actions ?? []
-      });
+      };
+      res.json(responsePayload);
+      logger.info(
+        {
+          jobId: payload.jobId,
+          userId,
+          messageCount: responsePayload.messages.length
+        },
+        "copilot.chat.responded"
+      );
     })
   );
 

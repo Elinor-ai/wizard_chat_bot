@@ -51,7 +51,29 @@ export function createInitialWizardState() {
     activeToast: null,
     numberDrafts: {},
     copilotConversation: [],
+    copilotConversationVersion: 0,
   };
+}
+
+function resolveConversationVersion(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return 0;
+  }
+  return messages.reduce((latest, message) => {
+    if (!message) {
+      return latest;
+    }
+    const createdAt =
+      message.createdAt instanceof Date
+        ? message.createdAt.getTime()
+        : typeof message.createdAt === "string"
+          ? Date.parse(message.createdAt)
+          : 0;
+    if (!Number.isFinite(createdAt)) {
+      return latest;
+    }
+    return Math.max(latest, createdAt);
+  }, 0);
 }
 
 export function wizardReducer(state, action) {
@@ -295,11 +317,39 @@ export function wizardReducer(state, action) {
     }
 
     case "SET_COPILOT_CONVERSATION": {
+      const messages = Array.isArray(action.payload)
+        ? action.payload
+        : Array.isArray(action.payload?.messages)
+          ? action.payload.messages
+          : [];
+      const incomingVersion =
+        typeof action.payload?.version === "number"
+          ? action.payload.version
+          : resolveConversationVersion(messages);
+      const currentVersion = Number.isFinite(state.copilotConversationVersion)
+        ? state.copilotConversationVersion
+        : 0;
+      const shouldIgnore =
+        Number.isFinite(incomingVersion) && incomingVersion < currentVersion;
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.log("[WizardState] copilot:update", {
+          source: action.payload?.source ?? "unknown",
+          incomingVersion,
+          currentVersion,
+          messageCount: messages.length,
+          ignored: shouldIgnore,
+        });
+      }
+      if (shouldIgnore) {
+        return state;
+      }
       return {
         ...state,
-        copilotConversation: Array.isArray(action.payload)
-          ? action.payload
-          : [],
+        copilotConversation: messages,
+        copilotConversationVersion: Number.isFinite(incomingVersion)
+          ? incomingVersion
+          : currentVersion,
       };
     }
 

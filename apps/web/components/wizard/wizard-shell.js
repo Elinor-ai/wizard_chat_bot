@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { clsx } from "../../lib/cn";
 import { useUser } from "../user-context";
 import { WizardSuggestionPanel } from "./wizard-suggestion-panel";
@@ -28,19 +28,80 @@ function capsuleClassName(isActive, isHovered) {
   );
 }
 
+function summarizeSuggestionValue(value) {
+  if (Array.isArray(value)) {
+    const joined = value
+      .map((item) => (typeof item === "string" ? item.trim() : String(item ?? "")))
+      .filter(Boolean)
+      .join(", ");
+    return joined.length > 60 ? `${joined.slice(0, 57)}…` : joined || "Apply suggestion";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 60 ? `${trimmed.slice(0, 57)}…` : trimmed || "Apply suggestion";
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  if (value && typeof value === "object") {
+    const text = Object.values(value)
+      .map((entry) => (typeof entry === "string" ? entry.trim() : String(entry ?? "")))
+      .filter(Boolean)
+      .join(", ");
+    return text.length > 60 ? `${text.slice(0, 57)}…` : text || "Apply suggestion";
+  }
+  return "Apply suggestion";
+}
+
+function InlineSuggestionList({ suggestions = [], onApply }) {
+  if (!suggestions.length) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap gap-2 pt-2">
+      {suggestions.map((message) => {
+        const canApply = Boolean(message.meta?.fieldId);
+        const preview = summarizeSuggestionValue(
+          message.meta?.value ?? message.content ?? ""
+        );
+        return (
+          <button
+            key={message.id}
+            type="button"
+            title={preview}
+            disabled={!canApply}
+            onClick={() => {
+              if (canApply) {
+                onApply?.(message.meta);
+              }
+            }}
+            className={clsx(
+              "group flex max-w-full items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition",
+              canApply
+                ? "border-primary-200 bg-primary-50/70 text-primary-700 hover:bg-primary-100"
+                : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+            )}
+          >
+            <span
+              className={clsx(
+                "flex h-5 w-5 items-center justify-center rounded-full text-white",
+                canApply ? "bg-primary-600" : "bg-neutral-400"
+              )}
+            >
+              +
+            </span>
+            <span className="max-w-[220px] truncate text-left">{preview}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function WizardShell({ jobId = null }) {
   const { user } = useUser();
   const controller = useWizardController({ user, initialJobId: jobId });
   const [logoErrors, setLogoErrors] = useState({});
-
-  if (!user?.authToken) {
-    return (
-      <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-neutral-600 shadow-sm shadow-neutral-100">
-        Please sign in to build a job brief. Once authenticated, your wizard
-        progress will be saved to Firestore and synced across the console.
-      </div>
-    );
-  }
 
   const {
     steps,
@@ -72,11 +133,8 @@ export function WizardShell({ jobId = null }) {
     handleGenerateHiringPack,
     handleSendMessage,
     handleAcceptSuggestion,
-    handleSuggestionToggle,
-    fetchSuggestionsForStep,
     visibleAssistantMessages,
     copilotConversation,
-    isFetchingSuggestions,
     isChatting,
     copilotNextTeaser,
     committedState,
@@ -96,6 +154,32 @@ export function WizardShell({ jobId = null }) {
       ? 0
       : Math.round((progressCompletedCount / totalProgressFields) * 100);
   const isGeneratingPack = isSaving;
+  const suggestionMap = useMemo(() => {
+    const map = {};
+    visibleAssistantMessages.forEach((message) => {
+      if (message.kind !== "suggestion") {
+        return;
+      }
+      const fieldId = message.meta?.fieldId;
+      if (!fieldId) {
+        return;
+      }
+      if (!map[fieldId]) {
+        map[fieldId] = [];
+      }
+      map[fieldId].push(message);
+    });
+    return map;
+  }, [visibleAssistantMessages]);
+
+  if (!user?.authToken) {
+    return (
+      <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-neutral-600 shadow-sm shadow-neutral-100">
+        Please sign in to build a job brief. Once authenticated, your wizard
+        progress will be saved to Firestore and synced across the console.
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
@@ -210,6 +294,7 @@ export function WizardShell({ jobId = null }) {
               if (hiddenReason) {
                 return null;
               }
+              const fieldSuggestions = suggestionMap[field.id] ?? [];
 
               const rawValue = getDeep(state, field.id);
               const highlightMeta = getDeep(autofilledFields, field.id);
@@ -589,6 +674,10 @@ export function WizardShell({ jobId = null }) {
                     autoComplete="off"
                   />
                 )}
+                  <InlineSuggestionList
+                    suggestions={fieldSuggestions}
+                    onApply={handleAcceptSuggestion}
+                  />
                 </FieldContainer>
               );
             })}
@@ -664,18 +753,8 @@ export function WizardShell({ jobId = null }) {
       </div>
 
       <WizardSuggestionPanel
-        messages={visibleAssistantMessages}
         copilotConversation={copilotConversation}
-        onRefresh={() =>
-          fetchSuggestionsForStep({
-            stepId: currentStep?.id,
-            intentOverrides: { forceRefresh: true },
-          })
-        }
         onSendMessage={handleSendMessage}
-        onAcceptSuggestion={handleAcceptSuggestion}
-        onToggleSuggestion={handleSuggestionToggle}
-        isLoading={isFetchingSuggestions}
         isSending={isChatting}
         nextStepTeaser={copilotNextTeaser}
         jobState={committedState}

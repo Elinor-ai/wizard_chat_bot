@@ -34,66 +34,6 @@ function formatPrimitive(value) {
 }
 
 
-function renderSuggestionContent(message) {
-  const { meta } = message;
-  if (!meta) {
-    return <p className="whitespace-pre-wrap">{message.content}</p>;
-  }
-
-  const { value } = meta;
-  if (Array.isArray(value)) {
-    const items = value
-      .map((item, index) => {
-        const formatted = formatPrimitive(item).trim();
-        return { formatted, index };
-      })
-      .filter((item) => item.formatted.length > 0);
-
-    if (items.length === 0) {
-      return <p className="whitespace-pre-wrap">{message.content}</p>;
-    }
-
-    return (
-      <ul className="list-disc space-y-1 whitespace-pre-wrap pl-5 text-sm text-neutral-700">
-        {items.map(({ formatted, index }) => (
-          <li key={`${message.id}-item-${index}`}>{formatted}</li>
-        ))}
-      </ul>
-    );
-  }
-
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value).filter(
-      ([, entryValue]) => formatPrimitive(entryValue).trim().length > 0
-    );
-
-    if (entries.length === 0) {
-      return <p className="whitespace-pre-wrap">{message.content}</p>;
-    }
-
-    return (
-      <dl className="space-y-1 text-sm text-neutral-700">
-        {entries.map(([key, entryValue]) => (
-          <div key={`${message.id}-entry-${key}`}>
-            <dt className="font-semibold text-primary-700">{key}</dt>
-            <dd className="whitespace-pre-wrap">
-              {formatPrimitive(entryValue)}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    );
-  }
-
-  if (value !== undefined && value !== null) {
-    return (
-      <p className="whitespace-pre-wrap">{formatPrimitive(value)}</p>
-    );
-  }
-
-  return <p className="whitespace-pre-wrap">{message.content}</p>;
-}
-
 function cleanString(value) {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -269,20 +209,14 @@ function JobPreview({ jobState }) {
 }
 
 export function WizardSuggestionPanel({
-  messages,
   copilotConversation = [],
-  isLoading,
   isSending,
-  onRefresh,
   onSendMessage,
-  onAcceptSuggestion,
-  onToggleSuggestion,
   nextStepTeaser,
   jobState,
   isJobTabEnabled
 }) {
   const [draftMessage, setDraftMessage] = useState("");
-  const [acceptedMap, setAcceptedMap] = useState({});
   const [activeTab, setActiveTab] = useState("chat");
   const conversationMessages = Array.isArray(copilotConversation)
     ? copilotConversation
@@ -292,24 +226,21 @@ export function WizardSuggestionPanel({
   const chatTabActive = activeTab === "chat";
 
   useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    // eslint-disable-next-line no-console
+    console.log("[WizardSuggestionPanel] conversation:update", {
+      count: conversationMessages.length,
+      ids: conversationMessages.map((message) => message.id),
+    });
+  }, [conversationMessages]);
+
+  useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = "auto";
       textarea.style.height = `${textarea.scrollHeight}px`;
     }
   }, [draftMessage]);
-
-  useEffect(() => {
-    setAcceptedMap((prev) => {
-      const next = {};
-      messages.forEach((message) => {
-        if (message.kind === "suggestion") {
-          next[message.id] = prev[message.id] ?? false;
-        }
-      });
-      return next;
-    });
-  }, [messages]);
 
   useEffect(() => {
     if (!isJobTabEnabled && activeTab === "job") {
@@ -326,7 +257,7 @@ export function WizardSuggestionPanel({
         behavior: "smooth"
       });
     }
-  }, [chatTabActive, messages.length, conversationMessages.length, isSending]);
+  }, [chatTabActive, conversationMessages.length, isSending]);
 
   const handleSubmit = () => {
     if (!draftMessage.trim()) return;
@@ -340,11 +271,6 @@ export function WizardSuggestionPanel({
     }
     setActiveTab(tab);
   };
-
-  const suggestionMessages = useMemo(
-    () => messages.filter((message) => message.kind === "suggestion"),
-    [messages]
-  );
 
   return (
     <aside className="flex h-full min-h-[520px] max-h-[calc(100vh-48px)] flex-col gap-4 overflow-hidden rounded-3xl border border-primary-100 bg-neutral-50 p-5 shadow-lg shadow-primary-50">
@@ -398,71 +324,7 @@ export function WizardSuggestionPanel({
       </div>
 
       {chatTabActive ? (
-        <div className="flex min-h-0 flex-1 flex-col gap-4">
-          <section className="space-y-3 rounded-3xl border border-neutral-100 bg-white px-4 py-4 shadow-inner shadow-white">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                Suggestions for this step
-              </p>
-              <span className="text-[11px] font-semibold text-neutral-400">
-                {suggestionMessages.length} active
-              </span>
-            </div>
-            {suggestionMessages.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-neutral-200 bg-white p-4 text-xs text-neutral-500">
-                Complete the fields on this screen and I’ll suggest polished values tailored to each of them.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {suggestionMessages.map((message) => (
-                  <article
-                    key={message.id}
-                    className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700 shadow-sm"
-                  >
-                    {renderSuggestionContent(message)}
-                    {message.meta ? (
-                      <div className="mt-3 space-y-3 text-xs">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-primary-50 px-2 py-1 font-medium text-primary-600">
-                            {message.meta.fieldId}
-                          </span>
-                          {typeof message.meta.confidence === "number" ? (
-                            <span className="rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">
-                              {(message.meta.confidence * 100).toFixed(0)}% confident
-                            </span>
-                          ) : null}
-                        </div>
-                        {message.meta.rationale ? (
-                          <p className="whitespace-pre-wrap text-neutral-500">
-                            {message.meta.rationale}
-                          </p>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="w-full rounded-full bg-primary-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500"
-                          onClick={() => {
-                            setAcceptedMap((prev) => ({
-                              ...prev,
-                              [message.id]: true
-                            }));
-                            if (onToggleSuggestion) {
-                              onToggleSuggestion(message.meta, true);
-                            } else {
-                              onAcceptSuggestion(message.meta);
-                            }
-                          }}
-                        >
-                          Apply suggestion
-                        </button>
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-neutral-100 bg-white shadow-md shadow-primary-50">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-neutral-100 bg-white shadow-md shadow-primary-50">
             <header className="flex items-center justify-between border-b border-neutral-100 px-4 py-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
@@ -558,7 +420,6 @@ export function WizardSuggestionPanel({
               </div>
             </footer>
           </section>
-        </div>
       ) : (
         <div className="flex-1 overflow-y-auto rounded-3xl border border-neutral-100 bg-neutral-50 px-2 py-2 pr-1">
           <JobPreview jobState={jobState} />

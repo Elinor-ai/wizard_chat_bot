@@ -38,6 +38,61 @@ import { loadDraft, saveDraft, clearDraft } from "./draft-storage";
 
 const TOAST_TIMEOUT_MS = 4000;
 
+function getMessageTimestamp(message) {
+  if (!message) {
+    return null;
+  }
+  const { createdAt } = message;
+  if (createdAt instanceof Date) {
+    return createdAt.getTime();
+  }
+  if (typeof createdAt === "number") {
+    return createdAt;
+  }
+  if (typeof createdAt === "string") {
+    const parsed = Date.parse(createdAt);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function deriveConversationVersion(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return 0;
+  }
+  let latest = 0;
+  for (const message of messages) {
+    const timestamp = getMessageTimestamp(message);
+    if (Number.isFinite(timestamp)) {
+      latest = Math.max(latest, timestamp);
+    }
+  }
+  return latest || Date.now();
+}
+
+function previewContent(content, limit = 80) {
+  if (typeof content !== "string") {
+    return "";
+  }
+  const trimmed = content.trim();
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, limit - 3)}...`;
+}
+
+function summarizeConversationMessages(messages = []) {
+  return messages.map((message) => ({
+    id: message?.id,
+    role: message?.role,
+    createdAt:
+      message?.createdAt instanceof Date
+        ? message.createdAt.toISOString()
+        : message?.createdAt ?? null,
+    preview: previewContent(message?.content ?? "", 60),
+  }));
+}
+
 export function useWizardController({ user, initialJobId = null }) {
   const router = useRouter();
   const [wizardState, dispatch] = useReducer(
@@ -82,6 +137,7 @@ export function useWizardController({ user, initialJobId = null }) {
   const hydrationKey = `${user?.id ?? "anon"}:${initialJobId ?? "new"}`;
   const migratedJobIdRef = useRef(initialJobId ?? null);
   const lastHydratedKeyRef = useRef(null);
+  const hasNavigatedToJobRef = useRef(false);
   const debugEnabled = process.env.NODE_ENV !== "production";
   const debug = useCallback(
     (...messages) => {
@@ -245,12 +301,31 @@ export function useWizardController({ user, initialJobId = null }) {
     wizardState.currentStepIndex < REQUIRED_STEPS.length;
   const isLastStep = wizardState.currentStepIndex === totalSteps - 1;
 
-  useEffect(() => {
-    if (initialJobId || !wizardState.jobId) {
-      return;
-    }
-    router.replace(`/wizard/${wizardState.jobId}`);
-  }, [initialJobId, router, wizardState.jobId]);
+useEffect(() => {
+  if (initialJobId) {
+    return;
+  }
+
+  if (!wizardState.jobId) {
+    hasNavigatedToJobRef.current = false;
+    return;
+  }
+
+  if (wizardState.isChatting) {
+    debug("router:delay-job-navigation", {
+      jobId: wizardState.jobId,
+    });
+    return;
+  }
+
+  if (hasNavigatedToJobRef.current) {
+    return;
+  }
+
+  hasNavigatedToJobRef.current = true;
+  debug("router:navigate-to-job", { jobId: wizardState.jobId });
+  router.replace(`/wizard/${wizardState.jobId}`);
+}, [debug, initialJobId, router, wizardState.isChatting, wizardState.jobId]);
 
   useEffect(() => {
     if (initialJobId || !user?.id) {
@@ -496,6 +571,20 @@ export function useWizardController({ user, initialJobId = null }) {
     }
   }, [wizardState.currentStepIndex, wizardState.assistantMessages.length]);
 
+  useEffect(() => {
+    debug("copilot:state:update", {
+      jobId: wizardState.jobId,
+      version: wizardState.copilotConversationVersion,
+      messageCount: wizardState.copilotConversation.length,
+      messages: summarizeConversationMessages(wizardState.copilotConversation),
+    });
+  }, [
+    debug,
+    wizardState.copilotConversation,
+    wizardState.copilotConversationVersion,
+    wizardState.jobId,
+  ]);
+
   const allRequiredStepsCompleteInState = useMemo(
     () =>
       REQUIRED_STEPS.every((step) =>
@@ -632,16 +721,34 @@ export function useWizardController({ user, initialJobId = null }) {
 
   const loadCopilotConversation = useCallback(async () => {
     if (!user?.authToken || !wizardState.jobId) return;
+    debug("copilot:load:start", {
+      jobId: wizardState.jobId,
+    });
     try {
       const response = await fetchCopilotConversation({
         authToken: user.authToken,
         jobId: wizardState.jobId,
       });
+      const version = deriveConversationVersion(response.messages);
+      debug("copilot:load:success", {
+        jobId: wizardState.jobId,
+        version,
+        messageCount: response.messages?.length ?? 0,
+        messages: summarizeConversationMessages(response.messages),
+      });
       dispatch({
         type: "SET_COPILOT_CONVERSATION",
-        payload: response.messages ?? [],
+        payload: {
+          messages: response.messages ?? [],
+          version,
+          source: "load",
+        },
       });
     } catch (error) {
+      debug("copilot:load:error", {
+        jobId: wizardState.jobId,
+        error: error?.message,
+      });
       dispatch({
         type: "PUSH_ASSISTANT_MESSAGE",
         payload: {
@@ -654,7 +761,13 @@ export function useWizardController({ user, initialJobId = null }) {
         },
       });
     }
-  }, [dispatch, user?.authToken, user?.id, wizardState.jobId]);
+  }, [
+    debug,
+    dispatch,
+    user?.authToken,
+    user?.id,
+    wizardState.jobId,
+  ]);
 
   const announceAuthRequired = useCallback(() => {
     dispatch({
@@ -1563,6 +1676,10 @@ export function useWizardController({ user, initialJobId = null }) {
         return;
       }
 
+      debug("copilot:send:start", {
+        jobId: wizardState.jobId,
+        messagePreview: previewContent(trimmed, 80),
+      });
       dispatch({ type: "SET_CHAT_STATUS", payload: true });
 
       try {
@@ -1584,10 +1701,21 @@ export function useWizardController({ user, initialJobId = null }) {
           message: trimmed,
           currentStepId: currentStep?.id,
         });
+        const version = deriveConversationVersion(response.messages);
+        debug("copilot:send:success", {
+          jobId: ensuredJobId,
+          version,
+          messageCount: response.messages?.length ?? 0,
+          messages: summarizeConversationMessages(response.messages),
+        });
 
         dispatch({
           type: "SET_COPILOT_CONVERSATION",
-          payload: response.messages ?? [],
+          payload: {
+            messages: response.messages ?? [],
+            version,
+            source: "send",
+          },
         });
 
         if (Array.isArray(response.actions)) {
@@ -1600,6 +1728,10 @@ export function useWizardController({ user, initialJobId = null }) {
           });
         }
       } catch (error) {
+        debug("copilot:send:error", {
+          jobId: wizardState.jobId,
+          error: error?.message,
+        });
         dispatch({
           type: "PUSH_ASSISTANT_MESSAGE",
           payload: {
@@ -1617,6 +1749,7 @@ export function useWizardController({ user, initialJobId = null }) {
     [
       announceAuthRequired,
       currentStep?.id,
+      debug,
       loadCopilotConversation,
       onFieldChange,
       persistCurrentDraft,
