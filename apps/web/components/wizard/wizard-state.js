@@ -50,6 +50,7 @@ export function createInitialWizardState() {
     unsavedChanges: false,
     activeToast: null,
     numberDrafts: {},
+    copilotConversation: [],
   };
 }
 
@@ -290,6 +291,15 @@ export function wizardReducer(state, action) {
       return {
         ...state,
         isChatting: Boolean(action.payload),
+      };
+    }
+
+    case "SET_COPILOT_CONVERSATION": {
+      return {
+        ...state,
+        copilotConversation: Array.isArray(action.payload)
+          ? action.payload
+          : [],
       };
     }
 

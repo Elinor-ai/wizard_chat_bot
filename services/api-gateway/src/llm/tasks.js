@@ -3,6 +3,7 @@ import { buildRefinementInstructions } from "./prompts/refine.js";
 import { buildChannelRecommendationInstructions } from "./prompts/channels.js";
 import { buildChannelPickerInstructions } from "./prompts/channel-picker.js";
 import { buildChatPayload } from "./prompts/chat.js";
+import { buildCopilotAgentPrompt } from "./prompts/copilot-agent.js";
 import {
   buildAssetMasterPrompt,
   buildAssetChannelBatchPrompt,
@@ -16,6 +17,7 @@ import { parseRefinementResult } from "./parsers/refine.js";
 import { parseChannelResult } from "./parsers/channels.js";
 import { parseChannelPickerResult } from "./parsers/channel-picker.js";
 import { parseChatResult } from "./parsers/chat.js";
+import { parseCopilotAgentResult } from "./parsers/copilot-agent.js";
 import {
   parseAssetMasterResult,
   parseAssetChannelBatchResult,
@@ -90,6 +92,17 @@ export const TASK_REGISTRY = {
     maxTokens: 400,
     retries: 1,
     strictOnRetry: false,
+  },
+  copilot_agent: {
+    system:
+      "You are Wizard's recruiting copilot agent. Decide intelligently whether to call a tool or answer directly. Always return valid JSON.",
+    builder: buildCopilotAgentPrompt,
+    parser: parseCopilotAgentResult,
+    mode: "text",
+    temperature: 0.3,
+    maxTokens: { default: 800, gemini: 2048 },
+    retries: 1,
+    strictOnRetry: true,
   },
   asset_master: {
     system:

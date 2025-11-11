@@ -51,6 +51,12 @@ const DEFAULT_GEMINI_ASSET_MODEL =
   process.env.GEMINI_ASSET_MODEL ?? DEFAULT_GEMINI_CHAT_MODEL;
 const DEFAULT_GEMINI_VIDEO_MODEL = process.env.GEMINI_VIDEO_MODEL ?? DEFAULT_GEMINI_ASSET_MODEL;
 
+const DEFAULT_COPILOT_SPEC =
+  process.env.LLM_COPILOT_PROVIDER ??
+  process.env.LLM_CHAT_PROVIDER ??
+  `openai:${DEFAULT_OPENAI_CHAT_MODEL}`;
+const [DEFAULT_COPILOT_PROVIDER] = DEFAULT_COPILOT_SPEC.split(":");
+
 const providerSelectionConfig = {
   suggest: {
     env: "LLM_SUGGESTION_PROVIDER",
@@ -113,6 +119,15 @@ const providerSelectionConfig = {
     providerDefaults: {
       openai: DEFAULT_OPENAI_ASSET_MODEL,
       gemini: DEFAULT_GEMINI_ASSET_MODEL,
+    },
+  },
+  copilot_agent: {
+    env: "LLM_COPILOT_PROVIDER",
+    defaultProvider: DEFAULT_COPILOT_PROVIDER ?? "openai",
+    defaultSpec: DEFAULT_COPILOT_SPEC,
+    providerDefaults: {
+      openai: DEFAULT_OPENAI_CHAT_MODEL,
+      gemini: DEFAULT_GEMINI_CHAT_MODEL,
     },
   },
   video_storyboard: {
@@ -268,6 +283,36 @@ async function askChat({ userMessage, draftState, intent }) {
   } catch (error) {
     llmLogger.warn({ err: error }, "askChat orchestrator failure");
     return buildChatFallback({ draftState });
+  }
+}
+
+async function runCopilotAgent(context) {
+  try {
+    const result = await orchestrator.run("copilot_agent", context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model
+        }
+      };
+    }
+    return {
+      type: result.type,
+      tool: result.tool,
+      input: result.input,
+      message: result.message,
+      actions: result.actions ?? []
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "runCopilotAgent orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error)
+      }
+    };
   }
 }
 
@@ -500,4 +545,5 @@ export const llmClient = {
   askVideoStoryboard,
   askVideoCaption,
   askVideoCompliance,
+  runCopilotAgent
 };

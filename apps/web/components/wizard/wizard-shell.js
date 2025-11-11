@@ -75,6 +75,7 @@ export function WizardShell({ jobId = null }) {
     handleSuggestionToggle,
     fetchSuggestionsForStep,
     visibleAssistantMessages,
+    copilotConversation,
     isFetchingSuggestions,
     isChatting,
     copilotNextTeaser,
@@ -97,7 +98,7 @@ export function WizardShell({ jobId = null }) {
   const isGeneratingPack = isSaving;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
       <div className="space-y-6 rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100">
         <nav className="flex flex-wrap items-center gap-3 text-xs font-medium uppercase tracking-wide text-neutral-500">
           {steps.map((step, index) => {
@@ -664,6 +665,7 @@ export function WizardShell({ jobId = null }) {
 
       <WizardSuggestionPanel
         messages={visibleAssistantMessages}
+        copilotConversation={copilotConversation}
         onRefresh={() =>
           fetchSuggestionsForStep({
             stepId: currentStep?.id,

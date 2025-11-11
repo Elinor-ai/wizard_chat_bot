@@ -68,6 +68,10 @@ export {
   JobAssetRunStatusEnum
 } from "./schemas/job-asset.js";
 export {
+  CopilotMessageSchema,
+  WizardCopilotChatSchema
+} from "./schemas/copilot-chat.js";
+export {
   ShotPhaseEnum,
   VideoJobSnapshotSchema,
   StoryboardShotSchema,

@@ -31,7 +31,8 @@ import {
   fetchJobDraft,
   fetchStepSuggestions,
   persistJobDraft,
-  sendWizardChatMessage,
+  fetchCopilotConversation,
+  sendCopilotAgentMessage,
 } from "./wizard-services";
 import { loadDraft, saveDraft, clearDraft } from "./draft-storage";
 
@@ -628,6 +629,32 @@ export function useWizardController({ user, initialJobId = null }) {
   const persistMutation = useMutation({
     mutationFn: persistJobDraft,
   });
+
+  const loadCopilotConversation = useCallback(async () => {
+    if (!user?.authToken || !wizardState.jobId) return;
+    try {
+      const response = await fetchCopilotConversation({
+        authToken: user.authToken,
+        jobId: wizardState.jobId,
+      });
+      dispatch({
+        type: "SET_COPILOT_CONVERSATION",
+        payload: response.messages ?? [],
+      });
+    } catch (error) {
+      dispatch({
+        type: "PUSH_ASSISTANT_MESSAGE",
+        payload: {
+          id: `copilot-chat-${Date.now()}`,
+          role: "assistant",
+          kind: "error",
+          content:
+            error?.message ??
+            "I couldn't load the copilot conversation. Please try again shortly.",
+        },
+      });
+    }
+  }, [dispatch, user?.authToken, user?.id, wizardState.jobId]);
 
   const announceAuthRequired = useCallback(() => {
     dispatch({
@@ -1536,36 +1563,42 @@ export function useWizardController({ user, initialJobId = null }) {
         return;
       }
 
-      const userMessage = {
-        id: `user-${Date.now()}`,
-        role: "user",
-        kind: "user",
-        content: trimmed,
-      };
-
-      dispatch({
-        type: "PUSH_ASSISTANT_MESSAGE",
-        payload: userMessage,
-      });
       dispatch({ type: "SET_CHAT_STATUS", payload: true });
 
       try {
-        const response = await sendWizardChatMessage({
+        let ensuredJobId = wizardState.jobId;
+        if (!ensuredJobId) {
+          const persisted = await persistCurrentDraft({}, currentStep?.id);
+          if (!persisted?.savedId) {
+            throw new Error(
+              "I couldn’t save your draft yet. Please enter at least one field and try again."
+            );
+          }
+          ensuredJobId = persisted.savedId;
+          await loadCopilotConversation();
+        }
+
+        const response = await sendCopilotAgentMessage({
           authToken: user.authToken,
-          jobId: wizardState.jobId ?? undefined,
+          jobId: ensuredJobId,
           message: trimmed,
           currentStepId: currentStep?.id,
         });
 
         dispatch({
-          type: "PUSH_ASSISTANT_MESSAGE",
-          payload: {
-            id: `chat-${Date.now()}`,
-            role: "assistant",
-            kind: "reply",
-            content: response.assistantMessage,
-          },
+          type: "SET_COPILOT_CONVERSATION",
+          payload: response.messages ?? [],
         });
+
+        if (Array.isArray(response.actions)) {
+          response.actions.forEach((action) => {
+            if (action?.type === "field_update" && action.fieldId) {
+              onFieldChange(action.fieldId, action.value, {
+                preserveSuggestionMeta: false,
+              });
+            }
+          });
+        }
       } catch (error) {
         dispatch({
           type: "PUSH_ASSISTANT_MESSAGE",
@@ -1574,14 +1607,22 @@ export function useWizardController({ user, initialJobId = null }) {
             role: "assistant",
             kind: "error",
             content:
-              error.message ?? "I ran into an issue processing that request.",
+              error?.message ?? "I ran into an issue processing that request.",
           },
         });
       } finally {
         dispatch({ type: "SET_CHAT_STATUS", payload: false });
       }
     },
-    [announceAuthRequired, currentStep?.id, user, wizardState.jobId]
+    [
+      announceAuthRequired,
+      currentStep?.id,
+      loadCopilotConversation,
+      onFieldChange,
+      persistCurrentDraft,
+      user,
+      wizardState.jobId,
+    ]
   );
 
   const setCustomCapsuleActive = useCallback(
@@ -1629,6 +1670,10 @@ export function useWizardController({ user, initialJobId = null }) {
     [wizardState.hoveredCapsules]
   );
 
+  useEffect(() => {
+    loadCopilotConversation();
+  }, [loadCopilotConversation]);
+
   return {
     user,
     state: wizardState.state,
@@ -1653,6 +1698,7 @@ export function useWizardController({ user, initialJobId = null }) {
     // currentOptionalBanner,
     assistantMessages: wizardState.assistantMessages,
     visibleAssistantMessages,
+    copilotConversation: wizardState.copilotConversation,
     isChatting: wizardState.isChatting,
     isFetchingSuggestions: wizardState.isFetchingSuggestions,
     hiddenFields: wizardState.hiddenFields,

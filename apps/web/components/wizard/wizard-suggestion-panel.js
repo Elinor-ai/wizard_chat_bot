@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { clsx } from "../../lib/cn";
 
 const EXPERIENCE_LABELS = {
@@ -270,6 +270,7 @@ function JobPreview({ jobState }) {
 
 export function WizardSuggestionPanel({
   messages,
+  copilotConversation = [],
   isLoading,
   isSending,
   onRefresh,
@@ -283,6 +284,20 @@ export function WizardSuggestionPanel({
   const [draftMessage, setDraftMessage] = useState("");
   const [acceptedMap, setAcceptedMap] = useState({});
   const [activeTab, setActiveTab] = useState("chat");
+  const conversationMessages = Array.isArray(copilotConversation)
+    ? copilotConversation
+    : [];
+  const scrollContainerRef = useRef(null);
+  const textareaRef = useRef(null);
+  const chatTabActive = activeTab === "chat";
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+  }, [draftMessage]);
 
   useEffect(() => {
     setAcceptedMap((prev) => {
@@ -302,6 +317,17 @@ export function WizardSuggestionPanel({
     }
   }, [activeTab, isJobTabEnabled]);
 
+  useEffect(() => {
+    if (!chatTabActive) return;
+    const node = scrollContainerRef.current;
+    if (node) {
+      node.scrollTo({
+        top: node.scrollHeight,
+        behavior: "smooth"
+      });
+    }
+  }, [chatTabActive, messages.length, conversationMessages.length, isSending]);
+
   const handleSubmit = () => {
     if (!draftMessage.trim()) return;
     onSendMessage(draftMessage);
@@ -315,16 +341,19 @@ export function WizardSuggestionPanel({
     setActiveTab(tab);
   };
 
-  const chatTabActive = activeTab === "chat";
+  const suggestionMessages = useMemo(
+    () => messages.filter((message) => message.kind === "suggestion"),
+    [messages]
+  );
 
   return (
-    <aside className="flex h-full flex-col gap-4 rounded-3xl border border-primary-100 bg-primary-50/70 p-5 shadow-sm shadow-primary-100">
+    <aside className="flex h-full min-h-[520px] max-h-[calc(100vh-48px)] flex-col gap-4 overflow-hidden rounded-3xl border border-primary-100 bg-neutral-50 p-5 shadow-lg shadow-primary-50">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-primary-600">
-            LLM Copilot
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-primary-700">
+            Chat CoPilot
           </h2>
-          <p className="text-xs text-primary-500">
+          <p className="text-xs text-neutral-500">
             Ask questions, review suggestions, and merge updates without
             overwriting the confirmed record.
           </p>
@@ -334,19 +363,9 @@ export function WizardSuggestionPanel({
             </p>
           ) : null}
         </div>
-        {chatTabActive ? (
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="rounded-full border border-primary-200 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-600 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {isLoading ? "Thinking…" : "Refresh"}
-          </button>
-        ) : null}
       </header>
 
-      <div className="rounded-full bg-white/50 p-1 text-xs font-semibold uppercase tracking-wide text-primary-500">
+      <div className="rounded-full bg-neutral-100 p-1 text-xs font-semibold uppercase tracking-wide text-primary-500">
         <div className="flex gap-1">
           <button
             type="button"
@@ -379,47 +398,45 @@ export function WizardSuggestionPanel({
       </div>
 
       {chatTabActive ? (
-        <>
-          <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-            {messages.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-primary-200 bg-white/60 p-4 text-xs text-primary-500">
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
+          <section className="space-y-3 rounded-3xl border border-neutral-100 bg-white px-4 py-4 shadow-inner shadow-white">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Suggestions for this step
+              </p>
+              <span className="text-[11px] font-semibold text-neutral-400">
+                {suggestionMessages.length} active
+              </span>
+            </div>
+            {suggestionMessages.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-neutral-200 bg-white p-4 text-xs text-neutral-500">
                 Complete the fields on this screen and I’ll suggest polished values tailored to each of them.
               </p>
             ) : (
-              messages.map((message) => (
-                <article
-                  key={message.id}
-                  className={clsx(
-                    "max-w-full rounded-3xl border px-4 py-3 text-sm shadow-sm",
-                    message.role === "user"
-                      ? "ml-auto border-primary-200 bg-primary-100 text-primary-800"
-                      : "mr-auto border-primary-100 bg-white text-neutral-700"
-                  )}
-                >
-                  {message.kind === "suggestion"
-                    ? renderSuggestionContent(message)
-                    : !["followUp", "skip"].includes(message.kind)
-                      ? (
-                        <p className="whitespace-pre-wrap">{message.content}</p>
-                        )
-                      : null}
-
-                  {message.kind === "suggestion" && message.meta ? (
-                    <div className="mt-3 space-y-3 text-xs">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-primary-100 px-2 py-1 font-medium text-primary-700">
-                          {message.meta.fieldId}
-                        </span>
-                        {typeof message.meta.confidence === "number" ? (
-                          <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-700">
-                            {(message.meta.confidence * 100).toFixed(0)}% confident
+              <div className="space-y-3">
+                {suggestionMessages.map((message) => (
+                  <article
+                    key={message.id}
+                    className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700 shadow-sm"
+                  >
+                    {renderSuggestionContent(message)}
+                    {message.meta ? (
+                      <div className="mt-3 space-y-3 text-xs">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-primary-50 px-2 py-1 font-medium text-primary-600">
+                            {message.meta.fieldId}
                           </span>
+                          {typeof message.meta.confidence === "number" ? (
+                            <span className="rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">
+                              {(message.meta.confidence * 100).toFixed(0)}% confident
+                            </span>
+                          ) : null}
+                        </div>
+                        {message.meta.rationale ? (
+                          <p className="whitespace-pre-wrap text-neutral-500">
+                            {message.meta.rationale}
+                          </p>
                         ) : null}
-                      </div>
-                      <p className="whitespace-pre-wrap text-neutral-500">
-                        {message.meta.rationale}
-                      </p>
-                      <div className="space-y-2 rounded-2xl border border-primary-200 bg-primary-50/60 px-3 py-2">
                         <button
                           type="button"
                           className="w-full rounded-full bg-primary-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500"
@@ -438,51 +455,112 @@ export function WizardSuggestionPanel({
                           Apply suggestion
                         </button>
                       </div>
-                    </div>
-                  ) : null}
-
-                  {message.kind === "followUp" ? (
-                    <p className="mt-2 text-xs font-medium text-primary-600">
-                      Follow-up: {message.content}
-                    </p>
-                  ) : null}
-
-                  {message.kind === "skip" ? (
-                    <p className="mt-2 text-xs text-neutral-500">{message.content}</p>
-                  ) : null}
-
-                  {message.kind === "error" ? (
-                    <p className="mt-2 text-xs text-red-500">
-                      {message.content ?? "Something went wrong. Please retry."}
-                    </p>
-                  ) : null}
-                </article>
-              ))
+                    ) : null}
+                  </article>
+                ))}
+              </div>
             )}
-          </div>
+          </section>
 
-          <div className="space-y-3 rounded-2xl border border-primary-100 bg-white/80 p-4">
-            <label className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-              Ask your copilot
-            </label>
-            <textarea
-              className="h-24 w-full resize-none rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
-              placeholder="e.g. Draft a benefits summary tailored to senior backend engineers."
-              value={draftMessage}
-              onChange={(event) => setDraftMessage(event.target.value)}
-            />
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isSending}
-              className="w-full rounded-full bg-primary-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-neutral-100 bg-white shadow-md shadow-primary-50">
+            <header className="flex items-center justify-between border-b border-neutral-100 px-4 py-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Conversation
+                </p>
+                <p className="text-[11px] text-neutral-400">
+                  Ask anything about this job or apply edits directly.
+                </p>
+              </div>
+              {isSending ? (
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-primary-500">
+                  Typing…
+                </span>
+              ) : null}
+            </header>
+            <div
+              ref={scrollContainerRef}
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-white px-4 py-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-neutral-200 hover:scrollbar-thumb-neutral-300"
             >
-              {isSending ? "Responding…" : "Send"}
-            </button>
-          </div>
-        </>
+              {conversationMessages.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-neutral-200 bg-white p-4 text-xs text-neutral-500">
+                  Ask your copilot for definitions, rewrites, or next steps.
+                </p>
+              ) : (
+                conversationMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={clsx(
+                      "flex w-full",
+                      message.role === "user" ? "justify-end" : "justify-start"
+                    )}
+                  >
+                    <article
+                      className={clsx(
+                        "max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm transition",
+                        message.role === "user"
+                          ? "rounded-br-lg bg-primary-600 text-white"
+                          : message.role === "assistant"
+                            ? "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-800"
+                            : "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-600"
+                      )}
+                    >
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      {message.metadata?.actions?.length ? (
+                        <div className="mt-2 text-xs text-primary-100">
+                          Applied {message.metadata.actions.length} update
+                          {message.metadata.actions.length > 1 ? "s" : ""} to the form.
+                        </div>
+                      ) : null}
+                    </article>
+                  </div>
+                ))
+              )}
+            </div>
+            <footer className="border-t border-neutral-100 bg-white/95 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <textarea
+                  ref={textareaRef}
+                  className="flex-1 resize-none rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 outline-none transition placeholder:text-neutral-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 max-h-28 overflow-y-auto"
+                  placeholder="Ask your copilot..."
+                  value={draftMessage}
+                  onChange={(event) => setDraftMessage(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
+                  rows={2}
+                />
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={isSending || !draftMessage.trim()}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                  aria-label="Send message"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m22 2-7 20-4-9-9-4Z" />
+                    <path d="m22 2-11 11" />
+                  </svg>
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>
       ) : (
-        <div className="flex-1">
+        <div className="flex-1 overflow-y-auto rounded-3xl border border-neutral-100 bg-neutral-50 px-2 py-2 pr-1">
           <JobPreview jobState={jobState} />
         </div>
       )}

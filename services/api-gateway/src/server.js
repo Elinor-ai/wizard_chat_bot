@@ -6,6 +6,7 @@ import path from "node:path";
 import { notFound, errorHandler } from "@wizard/utils";
 import { wizardRouter } from "./routes/wizard.js";
 import { chatRouter } from "./routes/chat.js";
+import { copilotRouter } from "./routes/copilot.js";
 import { authRouter } from "./routes/auth.js";
 import { assetsRouter } from "./routes/assets.js";
 import { dashboardRouter } from "./routes/dashboard.js";
@@ -43,6 +44,7 @@ export function createApp({ logger, firestore, llmClient }) {
 
   app.use("/auth", authRouter({ firestore, logger }));
   app.use("/contact", contactRouter({ logger }));
+  app.use("/wizard/copilot", authMiddleware, copilotRouter({ firestore, llmClient, logger }));
   app.use("/wizard", authMiddleware, wizardRouter({ firestore, logger, llmClient }));
   app.use("/chat", authMiddleware, chatRouter({ firestore, llmClient, logger }));
   app.use("/assets", authMiddleware, assetsRouter({ firestore, logger }));

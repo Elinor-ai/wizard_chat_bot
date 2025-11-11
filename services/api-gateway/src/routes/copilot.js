@@ -1,0 +1,187 @@
+import { Router } from "express";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { wrapAsync, httpError } from "@wizard/utils";
+import { JobSchema, JobSuggestionSchema } from "@wizard/core";
+import { WizardCopilotAgent } from "../copilot/agent.js";
+import { COPILOT_TOOLS } from "../copilot/tools.js";
+import { loadCopilotHistory, appendCopilotMessages } from "../copilot/chat-store.js";
+import { buildJobSnapshot } from "../wizard/job-intake.js";
+
+const JOB_COLLECTION = "jobs";
+const SUGGESTION_COLLECTION = "jobSuggestions";
+
+const postRequestSchema = z.object({
+  jobId: z.string(),
+  userMessage: z.string().min(1),
+  currentStepId: z.string().optional()
+});
+
+const getRequestSchema = z.object({
+  jobId: z.string()
+});
+
+function getAuthenticatedUserId(req) {
+  const userId = req.user?.id;
+  if (!userId) {
+    throw httpError(401, "Unauthorized");
+  }
+  return userId;
+}
+
+async function loadJobForUser({ firestore, jobId, userId }) {
+  const doc = await firestore.getDocument(JOB_COLLECTION, jobId);
+  if (!doc) {
+    throw httpError(404, "Job not found");
+  }
+  if (doc.ownerUserId && doc.ownerUserId !== userId) {
+    throw httpError(403, "You do not have access to this job");
+  }
+  const parsed = JobSchema.safeParse(doc);
+  if (!parsed.success) {
+    throw httpError(500, "Job document is invalid");
+  }
+  return parsed.data;
+}
+
+async function loadSuggestionSnapshot({ firestore, jobId }) {
+  const doc = await firestore.getDocument(SUGGESTION_COLLECTION, jobId);
+  if (!doc) return [];
+  const parsed = JobSuggestionSchema.safeParse(doc);
+  if (!parsed.success || !parsed.data.candidates) {
+    return [];
+  }
+  return Object.values(parsed.data.candidates);
+}
+
+function serializeMessages(messages = []) {
+  return messages.map((message) => ({
+    ...message,
+    createdAt:
+      message.createdAt instanceof Date
+        ? message.createdAt.toISOString()
+        : message.createdAt
+  }));
+}
+
+function buildMessage({ role, type, content, metadata }) {
+  return {
+    id: randomUUID(),
+    role,
+    type,
+    content,
+    metadata: metadata ?? null,
+    createdAt: new Date()
+  };
+}
+
+function sanitizeCopilotReply(input) {
+  if (!input) return "";
+  return input
+    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, ""))
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^>\s?/gm, "")
+    .replace(/#+\s*/g, "")
+    .trim();
+}
+
+export function copilotRouter({ firestore, llmClient, logger }) {
+  const router = Router();
+  const agent = new WizardCopilotAgent({
+    llmClient,
+    tools: COPILOT_TOOLS,
+    logger
+  });
+
+  router.get(
+    "/chat",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const query = getRequestSchema.parse(req.query ?? {});
+      await loadJobForUser({ firestore, jobId: query.jobId, userId });
+      const history = await loadCopilotHistory({
+        firestore,
+        jobId: query.jobId,
+        limit: 20
+      });
+      res.json({
+        jobId: query.jobId,
+        messages: serializeMessages(history)
+      });
+    })
+  );
+
+  router.post(
+    "/chat",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const payload = postRequestSchema.parse(req.body ?? {});
+      const job = await loadJobForUser({
+        firestore,
+        jobId: payload.jobId,
+        userId
+      });
+
+      const [conversation, suggestions] = await Promise.all([
+        loadCopilotHistory({ firestore, jobId: payload.jobId, limit: 8 }),
+        loadSuggestionSnapshot({ firestore, jobId: payload.jobId })
+      ]);
+
+      const toolContext = {
+        firestore,
+        logger,
+        cache: {}
+      };
+
+      const agentResult = await agent.run({
+        jobId: payload.jobId,
+        userId,
+        userMessage: payload.userMessage,
+        currentStepId: payload.currentStepId,
+        conversation,
+        jobSnapshot: buildJobSnapshot(job),
+        suggestions,
+        toolContext
+      });
+
+      const assistantReply =
+        sanitizeCopilotReply(agentResult.reply) ||
+        "All set—let me know what you’d like to adjust next.";
+      const history = await appendCopilotMessages({
+        firestore,
+        jobId: payload.jobId,
+        messages: [
+          buildMessage({
+            role: "user",
+            type: "user",
+            content: payload.userMessage
+          }),
+          buildMessage({
+            role: "assistant",
+            type: "assistant",
+            content: assistantReply,
+            metadata: {
+              actions: agentResult.actions ?? []
+            }
+          })
+        ],
+        limit: 20,
+        now: new Date()
+      });
+
+      res.json({
+        jobId: payload.jobId,
+        messages: serializeMessages(history),
+        actions: agentResult.actions ?? []
+      });
+    })
+  );
+
+  return router;
+}

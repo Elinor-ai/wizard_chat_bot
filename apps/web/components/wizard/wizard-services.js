@@ -54,17 +54,21 @@ export async function fetchStepSuggestions({
   );
 }
 
-export async function sendWizardChatMessage({
+export async function fetchCopilotConversation({ authToken, jobId }) {
+  return WizardApi.fetchCopilotConversation(jobId, { authToken });
+}
+
+export async function sendCopilotAgentMessage({
   authToken,
   jobId,
   message,
-  currentStepId,
+  currentStepId
 }) {
-  return WizardApi.sendChatMessage(
+  return WizardApi.sendCopilotMessage(
     {
-      jobId: jobId ?? undefined,
+      jobId,
       userMessage: message,
-      intent: { currentStepId },
+      currentStepId
     },
     { authToken }
   );

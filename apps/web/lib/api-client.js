@@ -309,8 +309,35 @@ const mergeResponseSchema = z.object({
   status: z.string()
 });
 
-const chatResponseSchema = z.object({
-  assistantMessage: z.string()
+const copilotMessageSchema = z
+  .object({
+    id: z.string(),
+    role: z.string(),
+    type: z.string().optional().nullable(),
+    content: z.string(),
+    createdAt: z.union([z.string(), z.instanceof(Date)]),
+    metadata: z.record(z.string(), z.unknown()).optional().nullable()
+  })
+  .transform((data) => ({
+    ...data,
+    createdAt:
+      data.createdAt instanceof Date
+        ? data.createdAt
+        : new Date(data.createdAt)
+  }));
+
+const copilotConversationResponseSchema = z.object({
+  jobId: z.string(),
+  messages: z.array(copilotMessageSchema).default([]),
+  actions: z
+    .array(
+      z.object({
+        type: z.string(),
+        fieldId: z.string().optional(),
+        value: z.unknown().optional()
+      })
+    )
+    .optional()
 });
 
 const dashboardSummarySchema = z.object({
@@ -690,8 +717,25 @@ export const WizardApi = {
     return mergeResponseSchema.parse(data);
   },
 
-  async sendChatMessage(payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/chat/message`, {
+  async fetchCopilotConversation(jobId, options = {}) {
+    const params = new URLSearchParams({ jobId });
+    const response = await fetch(`${API_BASE_URL}/wizard/copilot/chat?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load copilot conversation");
+    }
+
+    const data = await response.json();
+    return copilotConversationResponseSchema.parse(data);
+  },
+
+  async sendCopilotMessage(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/wizard/copilot/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -701,11 +745,11 @@ export const WizardApi = {
     });
 
     if (!response.ok) {
-      throw new Error("Chat message failed");
+      throw new Error("Copilot message failed");
     }
 
     const data = await response.json();
-    return chatResponseSchema.parse(data);
+    return copilotConversationResponseSchema.parse(data);
   }
 };
 
