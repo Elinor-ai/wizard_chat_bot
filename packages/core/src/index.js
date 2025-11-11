@@ -30,6 +30,12 @@ export {
   CHANNEL_IDS,
   ChannelIdEnum
 } from "./common/channels.js";
+export {
+  VIDEO_CHANNEL_SPECS,
+  VIDEO_CHANNEL_SPEC_MAP,
+  VideoSpecSchema,
+  resolveVideoSpec
+} from "./common/video-specs.js";
 export { CreditLedgerEntrySchema } from "./common/credit-ledger.js";
 export { EventEnvelopeSchema } from "./common/event-envelope.js";
 export {
@@ -61,3 +67,20 @@ export {
   JobAssetStatusEnum,
   JobAssetRunStatusEnum
 } from "./schemas/job-asset.js";
+export {
+  ShotPhaseEnum,
+  VideoJobSnapshotSchema,
+  StoryboardShotSchema,
+  CaptionSchema,
+  VideoThumbnailSchema,
+  ComplianceFlagSchema,
+  VideoQaItemSchema,
+  VideoTrackingSchema,
+  VideoAssetManifestSchema,
+  VideoGenerationMetricsSchema,
+  VideoRenderTaskSchema,
+  VideoPublishTaskSchema,
+  VideoAuditLogEntrySchema,
+  VideoLibraryStatusEnum,
+  VideoLibraryItemSchema
+} from "./schemas/video-library.js";
