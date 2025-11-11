@@ -1344,17 +1344,17 @@ useEffect(() => {
         <LoadingState label={blockingSpinnerLabel} />
       ) : (
         <>
-          {currentStep === "refine" && summary ? (
-            <div className="rounded-2xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-700">
-              <p className="font-semibold uppercase tracking-wide text-xs text-primary-500">
-                Summary of improvements
-              </p>
-              <p className="mt-1 whitespace-pre-wrap text-sm">{summary}</p>
-            </div>
-          ) : null}
-
           {currentStep === "refine" ? (
-            <>
+            <section className="space-y-6 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+              {summary ? (
+                <div className="rounded-2xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-700">
+                  <p className="font-semibold uppercase tracking-wide text-xs text-primary-500">
+                    Summary of improvements
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm">{summary}</p>
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs font-semibold uppercase tracking-wide">
                   <button
@@ -1396,7 +1396,7 @@ useEffect(() => {
                   />
                 </div>
 
-                <section className="space-y-3 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+                <div className="space-y-3 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
                   <h2 className="text-lg font-semibold text-neutral-900">
                     Choose your final draft
                   </h2>
@@ -1417,9 +1417,9 @@ useEffect(() => {
                   >
                     {isFinalizing ? "Gathering recommendations…" : "Confirm & pick channels"}
                   </button>
-                </section>
+                </div>
               </div>
-            </>
+            </section>
           ) : null}
 
           {currentStep === "channels" ? (

@@ -31,6 +31,7 @@ function capsuleClassName(isActive, isHovered) {
 export function WizardShell({ jobId = null }) {
   const { user } = useUser();
   const controller = useWizardController({ user, initialJobId: jobId });
+  const [logoErrors, setLogoErrors] = useState({});
 
   if (!user?.authToken) {
     return (
@@ -87,8 +88,6 @@ export function WizardShell({ jobId = null }) {
     activeToastClassName,
     isHydrated,
   } = controller;
-
-  const [logoErrors, setLogoErrors] = useState({});
 
   const optionalStepCount = OPTIONAL_STEPS.length;
   const progressPercent =
