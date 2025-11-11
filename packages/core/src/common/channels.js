@@ -223,7 +223,7 @@ export const CHANNEL_CATALOG = [
     geo: "global",
     strengths: ["hourly", "healthcare", "logistics_trades", "retail", "hospitality", "high_volume"],
     media: ["video", "image"],
-    notes: "Select Special Ad Category: Employment; rapid apply via instant forms."
+    notes: "Select Special Ad Category: Employment; rapid apply via instant forms and Instagram Reels placements."
   },
   {
     id: "FACEBOOK_JOBS_US",
@@ -254,8 +254,8 @@ export const CHANNEL_CATALOG = [
     name: "X (Twitter) Hiring",
     geo: "global",
     strengths: ["tech", "media", "startup", "executive"],
-    media: ["text", "image"],
-    notes: "Requires Verified Organization to add Jobs tab; good for senior/tech audiences."
+    media: ["text", "image", "video"],
+    notes: "Requires Verified Organization to add Jobs tab; short video posts drive executive/tech reach."
   },
   {
     id: "REDDIT_ADS",

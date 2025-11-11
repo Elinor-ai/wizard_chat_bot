@@ -26,6 +26,8 @@ const DEFAULT_OPENAI_ASSET_MODEL =
   process.env.OPENAI_ASSET_MODEL ??
   process.env.LLM_ASSET_MODEL ??
   DEFAULT_OPENAI_CHANNEL_MODEL;
+const DEFAULT_OPENAI_VIDEO_MODEL =
+  process.env.OPENAI_VIDEO_MODEL ?? DEFAULT_OPENAI_ASSET_MODEL;
 
 const OPENAI_API_KEY =
   process.env.OPENAI_API_KEY ?? process.env.LLM_CHAT_API_KEY ?? null;
@@ -47,6 +49,7 @@ const DEFAULT_GEMINI_CHANNEL_MODEL =
   process.env.GEMINI_CHANNEL_MODEL ?? "gemini-flash-latest";
 const DEFAULT_GEMINI_ASSET_MODEL =
   process.env.GEMINI_ASSET_MODEL ?? DEFAULT_GEMINI_CHAT_MODEL;
+const DEFAULT_GEMINI_VIDEO_MODEL = process.env.GEMINI_VIDEO_MODEL ?? DEFAULT_GEMINI_ASSET_MODEL;
 
 const providerSelectionConfig = {
   suggest: {
@@ -110,6 +113,33 @@ const providerSelectionConfig = {
     providerDefaults: {
       openai: DEFAULT_OPENAI_ASSET_MODEL,
       gemini: DEFAULT_GEMINI_ASSET_MODEL,
+    },
+  },
+  video_storyboard: {
+    env: "LLM_VIDEO_PROVIDER",
+    defaultProvider: "openai",
+    defaultSpec: `openai:${DEFAULT_OPENAI_VIDEO_MODEL}`,
+    providerDefaults: {
+      openai: DEFAULT_OPENAI_VIDEO_MODEL,
+      gemini: DEFAULT_GEMINI_VIDEO_MODEL,
+    },
+  },
+  video_caption: {
+    env: "LLM_VIDEO_PROVIDER",
+    defaultProvider: "openai",
+    defaultSpec: `openai:${DEFAULT_OPENAI_VIDEO_MODEL}`,
+    providerDefaults: {
+      openai: DEFAULT_OPENAI_VIDEO_MODEL,
+      gemini: DEFAULT_GEMINI_VIDEO_MODEL,
+    },
+  },
+  video_compliance: {
+    env: "LLM_VIDEO_PROVIDER",
+    defaultProvider: "openai",
+    defaultSpec: `openai:${DEFAULT_OPENAI_VIDEO_MODEL}`,
+    providerDefaults: {
+      openai: DEFAULT_OPENAI_VIDEO_MODEL,
+      gemini: DEFAULT_GEMINI_VIDEO_MODEL,
     },
   },
 };
@@ -370,6 +400,94 @@ async function askAssetAdapt(context) {
   }
 }
 
+async function askVideoStoryboard(context) {
+  try {
+    const result = await orchestrator.run("video_storyboard", context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model
+        }
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      shots: result.shots ?? [],
+      thumbnail: result.thumbnail ?? null,
+      metadata: result.metadata ?? null
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "askVideoStoryboard orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error)
+      }
+    };
+  }
+}
+
+async function askVideoCaption(context) {
+  try {
+    const result = await orchestrator.run("video_caption", context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model
+        }
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      caption: result.caption ?? null,
+      metadata: result.metadata ?? null
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "askVideoCaption orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error)
+      }
+    };
+  }
+}
+
+async function askVideoCompliance(context) {
+  try {
+    const result = await orchestrator.run("video_compliance", context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model
+        }
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      flags: result.flags ?? [],
+      metadata: result.metadata ?? null
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "askVideoCompliance orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error)
+      }
+    };
+  }
+}
+
 export const llmClient = {
   askChat,
   askSuggestions,
@@ -379,4 +497,7 @@ export const llmClient = {
   askAssetMaster,
   askAssetChannelBatch,
   askAssetAdapt,
+  askVideoStoryboard,
+  askVideoCaption,
+  askVideoCompliance,
 };

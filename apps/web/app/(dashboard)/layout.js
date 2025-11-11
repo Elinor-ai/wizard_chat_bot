@@ -11,6 +11,7 @@ import {
   Images,
   Target,
   Coins,
+  Clapperboard,
   ChevronLeft,
   PanelLeftClose,
   PanelRightOpen,
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/dashboard", label: "Overview", Icon: LayoutDashboard },
   { href: "/wizard", label: "Job Wizard", Icon: Sparkles },
   { href: "/assets", label: "Assets", Icon: Images },
+  { href: "/videos", label: "Videos", Icon: Clapperboard },
   { href: "/campaigns", label: "Campaigns", Icon: Target },
   { href: "/credits", label: "Credits", Icon: Coins },
 ];

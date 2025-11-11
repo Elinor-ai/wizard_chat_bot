@@ -773,3 +773,338 @@ export const DashboardApi = {
     return dashboardActivityResponseSchema.parse(data).events;
   }
 };
+
+const videoThumbnailSchema = z
+  .object({
+    description: z.string().optional().nullable(),
+    overlayText: z.string().optional().nullable()
+  })
+  .optional()
+  .transform((data) => data ?? null);
+
+const videoJobSnapshotSchema = z.object({
+  jobId: z.string(),
+  title: z.string(),
+  company: z.string().nullable().optional(),
+  geo: z.string().nullable().optional(),
+  locationPolicy: z.string().nullable().optional(),
+  payRange: z.string().nullable().optional(),
+  benefits: z.array(z.string()).default([]),
+  roleFamily: z.string().nullable().optional()
+});
+
+const storyboardShotSchema = z.object({
+  id: z.string(),
+  phase: z.string(),
+  order: z.number(),
+  startSeconds: z.number(),
+  durationSeconds: z.number(),
+  visual: z.string().optional().nullable(),
+  onScreenText: z.string().optional().nullable(),
+  voiceOver: z.string().optional().nullable()
+});
+
+const videoCaptionSchema = z.object({
+  text: z.string(),
+  hashtags: z.array(z.string()).default([])
+});
+
+const videoManifestSchema = z.object({
+  manifestId: z.string(),
+  version: z.number(),
+  placementName: z.string(),
+  job: videoJobSnapshotSchema,
+  storyboard: z.array(storyboardShotSchema).default([]),
+  caption: videoCaptionSchema,
+  thumbnail: videoThumbnailSchema,
+  compliance: z
+    .object({
+      flags: z
+        .array(
+          z.object({
+            id: z.string(),
+            label: z.string(),
+            severity: z.string(),
+            details: z.string().nullable().optional()
+          })
+        )
+        .default([]),
+      qaChecklist: z
+        .array(
+          z.object({
+            id: z.string(),
+            label: z.string(),
+            status: z.string(),
+            details: z.string().nullable().optional()
+          })
+        )
+        .default([])
+    })
+    .default({ flags: [], qaChecklist: [] }),
+  tracking: z
+    .object({
+      utmSource: z.string(),
+      utmMedium: z.string(),
+      utmCampaign: z.string(),
+      utmContent: z.string()
+    })
+    .optional()
+});
+
+const generationMetricsSchema = z
+  .object({
+    secondsGenerated: z.number().nullable().optional(),
+    extendsRequested: z.number().nullable().optional(),
+    extendsCompleted: z.number().nullable().optional(),
+    model: z.string().nullable().optional(),
+    tier: z.string().nullable().optional(),
+    costEstimateUsd: z.number().nullable().optional(),
+    synthIdWatermark: z.boolean().nullable().optional()
+  })
+  .nullable()
+  .optional();
+
+const videoListItemSchema = z.object({
+  id: z.string(),
+  jobId: z.string(),
+  jobTitle: z.string(),
+  channelId: z.string(),
+  channelName: z.string(),
+  placementName: z.string(),
+  status: z.string(),
+  manifestVersion: z.number(),
+  durationSeconds: z.number().nullable().optional(),
+  updatedAt: z.union([z.string(), z.date()]).optional(),
+  thumbnail: videoThumbnailSchema,
+  hasVideo: z.boolean().optional().default(false)
+});
+
+const videoDetailSchema = z.object({
+  id: z.string(),
+  jobId: z.string(),
+  jobSnapshot: videoJobSnapshotSchema,
+  channelId: z.string(),
+  channelName: z.string(),
+  placementName: z.string(),
+  status: z.string(),
+  manifestVersion: z.number(),
+  manifest: videoManifestSchema,
+  renderTask: z.record(z.string(), z.unknown()).nullable().optional(),
+  publishTask: z.record(z.string(), z.unknown()).nullable().optional(),
+  generationMetrics: generationMetricsSchema,
+  analytics: z.record(z.string(), z.unknown()).default({}),
+  auditLog: z
+    .array(
+      z.object({
+        id: z.string(),
+        type: z.string(),
+        message: z.string(),
+        occurredAt: z.union([z.string(), z.date()])
+      })
+    )
+    .default([]),
+  playback: z
+    .object({
+      type: z.string(),
+      videoUrl: z.string().nullable().optional(),
+      posterUrl: z.string().nullable().optional(),
+      captionFileUrl: z.string().nullable().optional(),
+      storyboard: z.array(storyboardShotSchema).optional(),
+      durationSeconds: z.number().optional(),
+      caption: videoCaptionSchema.optional(),
+      synthesis: z
+        .object({
+          clipId: z.string().nullable().optional(),
+          extends: z
+            .array(
+              z.object({
+                hop: z.number().optional(),
+                clipId: z.string().nullable().optional()
+              })
+            )
+            .optional()
+        })
+        .nullable()
+        .optional()
+    })
+    .nullable()
+    .optional(),
+  trackingString: z.string().nullable().optional(),
+  createdAt: z.union([z.string(), z.date()]).optional(),
+  updatedAt: z.union([z.string(), z.date()]).optional()
+});
+
+const videoJobsResponseSchema = z.object({
+  jobs: z
+    .array(
+      z.object({
+        id: z.string(),
+        title: z.string(),
+        company: z.string().nullable().optional(),
+        location: z.string().optional(),
+        payRange: z.string().nullable().optional(),
+        benefits: z.array(z.string()).default([])
+      })
+    )
+    .default([])
+});
+
+export const VideoLibraryApi = {
+  async fetchItems(filters = {}, options = {}) {
+    const params = new URLSearchParams();
+    if (filters.channelId) params.set("channelId", filters.channelId);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.geo) params.set("geo", filters.geo);
+    if (filters.roleFamily) params.set("roleFamily", filters.roleFamily);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    const response = await fetch(`${API_BASE_URL}/videos${query}`, {
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load video library");
+    }
+
+    const data = await response.json();
+    const parsed = z.object({ items: z.array(videoListItemSchema).default([]) }).parse(data);
+    return parsed.items.map((item) => ({
+      ...item,
+      updatedAt: item.updatedAt ? new Date(item.updatedAt) : null
+    }));
+  },
+
+  async fetchJobs(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/videos/jobs`, {
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+    if (!response.ok) {
+      throw new Error("Failed to load jobs for videos");
+    }
+    return videoJobsResponseSchema.parse(await response.json()).jobs;
+  },
+
+  async createItem(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/videos`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || "Failed to create video asset");
+    }
+    const data = await response.json();
+    return videoDetailSchema.parse(data.item);
+  },
+
+  async fetchItem(itemId, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/videos/${itemId}`, {
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+    if (!response.ok) {
+      throw new Error("Failed to load video item");
+    }
+    const data = await response.json();
+    return videoDetailSchema.parse(data.item);
+  },
+
+  async regenerate(itemId, payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/videos/${itemId}/regenerate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      throw new Error("Failed to regenerate manifest");
+    }
+    const data = await response.json();
+    return videoDetailSchema.parse(data.item);
+  },
+
+  async triggerRender(itemId, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/videos/${itemId}/render`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+    if (!response.ok) {
+      throw new Error("Failed to trigger render");
+    }
+    const data = await response.json();
+    return videoDetailSchema.parse(data.item);
+  },
+
+  async updateCaption(itemId, payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/videos/${itemId}/caption`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      throw new Error("Failed to update caption");
+    }
+    const data = await response.json();
+    return videoDetailSchema.parse(data.item);
+  },
+
+  async approve(itemId, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/videos/${itemId}/approve`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+    if (!response.ok) {
+      throw new Error("Failed to approve video");
+    }
+    const data = await response.json();
+    return videoDetailSchema.parse(data.item);
+  },
+
+  async publish(itemId, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/videos/${itemId}/publish`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+    if (!response.ok) {
+      throw new Error("Failed to publish video");
+    }
+    const data = await response.json();
+    return videoDetailSchema.parse(data.item);
+  },
+
+  async bulkAction(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/videos/bulk`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      throw new Error("Failed to run bulk action");
+    }
+    const data = await response.json();
+    const parsed = z.object({ items: z.array(videoListItemSchema).default([]) }).parse(data);
+    return parsed.items;
+  }
+};

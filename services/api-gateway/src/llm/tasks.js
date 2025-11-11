@@ -8,6 +8,9 @@ import {
   buildAssetChannelBatchPrompt,
   buildAssetAdaptPrompt
 } from "./prompts/assets.js";
+import { buildVideoStoryboardPrompt } from "./prompts/video-storyboard.js";
+import { buildVideoCaptionPrompt } from "./prompts/video-caption.js";
+import { buildVideoCompliancePrompt } from "./prompts/video-compliance.js";
 import { parseSuggestionResult } from "./parsers/suggest.js";
 import { parseRefinementResult } from "./parsers/refine.js";
 import { parseChannelResult } from "./parsers/channels.js";
@@ -18,11 +21,15 @@ import {
   parseAssetChannelBatchResult,
   parseAssetAdaptResult
 } from "./parsers/assets.js";
+import { parseVideoStoryboardResult } from "./parsers/video-storyboard.js";
+import { parseVideoCaptionResult } from "./parsers/video-caption.js";
+import { parseVideoComplianceResult } from "./parsers/video-compliance.js";
 import {
   logChannelPreview,
   logAssetPreview,
   logRefinementPreview,
   logSuggestionPreview,
+  logVideoPreview,
 } from "./logger.js";
 
 export const TASK_REGISTRY = {
@@ -119,5 +126,41 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logAssetPreview,
+  },
+  video_storyboard: {
+    system:
+      "You craft structured storyboards for short-form recruiting videos. Respond with valid JSON only.",
+    builder: buildVideoStoryboardPrompt,
+    parser: parseVideoStoryboardResult,
+    mode: "json",
+    temperature: 0.25,
+    maxTokens: { default: 900, gemini: 8192 },
+    retries: 2,
+    strictOnRetry: true,
+    previewLogger: logVideoPreview,
+  },
+  video_caption: {
+    system:
+      "You write concise, inclusive captions for short recruiting videos. Respond with JSON only.",
+    builder: buildVideoCaptionPrompt,
+    parser: parseVideoCaptionResult,
+    mode: "json",
+    temperature: 0.2,
+    maxTokens: { default: 400, gemini: 2000 },
+    retries: 2,
+    strictOnRetry: true,
+    previewLogger: logVideoPreview,
+  },
+  video_compliance: {
+    system:
+      "You are a compliance checker for employment ads. Respond with JSON flags only.",
+    builder: buildVideoCompliancePrompt,
+    parser: parseVideoComplianceResult,
+    mode: "json",
+    maxTokens: { default: 400, gemini: 2000 },
+    temperature: 0,
+    retries: 1,
+    strictOnRetry: true,
+    previewLogger: logVideoPreview,
   },
 };
