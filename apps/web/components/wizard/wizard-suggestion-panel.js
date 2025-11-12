@@ -208,6 +208,30 @@ function JobPreview({ jobState }) {
   );
 }
 
+function TypingIndicatorBubble() {
+  return (
+    <div className="flex w-full justify-start">
+      <article className="flex items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-100 px-4 py-3 text-sm text-neutral-600 shadow-sm">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          Typing
+        </span>
+        <div className="flex items-center gap-1">
+          {[0, 1, 2].map((index) => (
+            <span
+              // eslint-disable-next-line react/no-array-index-key
+              key={index}
+              className="h-2 w-2 rounded-full bg-primary-300 opacity-80 animate-bounce"
+              style={{ animationDelay: `${index * 0.15}s` }}
+            />
+          ))}
+        </div>
+      </article>
+    </div>
+  );
+}
+
+const PANEL_HEIGHT = "clamp(520px, calc(100vh - 48px), 880px)";
+
 export function WizardSuggestionPanel({
   copilotConversation = [],
   isSending,
@@ -273,7 +297,10 @@ export function WizardSuggestionPanel({
   };
 
   return (
-    <aside className="flex h-full min-h-[520px] max-h-[calc(100vh-48px)] flex-col gap-4 overflow-hidden rounded-3xl border border-primary-100 bg-neutral-50 p-5 shadow-lg shadow-primary-50">
+    <aside
+      className="flex flex-col gap-4 overflow-hidden rounded-3xl border border-primary-100 bg-neutral-50 p-5 shadow-lg shadow-primary-50"
+      style={{ height: PANEL_HEIGHT }}
+    >
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-primary-700">
@@ -325,20 +352,10 @@ export function WizardSuggestionPanel({
 
       {chatTabActive ? (
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-neutral-100 bg-white shadow-md shadow-primary-50">
-            <header className="flex items-center justify-between border-b border-neutral-100 px-4 py-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                  Conversation
-                </p>
-                <p className="text-[11px] text-neutral-400">
-                  Ask anything about this job or apply edits directly.
-                </p>
-              </div>
-              {isSending ? (
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-primary-500">
-                  Typing…
-                </span>
-              ) : null}
+            <header className="border-b border-neutral-100 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Conversation
+              </p>
             </header>
             <div
               ref={scrollContainerRef}
@@ -378,6 +395,7 @@ export function WizardSuggestionPanel({
                   </div>
                 ))
               )}
+              {isSending ? <TypingIndicatorBubble /> : null}
             </div>
             <footer className="border-t border-neutral-100 bg-white/95 px-3 py-2">
               <div className="flex items-center gap-2">

@@ -130,6 +130,7 @@ export function useWizardController({ user, initialJobId = null }) {
 
   const suggestionsAbortRef = useRef(null);
   const stateRef = useRef(wizardState.state);
+  const conversationRef = useRef(wizardState.copilotConversation);
   const previousFieldValuesRef = useRef({});
   const lastSuggestionSnapshotRef = useRef({});
   const toastTimeoutRef = useRef(null);
@@ -152,6 +153,10 @@ export function useWizardController({ user, initialJobId = null }) {
   useEffect(() => {
     stateRef.current = wizardState.state;
   }, [wizardState.state]);
+
+  useEffect(() => {
+    conversationRef.current = wizardState.copilotConversation;
+  }, [wizardState.copilotConversation]);
 
   useEffect(() => {
     lastSuggestionSnapshotRef.current = {};
@@ -1682,6 +1687,26 @@ useEffect(() => {
       });
       dispatch({ type: "SET_CHAT_STATUS", payload: true });
 
+      const previousMessages = conversationRef.current ?? [];
+      const optimisticMessage = {
+        id: `local-${Date.now()}`,
+        role: "user",
+        type: "user",
+        content: trimmed,
+        metadata: { optimistic: true },
+        createdAt: new Date(),
+      };
+      const optimisticMessages = [...previousMessages, optimisticMessage];
+      const optimisticVersion = deriveConversationVersion(optimisticMessages);
+      dispatch({
+        type: "SET_COPILOT_CONVERSATION",
+        payload: {
+          messages: optimisticMessages,
+          version: optimisticVersion,
+          source: "optimistic",
+        },
+      });
+
       try {
         let ensuredJobId = wizardState.jobId;
         if (!ensuredJobId) {
@@ -1731,6 +1756,17 @@ useEffect(() => {
         debug("copilot:send:error", {
           jobId: wizardState.jobId,
           error: error?.message,
+        });
+        const fallbackMessages = conversationRef.current?.filter(
+          (entry) => entry.metadata?.optimistic !== true
+        ) ?? [];
+        dispatch({
+          type: "SET_COPILOT_CONVERSATION",
+          payload: {
+            messages: fallbackMessages,
+            version: deriveConversationVersion(fallbackMessages),
+            source: "optimistic-revert",
+          },
         });
         dispatch({
           type: "PUSH_ASSISTANT_MESSAGE",
