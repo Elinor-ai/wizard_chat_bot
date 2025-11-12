@@ -37,6 +37,7 @@ import {
 import { loadDraft, saveDraft, clearDraft } from "./draft-storage";
 
 const TOAST_TIMEOUT_MS = 4000;
+const CONVERSATION_CACHE_PREFIX = "wizard/copilotConversation/";
 
 function getMessageTimestamp(message) {
   if (!message) {
@@ -68,6 +69,92 @@ function deriveConversationVersion(messages) {
     }
   }
   return latest || Date.now();
+}
+
+function applyClientMessageIds(messages = []) {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+  return messages.map((message) => {
+    const clientId = message?.metadata?.clientMessageId;
+    if (
+      message?.role === "user" &&
+      typeof clientId === "string" &&
+      clientId.length > 0
+    ) {
+      return {
+        ...message,
+        id: clientId,
+      };
+    }
+    return message;
+  });
+}
+
+function getConversationCacheKey(jobId) {
+  if (!jobId) return null;
+  return `${CONVERSATION_CACHE_PREFIX}${jobId}`;
+}
+
+function serializeConversationPayload(messages = [], version = 0) {
+  return {
+    version,
+    messages: messages.map((message) => ({
+      ...message,
+      createdAt:
+        message?.createdAt instanceof Date
+          ? message.createdAt.toISOString()
+          : message?.createdAt ?? null,
+    })),
+  };
+}
+
+function deserializeConversationPayload(payload) {
+  if (!payload || !Array.isArray(payload.messages)) {
+    return null;
+  }
+  const messages = payload.messages.map((message) => ({
+    ...message,
+    createdAt:
+      typeof message.createdAt === "string"
+        ? new Date(message.createdAt)
+        : message.createdAt,
+  }));
+  const version = Number(payload.version) || deriveConversationVersion(messages);
+  return { messages, version };
+}
+
+function loadConversationFromCache(jobId) {
+  if (typeof window === "undefined" || !jobId) {
+    return null;
+  }
+  try {
+    const cacheKey = getConversationCacheKey(jobId);
+    if (!cacheKey) return null;
+    const stored = window.sessionStorage.getItem(cacheKey);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    return deserializeConversationPayload(parsed);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn("Failed to parse cached conversation", error);
+    return null;
+  }
+}
+
+function saveConversationToCache(jobId, messages, version) {
+  if (typeof window === "undefined" || !jobId) {
+    return;
+  }
+  try {
+    const cacheKey = getConversationCacheKey(jobId);
+    if (!cacheKey) return;
+    const payload = serializeConversationPayload(messages, version);
+    window.sessionStorage.setItem(cacheKey, JSON.stringify(payload));
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn("Failed to cache conversation", error);
+  }
 }
 
 function previewContent(content, limit = 80) {
@@ -123,6 +210,13 @@ export function useWizardController({ user, initialJobId = null }) {
           draft.maxVisitedIndex ??
           Math.max(draft.currentStepIndex ?? 0, 0);
       }
+      if (typeof window !== "undefined" && seed?.jobId) {
+        const cachedConversation = loadConversationFromCache(seed.jobId);
+        if (cachedConversation) {
+          next.copilotConversation = cachedConversation.messages;
+          next.copilotConversationVersion = cachedConversation.version;
+        }
+      }
       return next;
     }
   );
@@ -157,6 +251,48 @@ export function useWizardController({ user, initialJobId = null }) {
   useEffect(() => {
     conversationRef.current = wizardState.copilotConversation;
   }, [wizardState.copilotConversation]);
+
+  useEffect(() => {
+    if (!wizardState.jobId) {
+      return;
+    }
+    const cached = loadConversationFromCache(wizardState.jobId);
+    if (
+      cached &&
+      cached.messages.length > 0 &&
+      cached.version > (wizardState.copilotConversationVersion || 0) &&
+      wizardState.copilotConversation.length === 0
+    ) {
+      dispatch({
+        type: "SET_COPILOT_CONVERSATION",
+        payload: {
+          messages: cached.messages,
+          version: cached.version,
+          source: "cache",
+        },
+      });
+    }
+  }, [
+    dispatch,
+    wizardState.copilotConversation.length,
+    wizardState.copilotConversationVersion,
+    wizardState.jobId,
+  ]);
+
+  useEffect(() => {
+    if (!wizardState.jobId) {
+      return;
+    }
+    saveConversationToCache(
+      wizardState.jobId,
+      wizardState.copilotConversation,
+      wizardState.copilotConversationVersion
+    );
+  }, [
+    wizardState.copilotConversation,
+    wizardState.copilotConversationVersion,
+    wizardState.jobId,
+  ]);
 
   useEffect(() => {
     lastSuggestionSnapshotRef.current = {};
@@ -734,17 +870,18 @@ useEffect(() => {
         authToken: user.authToken,
         jobId: wizardState.jobId,
       });
-      const version = deriveConversationVersion(response.messages);
+      const normalizedMessages = applyClientMessageIds(response.messages ?? []);
+      const version = deriveConversationVersion(normalizedMessages);
       debug("copilot:load:success", {
         jobId: wizardState.jobId,
         version,
-        messageCount: response.messages?.length ?? 0,
-        messages: summarizeConversationMessages(response.messages),
+        messageCount: normalizedMessages.length,
+        messages: summarizeConversationMessages(normalizedMessages),
       });
       dispatch({
         type: "SET_COPILOT_CONVERSATION",
         payload: {
-          messages: response.messages ?? [],
+          messages: normalizedMessages,
           version,
           source: "load",
         },
@@ -1014,7 +1151,7 @@ useEffect(() => {
           (message) => {
             if (
               message.kind === "suggestion" &&
-              (message.meta?.stepId ?? stepId) === stepId
+              message.meta?.stepId === stepId
             ) {
               return false;
             }
@@ -1688,13 +1825,18 @@ useEffect(() => {
       dispatch({ type: "SET_CHAT_STATUS", payload: true });
 
       const previousMessages = conversationRef.current ?? [];
+      const clientMessageId = `client-${Date.now()}`;
+      const optimisticCreatedAt = new Date();
       const optimisticMessage = {
-        id: `local-${Date.now()}`,
+        id: clientMessageId,
         role: "user",
         type: "user",
         content: trimmed,
-        metadata: { optimistic: true },
-        createdAt: new Date(),
+        metadata: {
+          optimistic: true,
+          clientMessageId,
+        },
+        createdAt: optimisticCreatedAt,
       };
       const optimisticMessages = [...previousMessages, optimisticMessage];
       const optimisticVersion = deriveConversationVersion(optimisticMessages);
@@ -1705,6 +1847,13 @@ useEffect(() => {
           version: optimisticVersion,
           source: "optimistic",
         },
+      });
+      debug("copilot:send:optimistic", {
+        clientMessageId,
+        jobId: wizardState.jobId,
+        previousCount: previousMessages.length,
+        nextCount: optimisticMessages.length,
+        preview: previewContent(trimmed, 80),
       });
 
       try {
@@ -1725,19 +1874,22 @@ useEffect(() => {
           jobId: ensuredJobId,
           message: trimmed,
           currentStepId: currentStep?.id,
+          clientMessageId,
         });
-        const version = deriveConversationVersion(response.messages);
+        const normalizedMessages = applyClientMessageIds(response.messages ?? []);
+        const version = deriveConversationVersion(normalizedMessages);
         debug("copilot:send:success", {
           jobId: ensuredJobId,
           version,
-          messageCount: response.messages?.length ?? 0,
-          messages: summarizeConversationMessages(response.messages),
+          clientMessageId,
+          messageCount: normalizedMessages.length,
+          messages: summarizeConversationMessages(normalizedMessages),
         });
 
         dispatch({
           type: "SET_COPILOT_CONVERSATION",
           payload: {
-            messages: response.messages ?? [],
+            messages: normalizedMessages,
             version,
             source: "send",
           },
@@ -1756,6 +1908,7 @@ useEffect(() => {
         debug("copilot:send:error", {
           jobId: wizardState.jobId,
           error: error?.message,
+          clientMessageId,
         });
         const fallbackMessages = conversationRef.current?.filter(
           (entry) => entry.metadata?.optimistic !== true

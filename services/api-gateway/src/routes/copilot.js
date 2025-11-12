@@ -14,7 +14,8 @@ const SUGGESTION_COLLECTION = "jobSuggestions";
 const postRequestSchema = z.object({
   jobId: z.string(),
   userMessage: z.string().min(1),
-  currentStepId: z.string().optional()
+  currentStepId: z.string().optional(),
+  clientMessageId: z.string().optional()
 });
 
 const getRequestSchema = z.object({
@@ -208,7 +209,10 @@ export function copilotRouter({ firestore, llmClient, logger }) {
           buildMessage({
             role: "user",
             type: "user",
-            content: payload.userMessage
+            content: payload.userMessage,
+            metadata: payload.clientMessageId
+              ? { clientMessageId: payload.clientMessageId }
+              : null
           }),
           buildMessage({
             role: "assistant",
@@ -226,7 +230,8 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         {
           jobId: payload.jobId,
           userId,
-          appendedMessages: summarizeMessages(history)
+          appendedMessages: summarizeMessages(history),
+          clientMessageId: payload.clientMessageId ?? null
         },
         "copilot.chat.appended"
       );
@@ -241,7 +246,8 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         {
           jobId: payload.jobId,
           userId,
-          messageCount: responsePayload.messages.length
+          messageCount: responsePayload.messages.length,
+          clientMessageId: payload.clientMessageId ?? null
         },
         "copilot.chat.responded"
       );

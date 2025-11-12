@@ -5,7 +5,7 @@ import { clsx } from "../../lib/cn";
 import { useUser } from "../user-context";
 import { WizardSuggestionPanel } from "./wizard-suggestion-panel";
 import { OPTIONAL_STEPS } from "./wizard-schema";
-import { getDeep } from "./wizard-utils";
+import { findFieldDefinition, getDeep, isFieldValueProvided } from "./wizard-utils";
 import { useWizardController } from "./use-wizard-controller";
 
 function capsuleClassName(isActive, isHovered) {
@@ -146,6 +146,7 @@ export function WizardShell({ jobId = null }) {
     activeToast,
     activeToastClassName,
     isHydrated,
+    jobId: activeJobId,
   } = controller;
 
   const optionalStepCount = OPTIONAL_STEPS.length;
@@ -164,13 +165,22 @@ export function WizardShell({ jobId = null }) {
       if (!fieldId) {
         return;
       }
+
+      const fieldDefinition = findFieldDefinition(fieldId);
+      if (fieldDefinition) {
+        const currentValue = getDeep(state, fieldId);
+        if (isFieldValueProvided(currentValue, fieldDefinition)) {
+          return;
+        }
+      }
+
       if (!map[fieldId]) {
         map[fieldId] = [];
       }
       map[fieldId].push(message);
     });
     return map;
-  }, [visibleAssistantMessages]);
+  }, [state, visibleAssistantMessages]);
 
   if (!user?.authToken) {
     return (
@@ -753,12 +763,13 @@ export function WizardShell({ jobId = null }) {
       </div>
 
       <WizardSuggestionPanel
+        jobId={activeJobId}
         copilotConversation={copilotConversation}
         onSendMessage={handleSendMessage}
         isSending={isChatting}
         nextStepTeaser={copilotNextTeaser}
         jobState={committedState}
-        isJobTabEnabled={allRequiredStepsCompleteInState}
+        isJobTabEnabled
       />
     </div>
   );

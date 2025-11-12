@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { clsx } from "../../lib/cn";
 
 const EXPERIENCE_LABELS = {
@@ -230,9 +230,50 @@ function TypingIndicatorBubble() {
   );
 }
 
-const PANEL_HEIGHT = "clamp(520px, calc(100vh - 48px), 880px)";
+const CHAT_DRAFT_STORAGE_PREFIX = "wizard/chatDraft/";
+const CHAT_FOCUS_STORAGE_KEY = "wizard/chatFocusPending";
+
+function getDraftStorageKey(jobId) {
+  return `${CHAT_DRAFT_STORAGE_PREFIX}${jobId ?? "new"}`;
+}
+
+function readDraftFromStorage(storageKey) {
+  if (typeof window === "undefined" || !storageKey) {
+    return "";
+  }
+  try {
+    return window.sessionStorage.getItem(storageKey) ?? "";
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn("Failed to read chat draft", error);
+    return "";
+  }
+}
+
+function persistDraft(storageKey, value) {
+  if (typeof window === "undefined" || !storageKey) {
+    return;
+  }
+  try {
+    if (value) {
+      window.sessionStorage.setItem(storageKey, value);
+    } else {
+      window.sessionStorage.removeItem(storageKey);
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn("Failed to persist chat draft", error);
+  }
+}
+
+const PANEL_STYLE = {
+  minHeight: "520px",
+  maxHeight: "880px",
+  height: "calc(100vh - 48px)"
+};
 
 export function WizardSuggestionPanel({
+  jobId,
   copilotConversation = [],
   isSending,
   onSendMessage,
@@ -240,14 +281,104 @@ export function WizardSuggestionPanel({
   jobState,
   isJobTabEnabled
 }) {
-  const [draftMessage, setDraftMessage] = useState("");
+  const draftStorageKey = getDraftStorageKey(jobId);
+  const [draftMessage, setDraftMessage] = useState(() =>
+    readDraftFromStorage(draftStorageKey)
+  );
+  const lastStorageKeyRef = useRef(draftStorageKey);
   const [activeTab, setActiveTab] = useState("chat");
   const conversationMessages = Array.isArray(copilotConversation)
     ? copilotConversation
     : [];
   const scrollContainerRef = useRef(null);
   const textareaRef = useRef(null);
+  const shouldMaintainFocusRef = useRef(false);
   const chatTabActive = activeTab === "chat";
+
+  const focusTextarea = useCallback(() => {
+    if (!textareaRef.current) return;
+    textareaRef.current.focus();
+    const cursorPos = draftMessage.length;
+    try {
+      textareaRef.current.setSelectionRange(cursorPos, cursorPos);
+    } catch (error) {
+      // Ignore selection errors (e.g., non-text inputs)
+    }
+  }, [draftMessage.length]);
+
+  useEffect(() => {
+    const prevKey = lastStorageKeyRef.current;
+    if (prevKey === draftStorageKey) {
+      return;
+    }
+
+    let nextDraft = draftMessage;
+    if (typeof window !== "undefined") {
+      const stored = window.sessionStorage.getItem(draftStorageKey);
+      if (stored !== null) {
+        nextDraft = stored;
+      } else if (prevKey) {
+        const prevValue = window.sessionStorage.getItem(prevKey);
+        if (prevValue !== null) {
+          nextDraft = prevValue;
+          window.sessionStorage.setItem(draftStorageKey, prevValue);
+        }
+      }
+    }
+    lastStorageKeyRef.current = draftStorageKey;
+    setDraftMessage(nextDraft);
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    persistDraft(draftStorageKey, draftMessage);
+  }, [draftMessage, draftStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    let storedFocus = false;
+    try {
+      storedFocus = window.sessionStorage.getItem(CHAT_FOCUS_STORAGE_KEY) === "1";
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to read chat focus flag", error);
+    }
+    shouldMaintainFocusRef.current = storedFocus;
+    if (storedFocus) {
+      focusTextarea();
+    }
+
+    return () => {
+      if (!shouldMaintainFocusRef.current) {
+        try {
+          window.sessionStorage.removeItem(CHAT_FOCUS_STORAGE_KEY);
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.warn("Failed to clear chat focus flag", error);
+        }
+        return;
+      }
+      try {
+        window.sessionStorage.setItem(CHAT_FOCUS_STORAGE_KEY, "1");
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn("Failed to persist chat focus", error);
+      }
+    };
+  }, [focusTextarea]);
+
+  useEffect(() => {
+    if (!shouldMaintainFocusRef.current) {
+      return;
+    }
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    if (document.activeElement === textarea) {
+      return;
+    }
+    focusTextarea();
+  }, [conversationMessages.length, chatTabActive, focusTextarea]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
@@ -285,9 +416,36 @@ export function WizardSuggestionPanel({
 
   const handleSubmit = () => {
     if (!draftMessage.trim()) return;
-    onSendMessage(draftMessage);
+    const trimmed = draftMessage.trim();
+    onSendMessage(trimmed);
     setDraftMessage("");
   };
+
+  const handleTextareaFocus = useCallback(() => {
+    shouldMaintainFocusRef.current = true;
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(CHAT_FOCUS_STORAGE_KEY, "1");
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to persist chat focus flag", error);
+    }
+  }, []);
+
+  const handleTextareaBlur = useCallback(() => {
+    shouldMaintainFocusRef.current = false;
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.sessionStorage.removeItem(CHAT_FOCUS_STORAGE_KEY);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to clear chat focus flag", error);
+    }
+  }, []);
 
   const handleTabChange = (tab) => {
     if (tab === "job" && !isJobTabEnabled) {
@@ -299,7 +457,7 @@ export function WizardSuggestionPanel({
   return (
     <aside
       className="flex flex-col gap-4 overflow-hidden rounded-3xl border border-primary-100 bg-neutral-50 p-5 shadow-lg shadow-primary-50"
-      style={{ height: PANEL_HEIGHT }}
+      style={PANEL_STYLE}
     >
       <header className="flex items-center justify-between">
         <div>
@@ -405,6 +563,8 @@ export function WizardSuggestionPanel({
                   placeholder="Ask your copilot..."
                   value={draftMessage}
                   onChange={(event) => setDraftMessage(event.target.value)}
+                  onFocus={handleTextareaFocus}
+                  onBlur={handleTextareaBlur}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();

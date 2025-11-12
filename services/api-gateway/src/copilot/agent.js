@@ -1,5 +1,40 @@
+function formatFieldLabel(fieldId) {
+  if (!fieldId || typeof fieldId !== "string") {
+    return null;
+  }
+  return fieldId
+    .replace(/([A-Z])/g, " $1")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildActionSummary(actions = []) {
+  if (!Array.isArray(actions) || actions.length === 0) {
+    return "I applied the requested updates. Let me know if you'd like any other tweaks.";
+  }
+  const updatedFields = Array.from(
+    new Set(
+      actions
+        .map((action) => action?.fieldId)
+        .filter(Boolean)
+    )
+  );
+  if (updatedFields.length === 0) {
+    return "I applied the requested updates. Let me know if you'd like any other tweaks.";
+  }
+  if (updatedFields.length === 1) {
+    const label = formatFieldLabel(updatedFields[0]) ?? updatedFields[0];
+    return `I updated ${label} as requested. Let me know if you'd like any other tweaks.`;
+  }
+  const joined = updatedFields
+    .map((field) => formatFieldLabel(field) ?? field)
+    .join(", ");
+  return `I updated ${joined} as requested. Let me know if you'd like any other tweaks.`;
+}
+
 export class WizardCopilotAgent {
-  constructor({ llmClient, tools, logger, maxTurns = 4 }) {
+  constructor({ llmClient, tools, logger, maxTurns = 8 }) {
     this.llmClient = llmClient;
     this.tools = tools;
     this.logger = logger;
@@ -72,6 +107,11 @@ export class WizardCopilotAgent {
           });
           if (result?.action) {
             appliedActions.push(result.action);
+            return {
+              reply: buildActionSummary(appliedActions),
+              actions: appliedActions,
+              scratchpad
+            };
           }
           continue;
         } catch (error) {
@@ -97,6 +137,14 @@ export class WizardCopilotAgent {
           scratchpad
         };
       }
+    }
+
+    if (appliedActions.length > 0) {
+      return {
+        reply: buildActionSummary(appliedActions),
+        actions: appliedActions,
+        scratchpad
+      };
     }
 
     return {
