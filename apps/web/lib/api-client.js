@@ -433,15 +433,58 @@ const wizardJobResponseSchema = z
     status: z.string().nullable().optional()
   })
   .transform((data) => ({
-    jobId: data.jobId,
-    state: data.state ?? {},
-    includeOptional: Boolean(data.includeOptional),
+      jobId: data.jobId,
+      state: data.state ?? {},
+      includeOptional: Boolean(data.includeOptional),
+      updatedAt: data.updatedAt
+        ? data.updatedAt instanceof Date
+          ? data.updatedAt
+          : new Date(data.updatedAt)
+        : null,
+      status: data.status ?? null
+    }));
+
+const heroImageSchema = z
+  .object({
+    jobId: z.string(),
+    status: z.string(),
+    prompt: z.string().nullable().optional(),
+    promptProvider: z.string().nullable().optional(),
+    promptModel: z.string().nullable().optional(),
+    imageUrl: z.string().nullable().optional(),
+    imageBase64: z.string().nullable().optional(),
+    imageMimeType: z.string().nullable().optional(),
+    imageProvider: z.string().nullable().optional(),
+    imageModel: z.string().nullable().optional(),
+    failure: z
+      .object({
+        reason: z.string(),
+        message: z.string().nullable().optional(),
+        rawPreview: z.string().nullable().optional(),
+        occurredAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional()
+      })
+      .nullable()
+      .optional(),
+    metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+    updatedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional()
+  })
+  .transform((data) => ({
+    ...data,
     updatedAt: data.updatedAt
       ? data.updatedAt instanceof Date
         ? data.updatedAt
         : new Date(data.updatedAt)
       : null,
-    status: data.status ?? null
+    failure: data.failure
+      ? {
+          ...data.failure,
+          occurredAt: data.failure.occurredAt
+            ? data.failure.occurredAt instanceof Date
+              ? data.failure.occurredAt
+              : new Date(data.failure.occurredAt)
+            : null
+        }
+      : null
   }));
 
 function authHeaders(authToken) {
@@ -538,6 +581,59 @@ export const WizardApi = {
 
     const data = await response.json();
     return channelRecommendationResponseSchema.parse(data);
+  },
+
+  async fetchHeroImage(jobId, options = {}) {
+    if (!jobId) {
+      throw new Error("jobId is required to fetch image");
+    }
+    const response = await fetch(
+      `${API_BASE_URL}/wizard/hero-image?jobId=${encodeURIComponent(jobId)}`,
+      {
+        headers: {
+          ...authHeaders(options.authToken)
+        }
+      }
+    );
+    if (!response.ok) {
+      throw new Error("Failed to fetch image");
+    }
+    const data = await response.json();
+    return {
+      jobId: data.jobId,
+      heroImage: data.heroImage ? heroImageSchema.parse(data.heroImage) : null
+    };
+  },
+
+  async requestHeroImage(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/wizard/hero-image`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      let message = "Image generation failed";
+      try {
+        const errorData = await response.json();
+        if (typeof errorData?.error === "string") {
+          message = errorData.error;
+        }
+      } catch (_error) {
+        const text = await response.text();
+        if (text) {
+          message = text;
+        }
+      }
+      throw new Error(message);
+    }
+    const data = await response.json();
+    return {
+      jobId: data.jobId,
+      heroImage: data.heroImage ? heroImageSchema.parse(data.heroImage) : null
+    };
   },
 
   async fetchJobAssets(jobId, options = {}) {

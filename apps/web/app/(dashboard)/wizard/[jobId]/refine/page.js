@@ -12,7 +12,9 @@ import {
   fetchJobDraft,
   generateJobAssets,
   refineJob,
-  sendCopilotAgentMessage
+  sendCopilotAgentMessage,
+  fetchHeroImage,
+  requestHeroImage
 } from "../../../../../components/wizard/wizard-services";
 import {
   OPTIONAL_STEPS,
@@ -633,6 +635,42 @@ function ChannelRecommendationList({
   );
 }
 
+function HeroImageOptIn({ checked, onToggle }) {
+  return (
+    <div className="rounded-2xl border border-primary-100 bg-white px-4 py-3 shadow-sm">
+      <label className="flex items-start gap-3 text-sm text-neutral-700">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 rounded border-primary-300 text-primary-600 focus:ring-primary-500"
+          checked={checked}
+          onChange={(event) => onToggle?.(event.target.checked)}
+        />
+        <span>
+          <span className="block text-sm font-semibold text-neutral-900">
+            Generate AI image?
+          </span>
+          <span className="text-sm text-neutral-500">
+            We’ll auto-create a single visual to reuse across channels once you continue to assets.
+          </span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
+function mapHeroImageStatus(status, inFlight) {
+  if (status === "READY") {
+    return "READY";
+  }
+  if (status === "FAILED") {
+    return "FAILED";
+  }
+  if (status === "PROMPTING" || status === "GENERATING" || inFlight) {
+    return "GENERATING";
+  }
+  return "PENDING";
+}
+
 const assetStatusStyles = {
   READY: "bg-emerald-100 text-emerald-700",
   GENERATING: "bg-amber-100 text-amber-700",
@@ -649,7 +687,8 @@ const ASSET_VARIANT_MAP = {
   SHORT_VIDEO_MASTER: "story",
   SHORT_VIDEO_TIKTOK: "story",
   SHORT_VIDEO_INSTAGRAM: "story",
-  SHORT_VIDEO_YOUTUBE: "story"
+  SHORT_VIDEO_YOUTUBE: "story",
+  AI_HERO_IMAGE: "hero_image"
 };
 
 function AssetPreviewGrid({ assets = [], logoUrl }) {
@@ -674,6 +713,14 @@ function AssetPreviewCard({ asset, logoUrl }) {
   const variant = ASSET_VARIANT_MAP[asset.formatId] ?? "generic";
   const content = asset.content ?? {};
   const badgeClass = assetStatusStyles[asset.status] ?? assetStatusStyles.PENDING;
+  const formatLabel =
+    variant === "hero_image"
+      ? "AI image"
+      : asset.formatId.replace(/_/g, " ");
+  const channelLabel =
+    variant === "hero_image"
+      ? "Campaign visual"
+      : asset.channelId.replace(/_/g, " ");
   const normalizedAssetLogo =
     typeof asset.logoUrl === "string" && asset.logoUrl.length > 0
       ? asset.logoUrl
@@ -687,9 +734,9 @@ function AssetPreviewCard({ asset, logoUrl }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-neutral-900">
-            {asset.formatId.replace(/_/g, " ")}
+            {formatLabel}
           </p>
-          <p className="text-xs text-neutral-500">{asset.channelId.replace(/_/g, " ")}</p>
+          <p className="text-xs text-neutral-500">{channelLabel}</p>
         </div>
         <span
           className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase ${badgeClass}`}
@@ -705,6 +752,8 @@ function AssetPreviewCard({ asset, logoUrl }) {
         <SocialImageCard content={content} logoUrl={finalLogo} />
       ) : variant === "story" ? (
         <StoryCard content={content} logoUrl={finalLogo} />
+      ) : variant === "hero_image" ? (
+        <HeroImageCard content={content} status={asset.status} />
       ) : (
         <GenericAssetCard content={content} logoUrl={finalLogo} />
       )}
@@ -842,6 +891,44 @@ function StoryCard({ content, logoUrl }) {
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+function HeroImageCard({ content, status }) {
+  const failureMessage = content?.failureMessage;
+  const provider = content?.provider ?? "pending";
+  const model = content?.model ?? "pending";
+  const imageUrl = content?.imageUrl;
+
+  if (status === "READY" && imageUrl) {
+    return (
+      <div className="space-y-2 rounded-2xl border border-neutral-100 bg-neutral-50 p-3">
+        <div className="rounded-xl border border-neutral-200 bg-white p-2">
+          <img
+            src={imageUrl}
+            alt="AI visual"
+            className="h-auto w-full rounded-lg object-cover"
+          />
+        </div>
+        <p className="text-xs text-neutral-500">
+          Provider: {provider} • Model: {model}
+        </p>
+      </div>
+    );
+  }
+
+  if (status === "FAILED") {
+    return (
+      <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+        {failureMessage ?? "Image request failed. Try again from the Channels step."}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-dashed border-primary-200 bg-white px-4 py-4 text-sm text-primary-600">
+      Generating image… this usually takes ~20 seconds.
     </div>
   );
 }
@@ -986,6 +1073,9 @@ export default function RefineJobPage() {
   const [copilotConversation, setCopilotConversation] = useState([]);
   const [isCopilotChatting, setIsCopilotChatting] = useState(false);
   const [copilotError, setCopilotError] = useState(null);
+  const [heroImage, setHeroImage] = useState(null);
+  const [shouldGenerateHeroImage, setShouldGenerateHeroImage] = useState(false);
+  const [isHeroImageLoading, setIsHeroImageLoading] = useState(false);
   const channelsInitializedRef = useRef(false);
   const jobLogoUrlRef = useRef("");
   const conversationVersionRef = useRef(0);
@@ -1028,6 +1118,59 @@ export default function RefineJobPage() {
       setAssetError(error.message ?? "Failed to load assets.");
     }
   }, [user?.authToken, jobId]);
+
+  const loadHeroImageState = useCallback(async () => {
+    if (!user?.authToken || !jobId) return;
+    try {
+      const response = await fetchHeroImage({
+        authToken: user.authToken,
+        jobId
+      });
+      const hero = response.heroImage ?? null;
+      setHeroImage(hero);
+      if (
+        hero &&
+        hero.status &&
+        hero.status !== "FAILED"
+      ) {
+        setShouldGenerateHeroImage(true);
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to load image", error);
+    }
+  }, [user?.authToken, jobId]);
+
+  const handleHeroImageRequest = useCallback(
+    async ({ forceRefresh = false } = {}) => {
+      if (!user?.authToken || !jobId) return;
+      setIsHeroImageLoading(true);
+      try {
+        const response = await requestHeroImage({
+          authToken: user.authToken,
+          jobId,
+          forceRefresh
+        });
+        setHeroImage(response.heroImage ?? null);
+        setShouldGenerateHeroImage(true);
+      } catch (error) {
+        setHeroImage((prev) => ({
+          ...(prev ?? {
+            jobId,
+            status: "FAILED"
+          }),
+          status: "FAILED",
+          failure: {
+            reason: "request_failed",
+            message: error.message
+          }
+        }));
+      } finally {
+        setIsHeroImageLoading(false);
+      }
+    },
+    [user?.authToken, jobId]
+  );
 
   const hasManualStepChangeRef = useRef(false);
 
@@ -1092,6 +1235,97 @@ export default function RefineJobPage() {
   );
   const chatTeaser =
     copilotError ?? (currentStep === "refine" ? summary : "");
+  const heroImageStatus = heroImage?.status ?? "IDLE";
+  const heroImageInFlight =
+    isHeroImageLoading ||
+    ["PROMPTING", "GENERATING"].includes(heroImageStatus);
+  const heroImagePreviewSrc = useMemo(() => {
+    if (heroImage?.imageBase64) {
+      const mime = heroImage?.imageMimeType ?? "image/png";
+      return `data:${mime};base64,${heroImage.imageBase64}`;
+    }
+    return heroImage?.imageUrl ?? null;
+  }, [heroImage?.imageBase64, heroImage?.imageUrl, heroImage?.imageMimeType]);
+  const heroImageAsset = useMemo(() => {
+    if (!shouldGenerateHeroImage) {
+      return null;
+    }
+    const normalizedStatus = mapHeroImageStatus(heroImageStatus, heroImageInFlight);
+    return {
+      id: `hero-image-${jobId ?? "new"}`,
+      formatId: "AI_HERO_IMAGE",
+      channelId: "HERO_IMAGE",
+      status: normalizedStatus,
+      content: {
+        imageUrl: heroImagePreviewSrc ?? null,
+        failureMessage:
+          heroImage?.failure?.message ?? heroImage?.failure?.reason ?? null,
+        provider: heroImage?.imageProvider ?? "pending",
+        model: heroImage?.imageModel ?? "pending"
+      }
+    };
+  }, [
+    shouldGenerateHeroImage,
+    heroImageStatus,
+    heroImageInFlight,
+    heroImagePreviewSrc,
+    heroImage,
+    jobId
+  ]);
+  const assetsWithHero = useMemo(() => {
+    if (heroImageAsset) {
+      return [heroImageAsset, ...(jobAssets ?? [])];
+    }
+    return jobAssets;
+  }, [heroImageAsset, jobAssets]);
+  const triggerHeroImageIfNeeded = useCallback(() => {
+    if (!shouldGenerateHeroImage) {
+      return;
+    }
+    if (heroImageInFlight) {
+      return;
+    }
+    if (heroImageStatus === "READY") {
+      return;
+    }
+    if (heroImageStatus === "PROMPTING" || heroImageStatus === "GENERATING") {
+      return;
+    }
+    handleHeroImageRequest();
+  }, [
+    shouldGenerateHeroImage,
+    heroImageInFlight,
+    heroImageStatus,
+    handleHeroImageRequest
+  ]);
+  const handleGenerateAssets = async () => {
+    if (!user?.authToken || !jobId || selectedChannels.length === 0 || !finalJobSource) {
+      return;
+    }
+    setIsGeneratingAssets(true);
+    setAssetError(null);
+    navigateToStep("assets", { force: true });
+    triggerHeroImageIfNeeded();
+    try {
+      const response = await generateJobAssets({
+        authToken: user.authToken,
+        jobId,
+        channelIds: selectedChannels,
+        source: finalJobSource
+      });
+      setJobAssets(response.assets ?? []);
+      setAssetRun(response.run ?? null);
+      const hasPending = (response.assets ?? []).some((asset) =>
+        ["PENDING", "GENERATING"].includes(asset.status)
+      );
+      setShouldPollAssets(hasPending);
+    } catch (error) {
+      setAssetError(error.message ?? "Failed to generate assets.");
+      navigateToStep("channels", { force: true });
+    } finally {
+      setIsGeneratingAssets(false);
+    }
+  };
 
   const navigateToStep = useCallback(
     (stepId, { force = false } = {}) => {
@@ -1312,6 +1546,11 @@ useEffect(() => {
       setChannelFailure(response.channelFailure ?? null);
       setFinalJobSource(submissionSource);
       syncSelectedChannels(response.channelRecommendations ?? []);
+      if (shouldGenerateHeroImage) {
+        await handleHeroImageRequest({ forceRefresh: true });
+      } else {
+        await loadHeroImageState();
+      }
     } catch (error) {
       setChannelFailure({ reason: "finalize_failed", message: error.message });
       navigateToStep("refine", { force: true });
@@ -1395,34 +1634,6 @@ useEffect(() => {
     loadChannelRecommendations
   ]);
 
-  const handleGenerateAssets = async () => {
-    if (!user?.authToken || !jobId || selectedChannels.length === 0 || !finalJobSource) {
-      return;
-    }
-    setIsGeneratingAssets(true);
-    setAssetError(null);
-    navigateToStep("assets", { force: true });
-    try {
-      const response = await generateJobAssets({
-        authToken: user.authToken,
-        jobId,
-        channelIds: selectedChannels,
-        source: finalJobSource
-      });
-      setJobAssets(response.assets ?? []);
-      setAssetRun(response.run ?? null);
-      const hasPending = (response.assets ?? []).some((asset) =>
-        ["PENDING", "GENERATING"].includes(asset.status)
-      );
-      setShouldPollAssets(hasPending);
-    } catch (error) {
-      setAssetError(error.message ?? "Failed to generate assets.");
-      navigateToStep("channels", { force: true });
-    } finally {
-      setIsGeneratingAssets(false);
-    }
-  };
-
   const applyConversationUpdate = useCallback((messages) => {
     const normalized = applyClientMessageIds(messages ?? []);
     const version = deriveConversationVersion(normalized);
@@ -1453,11 +1664,17 @@ useEffect(() => {
   useEffect(() => {
     conversationVersionRef.current = 0;
     setCopilotConversation([]);
+    setHeroImage(null);
+    setShouldGenerateHeroImage(false);
   }, [jobId]);
 
   useEffect(() => {
     loadCopilotConversation();
   }, [loadCopilotConversation]);
+
+  useEffect(() => {
+    loadHeroImageState();
+  }, [loadHeroImageState]);
 
   const handleCopilotSend = useCallback(
     async (message, options = {}) => {
@@ -1740,6 +1957,10 @@ useEffect(() => {
                 selectedChannels={selectedChannels}
                 onToggleChannel={handleToggleChannel}
               />
+              <HeroImageOptIn
+                checked={shouldGenerateHeroImage}
+                onToggle={setShouldGenerateHeroImage}
+              />
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4">
                 <p className="text-xs text-neutral-500">
                   {selectedChannels.length > 0
@@ -1802,7 +2023,7 @@ useEffect(() => {
                   ) : null}
                 </div>
               ) : null}
-              <AssetPreviewGrid assets={jobAssets} logoUrl={jobLogoUrl} />
+              <AssetPreviewGrid assets={assetsWithHero} logoUrl={jobLogoUrl} />
             </section>
           ) : null}
             </>

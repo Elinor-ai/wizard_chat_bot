@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { v4 as uuid } from "uuid";
 import { wrapAsync, httpError } from "@wizard/utils";
+import sharp from "sharp";
 import {
   CampaignSchema,
   JobChannelRecommendationSchema,
@@ -15,7 +16,8 @@ import {
   JobAssetRecordSchema,
   JobAssetRunSchema,
   JobAssetStatusEnum,
-  JobAssetRunStatusEnum
+  JobAssetRunStatusEnum,
+  JobHeroImageSchema
 } from "@wizard/core";
 import { createAssetPlan } from "../llm/domain/asset-plan.js";
 
@@ -26,11 +28,39 @@ const REFINEMENT_COLLECTION = "jobRefinements";
 const FINAL_JOB_COLLECTION = "jobFinalJobs";
 const JOB_ASSET_COLLECTION = "jobAssets";
 const JOB_ASSET_RUN_COLLECTION = "jobAssetRuns";
+const HERO_IMAGE_COLLECTION = "jobHeroImages";
 const SUPPORTED_CHANNELS = CampaignSchema.shape.channel.options;
 const ASSET_STATUS = JobAssetStatusEnum.enum;
 const RUN_STATUS = JobAssetRunStatusEnum.enum;
 
 const looseObjectSchema = z.object({}).catchall(z.unknown());
+
+async function compressBase64Image(base64, { maxBytes = 900000 } = {}) {
+  if (!base64) {
+    return { base64: null, mimeType: null };
+  }
+  const buffer = Buffer.from(base64, "base64");
+  if (buffer.length <= maxBytes) {
+    return { base64, mimeType: "image/png" };
+  }
+  try {
+    const compressed = await sharp(buffer)
+      .jpeg({
+        quality: 75,
+        chromaSubsampling: "4:4:4"
+      })
+      .toBuffer();
+    if (compressed.length <= maxBytes) {
+      return {
+        base64: compressed.toString("base64"),
+        mimeType: "image/jpeg"
+      };
+    }
+    return { base64: null, mimeType: "image/jpeg" };
+  } catch (error) {
+    return { base64, mimeType: "image/png" };
+  }
+}
 
 const ALLOWED_INTAKE_KEYS = [
   "roleTitle",
@@ -111,6 +141,11 @@ const assetGenerationRequestSchema = z.object({
 
 const assetStatusRequestSchema = z.object({
   jobId: z.string()
+});
+
+const heroImageRequestSchema = z.object({
+  jobId: z.string(),
+  forceRefresh: z.boolean().optional()
 });
 
 function getAuthenticatedUserId(req) {
@@ -538,6 +573,16 @@ async function acknowledgeSuggestionField({
 }
 
 async function loadRefinementDocument(firestore, jobId) {
+  if (
+    jobId === undefined &&
+    firestore &&
+    typeof firestore === "object" &&
+    firestore.firestore &&
+    firestore.jobId
+  ) {
+    jobId = firestore.jobId;
+    firestore = firestore.firestore;
+  }
   const existing = await firestore.getDocument(REFINEMENT_COLLECTION, jobId);
   if (!existing) return null;
   const parsed = JobRefinementSchema.safeParse(existing);
@@ -732,6 +777,94 @@ async function persistChannelRecommendationFailure({
     "Persisted channel recommendation failure"
   );
   return payload;
+}
+
+async function loadHeroImageDocument(firestore, jobId) {
+  const existing = await firestore.getDocument(HERO_IMAGE_COLLECTION, jobId);
+  if (!existing) return null;
+  const parsed = JobHeroImageSchema.safeParse(existing);
+  if (!parsed.success) {
+    return null;
+  }
+  return parsed.data;
+}
+
+async function upsertHeroImageDocument({
+  firestore,
+  jobId,
+  ownerUserId,
+  patch,
+  now = new Date()
+}) {
+  const existing = await loadHeroImageDocument(firestore, jobId);
+  const payload = JobHeroImageSchema.parse({
+    id: jobId,
+    jobId,
+    ownerUserId,
+    status: existing?.status ?? "PENDING",
+    prompt: existing?.prompt ?? null,
+    promptProvider: existing?.promptProvider ?? null,
+    promptModel: existing?.promptModel ?? null,
+    promptMetadata: existing?.promptMetadata,
+    imageUrl: existing?.imageUrl ?? null,
+    imageBase64: existing?.imageBase64 ?? null,
+    imageProvider: existing?.imageProvider ?? null,
+    imageModel: existing?.imageModel ?? null,
+    imageMetadata: existing?.imageMetadata,
+    failure: null,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    ...patch
+  });
+  await firestore.saveDocument(HERO_IMAGE_COLLECTION, jobId, payload);
+  return payload;
+}
+
+async function persistHeroImageFailure({
+  firestore,
+  jobId,
+  ownerUserId,
+  reason,
+  message,
+  rawPreview,
+  now = new Date()
+}) {
+  return upsertHeroImageDocument({
+    firestore,
+    jobId,
+    ownerUserId,
+    now,
+    patch: {
+      status: "FAILED",
+      failure: {
+        reason,
+        message: message ?? null,
+        rawPreview: rawPreview ?? null,
+        occurredAt: now
+      }
+    }
+  });
+}
+
+function serializeHeroImage(document) {
+  if (!document) {
+    return null;
+  }
+  return {
+    jobId: document.jobId,
+    status: document.status,
+    prompt: document.prompt,
+    promptProvider: document.promptProvider,
+    promptModel: document.promptModel,
+    imageUrl: document.imageUrl,
+    imageBase64: document.imageBase64,
+    imageMimeType: document.imageMimeType ?? null,
+    imageProvider: document.imageProvider,
+    imageModel: document.imageModel,
+    failure: document.failure ?? null,
+    updatedAt: document.updatedAt,
+    metadata: document.imageMetadata ?? null
+  };
 }
 
 function buildJobSnapshot(job) {
@@ -1782,6 +1915,256 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         refreshed,
         failure: doc?.lastFailure ?? null
       });
+    })
+  );
+
+  router.get(
+    "/hero-image",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const jobIdRaw = Array.isArray(req.query.jobId)
+        ? req.query.jobId[0]
+        : req.query.jobId;
+      if (!jobIdRaw || typeof jobIdRaw !== "string") {
+        throw httpError(400, "jobId query parameter required");
+      }
+
+      const job = await firestore.getDocument(JOB_COLLECTION, jobIdRaw);
+      if (!job) {
+        throw httpError(404, "Job not found");
+      }
+      if (job.ownerUserId && job.ownerUserId !== userId) {
+        throw httpError(403, "You do not have access to this job");
+      }
+
+      const document = await loadHeroImageDocument(firestore, jobIdRaw);
+      res.json({
+        jobId: jobIdRaw,
+        heroImage: serializeHeroImage(document)
+      });
+    })
+  );
+
+  router.post(
+    "/hero-image",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      logger.info({ body: req.body }, "image request payload");
+      const payload = heroImageRequestSchema.parse(req.body ?? {});
+
+      try {
+        const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+        if (!job) {
+          throw httpError(404, "Job not found");
+        }
+        if (job.ownerUserId && job.ownerUserId !== userId) {
+          throw httpError(403, "You do not have access to this job");
+        }
+
+        const existing = await loadHeroImageDocument(firestore, payload.jobId);
+        if (
+          existing &&
+          !payload.forceRefresh &&
+          (existing.status === "READY" ||
+            existing.status === "PROMPTING" ||
+            existing.status === "GENERATING")
+        ) {
+          res.json({
+            jobId: payload.jobId,
+            heroImage: serializeHeroImage(existing)
+          });
+          return;
+        }
+
+        const now = new Date();
+        const finalJob = await loadFinalJobDocument(firestore, payload.jobId);
+        const refinement =
+          (await loadRefinementDocument(firestore, payload.jobId)) ?? null;
+        const refinedSnapshot =
+          finalJob?.job ?? refinement?.refinedJob ?? buildJobSnapshot(job);
+
+        const ownerId = job.ownerUserId ?? userId;
+
+        logger.info(
+          { jobId: payload.jobId, userId },
+          "image generation requested"
+        );
+
+        let document = await upsertHeroImageDocument({
+          firestore,
+          jobId: payload.jobId,
+          ownerUserId: ownerId,
+          now,
+          patch: {
+            status: "PROMPTING",
+            imageBase64: null,
+            imageUrl: null,
+            failure: null
+          }
+        });
+        logger.info(
+          {
+            jobId: payload.jobId,
+            heroStatus: document.status
+          },
+          "image status set to PROMPTING"
+        );
+
+        let promptResult;
+        let imageResult;
+
+        try {
+          promptResult = await llmClient.askHeroImagePrompt({
+            refinedJob: refinedSnapshot
+          });
+
+          if (promptResult.error) {
+            await persistHeroImageFailure({
+              firestore,
+              jobId: payload.jobId,
+              ownerUserId: ownerId,
+              reason: promptResult.error.reason ?? "prompt_failed",
+              message: promptResult.error.message,
+              rawPreview: promptResult.error.rawPreview ?? null,
+              now: new Date()
+            });
+            logger.error(
+              {
+                jobId: payload.jobId,
+                reason: promptResult.error.reason,
+                message: promptResult.error.message
+              },
+              "image prompt generation failed"
+            );
+            throw httpError(
+              500,
+              promptResult.error.message ?? "Image prompt generation failed"
+            );
+          }
+
+          logger.info(
+            {
+              jobId: payload.jobId,
+              provider: promptResult.provider,
+              model: promptResult.model
+            },
+            "image prompt generated"
+          );
+
+          document = await upsertHeroImageDocument({
+            firestore,
+            jobId: payload.jobId,
+            ownerUserId: ownerId,
+            patch: {
+              status: "GENERATING",
+              prompt: promptResult.prompt,
+              promptProvider: promptResult.provider ?? null,
+              promptModel: promptResult.model ?? null,
+              promptMetadata: promptResult.metadata ?? null
+            }
+          });
+          logger.info(
+            {
+              jobId: payload.jobId,
+              promptProvider: promptResult.provider,
+              promptModel: promptResult.model
+            },
+            "image status set to GENERATING"
+          );
+
+          imageResult = await llmClient.runImageGeneration({
+            prompt: promptResult.prompt,
+            negativePrompt: promptResult.negativePrompt ?? undefined,
+            style: promptResult.style ?? undefined
+          });
+
+          if (imageResult.error) {
+            await persistHeroImageFailure({
+              firestore,
+              jobId: payload.jobId,
+              ownerUserId: ownerId,
+              reason: imageResult.error.reason ?? "generation_failed",
+              message: imageResult.error.message,
+              rawPreview: imageResult.error.rawPreview ?? null,
+              now: new Date()
+            });
+            logger.error(
+              {
+                jobId: payload.jobId,
+                reason: imageResult.error.reason,
+                message: imageResult.error.message
+              },
+              "image generation failed"
+            );
+            throw httpError(
+              500,
+              imageResult.error.message ?? "Image generation failed"
+            );
+          }
+
+          logger.info(
+            {
+              jobId: payload.jobId,
+              provider: imageResult.provider,
+              model: imageResult.model
+            },
+            "image generated successfully"
+          );
+        } catch (error) {
+          logger.error(
+            {
+              jobId: payload.jobId,
+              err: error
+            },
+            "image pipeline threw"
+          );
+          throw error;
+        }
+
+        const compression = await compressBase64Image(imageResult.imageBase64, {
+          maxBytes: 900000
+        });
+        const storedBase64 = compression.base64;
+        const storedMimeType = compression.mimeType ?? "image/png";
+        const storedUrl = storedBase64 ? imageResult.imageUrl ?? null : imageResult.imageUrl ?? null;
+
+        document = await upsertHeroImageDocument({
+          firestore,
+          jobId: payload.jobId,
+          ownerUserId: ownerId,
+          patch: {
+            status: "READY",
+            imageBase64: storedBase64,
+            imageUrl: storedUrl,
+            imageMimeType: storedBase64 ? storedMimeType : null,
+            imageProvider: imageResult.provider ?? null,
+            imageModel: imageResult.model ?? null,
+            imageMetadata: imageResult.metadata ?? null
+          }
+        });
+        logger.info(
+          {
+            jobId: payload.jobId,
+            imageProvider: imageResult.provider,
+            imageModel: imageResult.model
+          },
+          "image status set to READY"
+        );
+
+        res.json({
+          jobId: payload.jobId,
+          heroImage: serializeHeroImage(document)
+        });
+      } catch (error) {
+        logger.error(
+          {
+            jobId: payload.jobId,
+            err: error
+          },
+          "image route failed"
+        );
+        throw error;
+      }
     })
   );
 

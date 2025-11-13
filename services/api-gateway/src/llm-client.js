@@ -5,6 +5,9 @@ import { GeminiAdapter } from "./llm/providers/gemini-adapter.js";
 import { ProviderSelectionPolicy } from "./llm/providers/selection-policy.js";
 import { LlmOrchestrator } from "./llm/orchestrator.js";
 import { TASK_REGISTRY } from "./llm/tasks.js";
+import { DalleImageAdapter } from "./llm/providers/dalle-image-adapter.js";
+import { ImagenImageAdapter } from "./llm/providers/imagen-image-adapter.js";
+import { StableDiffusionAdapter } from "./llm/providers/stable-diffusion-adapter.js";
 
 loadEnv();
 
@@ -50,12 +53,37 @@ const DEFAULT_GEMINI_CHANNEL_MODEL =
 const DEFAULT_GEMINI_ASSET_MODEL =
   process.env.GEMINI_ASSET_MODEL ?? DEFAULT_GEMINI_CHAT_MODEL;
 const DEFAULT_GEMINI_VIDEO_MODEL = process.env.GEMINI_VIDEO_MODEL ?? DEFAULT_GEMINI_ASSET_MODEL;
+const DEFAULT_GEMINI_IMAGE_PROMPT_MODEL =
+  process.env.GEMINI_IMAGE_PROMPT_MODEL ?? DEFAULT_GEMINI_ASSET_MODEL;
 
 const DEFAULT_COPILOT_SPEC =
   process.env.LLM_COPILOT_PROVIDER ??
   process.env.LLM_CHAT_PROVIDER ??
   `openai:${DEFAULT_OPENAI_CHAT_MODEL}`;
 const [DEFAULT_COPILOT_PROVIDER] = DEFAULT_COPILOT_SPEC.split(":");
+
+const DEFAULT_DALLE_IMAGE_MODEL =
+  process.env.DALLE_IMAGE_MODEL ?? "gpt-image-1";
+const DEFAULT_IMAGEN_IMAGE_MODEL =
+  process.env.IMAGEN_IMAGE_MODEL ?? "imagen-2.0";
+const RAW_IMAGE_GENERATION_PROVIDER =
+  process.env.IMAGE_GENERATION_PROVIDER ?? "dall-e";
+const IMAGE_GENERATION_PROVIDER = RAW_IMAGE_GENERATION_PROVIDER.replace("-", "_");
+
+const DEFAULT_STABLE_DIFFUSION_MODEL =
+  process.env.STABLE_DIFFUSION_MODEL ?? "sd3";
+const DEFAULT_IMAGE_GEN_MODEL =
+  IMAGE_GENERATION_PROVIDER === "imagen"
+    ? DEFAULT_IMAGEN_IMAGE_MODEL
+    : IMAGE_GENERATION_PROVIDER === "stable_diffusion"
+      ? DEFAULT_STABLE_DIFFUSION_MODEL
+      : DEFAULT_DALLE_IMAGE_MODEL;
+const DALL_E_API_KEY =
+  process.env.DALL_E_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
+const IMAGEN_API_KEY =
+  process.env.IMAGEN_API_KEY ?? process.env.GEMINI_API_KEY ?? null;
+const STABLE_DIFFUSION_API_KEY =
+  process.env.STABLE_DIFFUSION_API_KEY ?? null;
 
 const providerSelectionConfig = {
   suggest: {
@@ -121,6 +149,25 @@ const providerSelectionConfig = {
       gemini: DEFAULT_GEMINI_ASSET_MODEL,
     },
   },
+  image_prompt_generation: {
+    env: "LLM_IMAGE_PROMPT_PROVIDER",
+    defaultProvider: "gemini",
+    defaultSpec: `gemini:${DEFAULT_GEMINI_IMAGE_PROMPT_MODEL}`,
+    providerDefaults: {
+      gemini: DEFAULT_GEMINI_IMAGE_PROMPT_MODEL,
+      openai: DEFAULT_OPENAI_ASSET_MODEL,
+    },
+  },
+  image_generation: {
+    env: "IMAGE_GENERATION_PROVIDER",
+    defaultProvider: IMAGE_GENERATION_PROVIDER,
+    defaultSpec: `${IMAGE_GENERATION_PROVIDER}:${DEFAULT_IMAGE_GEN_MODEL}`,
+    providerDefaults: {
+      "dall-e": DEFAULT_DALLE_IMAGE_MODEL,
+      imagen: DEFAULT_IMAGEN_IMAGE_MODEL,
+      stable_diffusion: DEFAULT_STABLE_DIFFUSION_MODEL,
+    },
+  },
   copilot_agent: {
     env: "LLM_COPILOT_PROVIDER",
     defaultProvider: DEFAULT_COPILOT_PROVIDER ?? "openai",
@@ -167,6 +214,15 @@ const adapters = {
   gemini: new GeminiAdapter({
     apiKey: GEMINI_API_KEY,
     apiUrl: GEMINI_API_URL,
+  }),
+  "dall-e": new DalleImageAdapter({
+    apiKey: DALL_E_API_KEY,
+  }),
+  imagen: new ImagenImageAdapter({
+    apiKey: IMAGEN_API_KEY,
+  }),
+  stable_diffusion: new StableDiffusionAdapter({
+    apiKey: STABLE_DIFFUSION_API_KEY,
   }),
 };
 
@@ -533,6 +589,97 @@ async function askVideoCompliance(context) {
   }
 }
 
+async function askHeroImagePrompt(context) {
+  try {
+    llmLogger.info(
+      {
+        jobId: context?.jobId ?? context?.refinedJob?.jobId ?? null
+      },
+      "askHeroImagePrompt:start"
+    );
+    const result = await orchestrator.run("image_prompt_generation", context);
+    if (result.error) {
+      llmLogger.error(
+        {
+          jobId: context?.jobId ?? context?.refinedJob?.jobId ?? null,
+          reason: result.error.reason,
+          message: result.error.message
+        },
+        "askHeroImagePrompt:error"
+      );
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model,
+        },
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      prompt: result.prompt,
+      negativePrompt: result.negativePrompt ?? null,
+      style: result.style ?? null,
+      metadata: result.metadata ?? null,
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "askHeroImagePrompt orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error),
+      },
+    };
+  }
+}
+
+async function runImageGeneration(context) {
+  try {
+    llmLogger.info(
+      {
+        promptPreview: context?.prompt?.slice(0, 120) ?? null
+      },
+      "runImageGeneration:start"
+    );
+    const result = await orchestrator.run("image_generation", context);
+    if (result.error) {
+      llmLogger.error(
+        {
+          task: "image_generation",
+          provider: result.provider,
+          model: result.model,
+          reason: result.error.reason,
+          message: result.error.message
+        },
+        "Image generation task returned error"
+      );
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model,
+        },
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      imageBase64: result.imageBase64 ?? null,
+      imageUrl: result.imageUrl ?? null,
+      metadata: result.metadata ?? null,
+    };
+  } catch (error) {
+    llmLogger.error({ err: error }, "runImageGeneration orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error),
+      },
+    };
+  }
+}
+
 export const llmClient = {
   askChat,
   askSuggestions,
@@ -545,5 +692,7 @@ export const llmClient = {
   askVideoStoryboard,
   askVideoCaption,
   askVideoCompliance,
-  runCopilotAgent
+  runCopilotAgent,
+  askHeroImagePrompt,
+  runImageGeneration
 };

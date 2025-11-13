@@ -72,6 +72,11 @@ export {
   JobAssetRunStatusEnum
 } from "./schemas/job-asset.js";
 export {
+  JobHeroImageSchema,
+  HeroImageStatusEnum,
+  HeroImageFailureSchema
+} from "./schemas/job-hero-image.js";
+export {
   CopilotMessageSchema,
   WizardCopilotChatSchema
 } from "./schemas/copilot-chat.js";

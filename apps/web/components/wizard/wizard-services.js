@@ -139,3 +139,21 @@ export async function generateJobAssets({
     { authToken }
   );
 }
+
+export async function fetchHeroImage({ authToken, jobId }) {
+  return WizardApi.fetchHeroImage(jobId, { authToken });
+}
+
+export async function requestHeroImage({
+  authToken,
+  jobId,
+  forceRefresh = false,
+}) {
+  return WizardApi.requestHeroImage(
+    {
+      jobId,
+      forceRefresh,
+    },
+    { authToken }
+  );
+}

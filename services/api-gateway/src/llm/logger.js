@@ -28,3 +28,7 @@ export function logAssetPreview(provider, rawContent) {
 export function logVideoPreview(provider, rawContent) {
   logPreview(provider, rawContent, "LLM video generation raw response");
 }
+
+export function logImagePromptPreview(provider, rawContent) {
+  logPreview(provider, rawContent, "LLM image prompt raw response");
+}

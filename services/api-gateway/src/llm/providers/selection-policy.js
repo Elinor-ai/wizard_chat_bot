@@ -1,5 +1,13 @@
 import { llmLogger } from "../logger.js";
 
+const KNOWN_PROVIDERS = [
+  "openai",
+  "gemini",
+  "dall-e",
+  "imagen",
+  "stable_diffusion"
+];
+
 export function parseProviderSpec(spec, { defaultProvider, defaultModel }) {
   if (!spec) {
     return {
@@ -10,7 +18,7 @@ export function parseProviderSpec(spec, { defaultProvider, defaultModel }) {
   }
   const [maybeProvider, ...rest] = spec.split(":");
   if (rest.length === 0) {
-    if (["openai", "gemini"].includes(maybeProvider)) {
+    if (KNOWN_PROVIDERS.includes(maybeProvider)) {
       return {
         provider: maybeProvider,
         model: defaultModel,

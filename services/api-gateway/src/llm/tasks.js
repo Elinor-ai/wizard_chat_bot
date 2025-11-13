@@ -27,11 +27,20 @@ import { parseVideoStoryboardResult } from "./parsers/video-storyboard.js";
 import { parseVideoCaptionResult } from "./parsers/video-caption.js";
 import { parseVideoComplianceResult } from "./parsers/video-compliance.js";
 import {
+  buildImagePromptInstructions,
+  buildImageGenerationPayload
+} from "./prompts/image.js";
+import {
+  parseImagePromptResult,
+  parseImageGenerationResult
+} from "./parsers/image.js";
+import {
   logChannelPreview,
   logAssetPreview,
   logRefinementPreview,
   logSuggestionPreview,
   logVideoPreview,
+  logImagePromptPreview
 } from "./logger.js";
 
 export const TASK_REGISTRY = {
@@ -175,5 +184,28 @@ export const TASK_REGISTRY = {
     retries: 1,
     strictOnRetry: true,
     previewLogger: logVideoPreview,
+  },
+  image_prompt_generation: {
+    system:
+      "You turn structured job briefs into vivid prompts for image generation models. Respond only with JSON.",
+    builder: buildImagePromptInstructions,
+    parser: parseImagePromptResult,
+    mode: "json",
+    temperature: 0.2,
+    maxTokens: { default: 600, gemini: 2048 },
+    retries: 2,
+    strictOnRetry: true,
+    previewLogger: logImagePromptPreview
+  },
+  image_generation: {
+    system:
+      "You are a bridge that forwards prompts to an image model. Always respond with JSON describing the resulting image payload.",
+    builder: buildImageGenerationPayload,
+    parser: parseImageGenerationResult,
+    mode: "json",
+    temperature: 0,
+    maxTokens: 50,
+    retries: 1,
+    strictOnRetry: true
   },
 };
