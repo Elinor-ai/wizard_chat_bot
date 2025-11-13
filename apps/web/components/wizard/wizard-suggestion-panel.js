@@ -231,10 +231,23 @@ function TypingIndicatorBubble() {
 }
 
 const CHAT_DRAFT_STORAGE_PREFIX = "wizard/chatDraft/";
-const CHAT_FOCUS_STORAGE_KEY = "wizard/chatFocusPending";
+const CHAT_FOCUS_STORAGE_PREFIX = "wizard/chatFocus/";
 
-function getDraftStorageKey(jobId) {
-  return `${CHAT_DRAFT_STORAGE_PREFIX}${jobId ?? "new"}`;
+function normalizeStageKey(stage) {
+  if (!stage || typeof stage !== "string") {
+    return "wizard";
+  }
+  return stage.trim().toLowerCase();
+}
+
+function getDraftStorageKey(jobId, stage) {
+  const normalizedStage = normalizeStageKey(stage);
+  return `${CHAT_DRAFT_STORAGE_PREFIX}${normalizedStage}/${jobId ?? "new"}`;
+}
+
+function getFocusStorageKey(jobId, stage) {
+  const normalizedStage = normalizeStageKey(stage);
+  return `${CHAT_FOCUS_STORAGE_PREFIX}${normalizedStage}/${jobId ?? "new"}`;
 }
 
 function readDraftFromStorage(storageKey) {
@@ -279,9 +292,11 @@ export function WizardSuggestionPanel({
   onSendMessage,
   nextStepTeaser,
   jobState,
-  isJobTabEnabled
+  isJobTabEnabled,
+  stage = "wizard"
 }) {
-  const draftStorageKey = getDraftStorageKey(jobId);
+  const draftStorageKey = getDraftStorageKey(jobId, stage);
+  const focusStorageKey = getFocusStorageKey(jobId, stage);
   const [draftMessage, setDraftMessage] = useState(() =>
     readDraftFromStorage(draftStorageKey)
   );
@@ -337,7 +352,7 @@ export function WizardSuggestionPanel({
     if (typeof window === "undefined") return undefined;
     let storedFocus = false;
     try {
-      storedFocus = window.sessionStorage.getItem(CHAT_FOCUS_STORAGE_KEY) === "1";
+      storedFocus = window.sessionStorage.getItem(focusStorageKey) === "1";
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn("Failed to read chat focus flag", error);
@@ -350,7 +365,7 @@ export function WizardSuggestionPanel({
     return () => {
       if (!shouldMaintainFocusRef.current) {
         try {
-          window.sessionStorage.removeItem(CHAT_FOCUS_STORAGE_KEY);
+          window.sessionStorage.removeItem(focusStorageKey);
         } catch (error) {
           // eslint-disable-next-line no-console
           console.warn("Failed to clear chat focus flag", error);
@@ -358,13 +373,13 @@ export function WizardSuggestionPanel({
         return;
       }
       try {
-        window.sessionStorage.setItem(CHAT_FOCUS_STORAGE_KEY, "1");
+        window.sessionStorage.setItem(focusStorageKey, "1");
       } catch (error) {
         // eslint-disable-next-line no-console
         console.warn("Failed to persist chat focus", error);
       }
     };
-  }, [focusTextarea]);
+  }, [focusStorageKey, focusTextarea]);
 
   useEffect(() => {
     if (!shouldMaintainFocusRef.current) {
@@ -417,7 +432,7 @@ export function WizardSuggestionPanel({
   const handleSubmit = () => {
     if (!draftMessage.trim()) return;
     const trimmed = draftMessage.trim();
-    onSendMessage(trimmed);
+    onSendMessage(trimmed, { stage });
     setDraftMessage("");
   };
 
@@ -427,12 +442,12 @@ export function WizardSuggestionPanel({
       return;
     }
     try {
-      window.sessionStorage.setItem(CHAT_FOCUS_STORAGE_KEY, "1");
+      window.sessionStorage.setItem(focusStorageKey, "1");
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn("Failed to persist chat focus flag", error);
     }
-  }, []);
+  }, [focusStorageKey]);
 
   const handleTextareaBlur = useCallback(() => {
     shouldMaintainFocusRef.current = false;
@@ -440,12 +455,12 @@ export function WizardSuggestionPanel({
       return;
     }
     try {
-      window.sessionStorage.removeItem(CHAT_FOCUS_STORAGE_KEY);
+      window.sessionStorage.removeItem(focusStorageKey);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn("Failed to clear chat focus flag", error);
     }
-  }, []);
+  }, [focusStorageKey]);
 
   const handleTabChange = (tab) => {
     if (tab === "job" && !isJobTabEnabled) {

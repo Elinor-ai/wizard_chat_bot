@@ -770,6 +770,7 @@ export function WizardShell({ jobId = null }) {
         nextStepTeaser={copilotNextTeaser}
         jobState={committedState}
         isJobTabEnabled
+        stage="wizard"
       />
     </div>
   );

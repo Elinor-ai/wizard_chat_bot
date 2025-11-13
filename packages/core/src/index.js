@@ -12,7 +12,11 @@ export {
 export { SuggestionSchema } from "./common/suggestion.js";
 export { PromptSchema } from "./common/prompt.js";
 export { ChatMessageSchema, ChatThreadSchema } from "./common/chat.js";
-export { LlmSuggestionBucketSchema, EMPTY_SUGGESTIONS } from "./common/llm-suggestions.js";
+export {
+  LlmSuggestionBucketSchema,
+  ChannelRecommendationSchema,
+  EMPTY_SUGGESTIONS
+} from "./common/llm-suggestions.js";
 export { AssetVersionSchema } from "./common/asset-version.js";
 export { JobAssetSchema } from "./common/asset-artifact.js";
 export {

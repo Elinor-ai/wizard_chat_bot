@@ -7,15 +7,18 @@ import { useUser } from "../../../../../components/user-context";
 import {
   finalizeJob,
   fetchChannelRecommendations,
+  fetchCopilotConversation,
   fetchJobAssets,
   fetchJobDraft,
   generateJobAssets,
   refineJob,
+  sendCopilotAgentMessage
 } from "../../../../../components/wizard/wizard-services";
 import {
   OPTIONAL_STEPS,
   REQUIRED_STEPS,
 } from "../../../../../components/wizard/wizard-schema";
+import { WizardSuggestionPanel } from "../../../../../components/wizard/wizard-suggestion-panel";
 
 const FIELD_DEFINITIONS = [...REQUIRED_STEPS, ...OPTIONAL_STEPS].flatMap(
   (step) => step.fields
@@ -135,6 +138,58 @@ function hasMeaningfulValue(field, value) {
     return value.trim().length > 0;
   }
   return value !== undefined && value !== null && value !== "";
+}
+
+function getMessageTimestamp(message) {
+  if (!message) {
+    return null;
+  }
+  const { createdAt } = message;
+  if (createdAt instanceof Date) {
+    return createdAt.getTime();
+  }
+  if (typeof createdAt === "number") {
+    return createdAt;
+  }
+  if (typeof createdAt === "string") {
+    const parsed = Date.parse(createdAt);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function deriveConversationVersion(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return 0;
+  }
+  let latest = 0;
+  for (const message of messages) {
+    const timestamp = getMessageTimestamp(message);
+    if (Number.isFinite(timestamp)) {
+      latest = Math.max(latest, timestamp);
+    }
+  }
+  return latest || Date.now();
+}
+
+function applyClientMessageIds(messages = []) {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+  return messages.map((message) => {
+    const clientId = message?.metadata?.clientMessageId;
+    if (
+      message?.role === "user" &&
+      typeof clientId === "string" &&
+      clientId.length > 0
+    ) {
+      return {
+        ...message,
+        id: clientId,
+      };
+    }
+    return message;
+  });
 }
 
 function JobPreview({ job }) {
@@ -923,8 +978,12 @@ export default function RefineJobPage() {
   const [finalJobSource, setFinalJobSource] = useState(null);
   const [currentStep, setCurrentStep] = useState("refine");
   const [jobLogoUrl, setJobLogoUrl] = useState("");
+  const [copilotConversation, setCopilotConversation] = useState([]);
+  const [isCopilotChatting, setIsCopilotChatting] = useState(false);
+  const [copilotError, setCopilotError] = useState(null);
   const channelsInitializedRef = useRef(false);
   const jobLogoUrlRef = useRef("");
+  const conversationVersionRef = useRef(0);
 
   const syncSelectedChannels = useCallback((list) => {
     const available = Array.isArray(list)
@@ -1002,6 +1061,23 @@ export default function RefineJobPage() {
     }
     return false;
   }, [currentStep, isFinalizing, isRegeneratingChannels, isGeneratingAssets]);
+
+  const activeStage = useMemo(() => {
+    if (currentStep === "channels") {
+      return "channels";
+    }
+    if (currentStep === "assets") {
+      return "assets";
+    }
+    return "refine";
+  }, [currentStep]);
+
+  const activeJobState = useMemo(
+    () => (viewMode === "original" ? originalDraft : refinedDraft),
+    [viewMode, originalDraft, refinedDraft]
+  );
+  const chatTeaser =
+    copilotError ?? (currentStep === "refine" ? summary : "");
 
   const navigateToStep = useCallback(
     (stepId, { force = false } = {}) => {
@@ -1297,6 +1373,91 @@ useEffect(() => {
     }
   };
 
+  const applyConversationUpdate = useCallback((messages) => {
+    const normalized = applyClientMessageIds(messages ?? []);
+    const version = deriveConversationVersion(normalized);
+    const currentVersion = conversationVersionRef.current;
+    if (Number.isFinite(version) && version < currentVersion) {
+      return;
+    }
+    if (Number.isFinite(version)) {
+      conversationVersionRef.current = version;
+    }
+    setCopilotConversation(normalized);
+  }, []);
+
+  const loadCopilotConversation = useCallback(async () => {
+    if (!user?.authToken || !jobId) return;
+    try {
+      const response = await fetchCopilotConversation({
+        authToken: user.authToken,
+        jobId
+      });
+      applyConversationUpdate(response.messages ?? []);
+      setCopilotError(null);
+    } catch (error) {
+      setCopilotError(error.message ?? "Failed to load copilot chat.");
+    }
+  }, [user?.authToken, jobId, applyConversationUpdate]);
+
+  useEffect(() => {
+    conversationVersionRef.current = 0;
+    setCopilotConversation([]);
+  }, [jobId]);
+
+  useEffect(() => {
+    loadCopilotConversation();
+  }, [loadCopilotConversation]);
+
+  const handleCopilotSend = useCallback(
+    async (message, options = {}) => {
+      const trimmed = message.trim();
+      if (!trimmed || !user?.authToken || !jobId) {
+        return;
+      }
+      const stage = options?.stage ?? activeStage;
+      const clientMessageId = `client-${Date.now()}`;
+      setIsCopilotChatting(true);
+      setCopilotConversation((prev) => {
+        const optimistic = [
+          ...prev,
+          {
+            id: clientMessageId,
+            role: "user",
+            type: "user",
+            content: trimmed,
+            metadata: { clientMessageId, optimistic: true },
+            createdAt: new Date()
+          }
+        ];
+        const version = deriveConversationVersion(optimistic);
+        if (Number.isFinite(version)) {
+          conversationVersionRef.current = version;
+        }
+        return optimistic;
+      });
+      try {
+        const response = await sendCopilotAgentMessage({
+          authToken: user.authToken,
+          jobId,
+          message: trimmed,
+          clientMessageId,
+          stage,
+        });
+        applyConversationUpdate(response.messages ?? []);
+        setCopilotError(null);
+      } catch (error) {
+        setCopilotConversation((prev) =>
+          prev.filter((entry) => entry.id !== clientMessageId)
+        );
+        setCopilotError(error.message ?? "Copilot message failed.");
+      } finally {
+        setIsCopilotChatting(false);
+      }
+    },
+    [user?.authToken, jobId, applyConversationUpdate, activeStage]
+  );
+
   if (!user?.authToken) {
     return (
       <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-neutral-600 shadow-sm shadow-neutral-100">
@@ -1318,7 +1479,8 @@ useEffect(() => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="space-y-6">
       <header className="space-y-3">
         <h1 className="text-3xl font-semibold text-neutral-900">
           Refine & publish your job
@@ -1519,6 +1681,17 @@ useEffect(() => {
           ) : null}
         </>
       )}
+      </div>
+      <WizardSuggestionPanel
+        jobId={jobId}
+        jobState={activeJobState}
+        copilotConversation={copilotConversation}
+        onSendMessage={handleCopilotSend}
+        isSending={isCopilotChatting}
+        nextStepTeaser={chatTeaser}
+        isJobTabEnabled
+        stage={activeStage}
+      />
     </div>
   );
 }

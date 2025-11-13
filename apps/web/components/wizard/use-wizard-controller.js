@@ -1809,7 +1809,7 @@ useEffect(() => {
   );
 
   const handleSendMessage = useCallback(
-    async (message) => {
+    async (message, options = {}) => {
       const trimmed = message.trim();
       if (!trimmed) return;
 
@@ -1818,9 +1818,16 @@ useEffect(() => {
         return;
       }
 
+      const {
+        stage = "wizard",
+        contextId = null,
+        currentStepId: overrideStepId = null,
+      } = options ?? {};
+
       debug("copilot:send:start", {
         jobId: wizardState.jobId,
         messagePreview: previewContent(trimmed, 80),
+        stage,
       });
       dispatch({ type: "SET_CHAT_STATUS", payload: true });
 
@@ -1873,8 +1880,10 @@ useEffect(() => {
           authToken: user.authToken,
           jobId: ensuredJobId,
           message: trimmed,
-          currentStepId: currentStep?.id,
+          currentStepId: overrideStepId ?? currentStep?.id,
           clientMessageId,
+          stage,
+          contextId,
         });
         const normalizedMessages = applyClientMessageIds(response.messages ?? []);
         const version = deriveConversationVersion(normalizedMessages);

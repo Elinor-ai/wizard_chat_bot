@@ -5,17 +5,27 @@ import { wrapAsync, httpError } from "@wizard/utils";
 import { JobSchema, JobSuggestionSchema } from "@wizard/core";
 import { WizardCopilotAgent } from "../copilot/agent.js";
 import { COPILOT_TOOLS } from "../copilot/tools.js";
+import {
+  DEFAULT_COPILOT_STAGE,
+  getToolsForStage,
+  listSupportedStages,
+  resolveStageConfig
+} from "../copilot/stages.js";
 import { loadCopilotHistory, appendCopilotMessages } from "../copilot/chat-store.js";
 import { buildJobSnapshot } from "../wizard/job-intake.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
 
+const stageEnum = z.enum(listSupportedStages());
+
 const postRequestSchema = z.object({
   jobId: z.string(),
   userMessage: z.string().min(1),
   currentStepId: z.string().optional(),
-  clientMessageId: z.string().optional()
+  clientMessageId: z.string().optional(),
+  stage: stageEnum.default(DEFAULT_COPILOT_STAGE),
+  contextId: z.string().optional().nullable()
 });
 
 const getRequestSchema = z.object({
@@ -176,6 +186,7 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         {
           jobId: payload.jobId,
           userId,
+          stage: payload.stage,
           existingMessages: summarizeMessages(conversation),
           incomingUserPreview: previewContent(payload.userMessage, 200)
         },
@@ -188,11 +199,17 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         cache: {}
       };
 
+      const stageConfig = resolveStageConfig(payload.stage);
+      const stageTools = getToolsForStage(stageConfig);
+
       const agentResult = await agent.run({
         jobId: payload.jobId,
         userId,
         userMessage: payload.userMessage,
         currentStepId: payload.currentStepId,
+        stage: stageConfig.id,
+        stageConfig,
+        tools: stageTools,
         conversation,
         jobSnapshot: buildJobSnapshot(job),
         suggestions,
@@ -212,7 +229,9 @@ export function copilotRouter({ firestore, llmClient, logger }) {
             content: payload.userMessage,
             metadata: payload.clientMessageId
               ? { clientMessageId: payload.clientMessageId }
-              : null
+              : null,
+            stage: stageConfig.id,
+            contextId: payload.contextId ?? null
           }),
           buildMessage({
             role: "assistant",
@@ -220,7 +239,9 @@ export function copilotRouter({ firestore, llmClient, logger }) {
             content: assistantReply,
             metadata: {
               actions: agentResult.actions ?? []
-            }
+            },
+            stage: stageConfig.id,
+            contextId: payload.contextId ?? null
           })
         ],
         limit: 20,
@@ -231,7 +252,8 @@ export function copilotRouter({ firestore, llmClient, logger }) {
           jobId: payload.jobId,
           userId,
           appendedMessages: summarizeMessages(history),
-          clientMessageId: payload.clientMessageId ?? null
+          clientMessageId: payload.clientMessageId ?? null,
+          stage: payload.stage
         },
         "copilot.chat.appended"
       );
@@ -247,7 +269,8 @@ export function copilotRouter({ firestore, llmClient, logger }) {
           jobId: payload.jobId,
           userId,
           messageCount: responsePayload.messages.length,
-          clientMessageId: payload.clientMessageId ?? null
+          clientMessageId: payload.clientMessageId ?? null,
+          stage: payload.stage
         },
         "copilot.chat.responded"
       );

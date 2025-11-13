@@ -7,7 +7,9 @@ export const CopilotMessageSchema = z.object({
   type: z.string().optional().nullable(),
   content: z.string(),
   createdAt: TimestampSchema,
-  metadata: z.record(z.string(), z.unknown()).optional().nullable()
+  metadata: z.record(z.string(), z.unknown()).optional().nullable(),
+  stage: z.string().optional().nullable(),
+  contextId: z.string().optional().nullable()
 });
 
 export const WizardCopilotChatSchema = z.object({

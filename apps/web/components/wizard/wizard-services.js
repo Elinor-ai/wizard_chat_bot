@@ -63,14 +63,18 @@ export async function sendCopilotAgentMessage({
   jobId,
   message,
   currentStepId,
-  clientMessageId
+  clientMessageId,
+  stage = "wizard",
+  contextId
 }) {
   return WizardApi.sendCopilotMessage(
     {
       jobId,
       userMessage: message,
       currentStepId,
-      clientMessageId
+      clientMessageId,
+      stage,
+      contextId
     },
     { authToken }
   );

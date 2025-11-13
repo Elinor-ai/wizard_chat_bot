@@ -36,10 +36,16 @@ function buildActionSummary(actions = []) {
 export class WizardCopilotAgent {
   constructor({ llmClient, tools, logger, maxTurns = 8 }) {
     this.llmClient = llmClient;
-    this.tools = tools;
+    this.toolRegistry = new Map(tools.map((tool) => [tool.name, tool]));
     this.logger = logger;
     this.maxTurns = maxTurns;
-    this.toolMap = new Map(tools.map((tool) => [tool.name, tool]));
+  }
+
+  resolveTools(tools) {
+    if (Array.isArray(tools) && tools.length > 0) {
+      return tools;
+    }
+    return Array.from(this.toolRegistry.values());
   }
 
   async run({
@@ -47,6 +53,9 @@ export class WizardCopilotAgent {
     userId,
     userMessage,
     currentStepId,
+    stage,
+    stageConfig,
+    tools,
     conversation,
     jobSnapshot,
     suggestions,
@@ -54,6 +63,8 @@ export class WizardCopilotAgent {
   }) {
     const scratchpad = [];
     const appliedActions = [];
+    const activeTools = this.resolveTools(tools);
+    const toolMap = new Map(activeTools.map((tool) => [tool.name, tool]));
 
     for (let turn = 0; turn < this.maxTurns; turn += 1) {
       const llmResult = await this.llmClient.runCopilotAgent({
@@ -61,11 +72,13 @@ export class WizardCopilotAgent {
         userId,
         userMessage,
         currentStepId,
+        stage,
+        stageConfig,
         conversation,
         jobSnapshot,
         suggestions,
         scratchpad,
-        tools: this.tools.map((tool) => ({
+        tools: activeTools.map((tool) => ({
           name: tool.name,
           description: tool.description,
           schema: tool.schemaDescription
@@ -79,7 +92,7 @@ export class WizardCopilotAgent {
 
       if (llmResult.type === "tool_call") {
         const toolName = llmResult.tool;
-        const tool = this.toolMap.get(toolName);
+        const tool = toolMap.get(toolName);
         if (!tool) {
           scratchpad.push({
             type: "tool_error",
