@@ -120,7 +120,7 @@ export const JobSchema = z.object({
   companyName: z.string().default(""),
   logoUrl: z.string().default(""),
   location: z.string().default(""),
-  zipCode: z.string().optional(),
+  zipCode: z.string().default(""),
   industry: z.string().optional(),
   seniorityLevel: ExperienceLevelEnum.optional(),
   employmentType: EmploymentTypeEnum.optional(),

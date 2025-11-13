@@ -180,6 +180,39 @@ function summarizeConversationMessages(messages = []) {
   }));
 }
 
+function mergeStateSnapshots(base = {}, override = {}) {
+  if (!override || typeof override !== "object") {
+    return deepClone(base ?? {});
+  }
+  const result = deepClone(base ?? {});
+  const stack = [{ target: result, source: override }];
+
+  while (stack.length > 0) {
+    const { target, source } = stack.pop();
+    if (!source || typeof source !== "object") {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    Object.keys(source).forEach((key) => {
+      const value = source[key];
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        if (
+          !target[key] ||
+          typeof target[key] !== "object" ||
+          Array.isArray(target[key])
+        ) {
+          target[key] = {};
+        }
+        stack.push({ target: target[key], source: value });
+      } else {
+        target[key] = Array.isArray(value) ? value.slice() : value;
+      }
+    });
+  }
+
+  return result;
+}
+
 export function useWizardController({ user, initialJobId = null }) {
   const router = useRouter();
   const [wizardState, dispatch] = useReducer(
@@ -231,7 +264,6 @@ export function useWizardController({ user, initialJobId = null }) {
   const draftPersistTimeoutRef = useRef(null);
   const hydrationKey = `${user?.id ?? "anon"}:${initialJobId ?? "new"}`;
   const migratedJobIdRef = useRef(initialJobId ?? null);
-  const lastHydratedKeyRef = useRef(null);
   const hasNavigatedToJobRef = useRef(false);
   const debugEnabled = process.env.NODE_ENV !== "production";
   const debug = useCallback(
@@ -508,11 +540,6 @@ useEffect(() => {
       return;
     }
 
-    if (lastHydratedKeyRef.current === hydrationKey) {
-      return;
-    }
-    lastHydratedKeyRef.current = hydrationKey;
-
     let cancelled = false;
 
     const hydrate = async () => {
@@ -566,53 +593,65 @@ useEffect(() => {
           return;
         }
 
-        const includeOptional = Boolean(serverJob.includeOptional);
+        const includeOptionalFromServer = Boolean(serverJob.includeOptional);
         const serverState = deepClone(serverJob.state ?? {});
         const localDraft = loadDraft({ userId: user.id, jobId: initialJobId });
-        const baseIndex =
-          localDraft?.currentStepIndex ??
-          determineStepIndex(serverState, includeOptional);
-        const baseVisited =
-          localDraft?.maxVisitedIndex ??
-          Math.max(baseIndex, wizardState.maxVisitedIndex);
+        const baseIndex = determineStepIndex(
+          serverState,
+          includeOptionalFromServer
+        );
+        const baseVisited = Math.max(baseIndex, wizardState.maxVisitedIndex);
         const basePayload = {
           jobId: serverJob.jobId,
           state: serverState,
           committedState: serverState,
-          includeOptional,
+          includeOptional: includeOptionalFromServer,
           currentStepIndex: baseIndex,
           maxVisitedIndex: baseVisited,
         };
 
         let mergedPayload = basePayload;
-        const serverUpdatedAt =
-          serverJob.updatedAt instanceof Date
-            ? serverJob.updatedAt.getTime()
-            : 0;
-        if (
-          localDraft &&
-          localDraft.updatedAt &&
-          localDraft.updatedAt > serverUpdatedAt
-        ) {
-          debug("hydrate:local-overrides-server", {
-            localUpdatedAt: localDraft.updatedAt,
-            serverUpdatedAt,
-          });
+        if (localDraft) {
+          const mergedIncludeOptional =
+            typeof localDraft.includeOptional === "boolean"
+              ? localDraft.includeOptional
+              : basePayload.includeOptional;
+          const mergedState = mergeStateSnapshots(
+            serverState,
+            localDraft.state ?? {}
+          );
+          const totalSteps = mergedIncludeOptional
+            ? REQUIRED_STEPS.length + OPTIONAL_STEPS.length
+            : REQUIRED_STEPS.length;
+          const clampIndex = (value, fallback) => {
+            const fallbackValue =
+              Number.isFinite(fallback) && fallback >= 0
+                ? fallback
+                : 0;
+            const upperBound = Math.max(totalSteps - 1, 0);
+            if (!Number.isFinite(value)) {
+              return Math.min(Math.max(fallbackValue, 0), upperBound);
+            }
+            return Math.min(Math.max(value, 0), upperBound);
+          };
+          const mergedCurrentIndex = clampIndex(
+            localDraft.currentStepIndex,
+            basePayload.currentStepIndex
+          );
+          const mergedVisitedIndex = Math.max(
+            mergedCurrentIndex,
+            clampIndex(
+              localDraft.maxVisitedIndex,
+              basePayload.maxVisitedIndex
+            )
+          );
+
           mergedPayload = {
             ...basePayload,
-            state: deepClone(localDraft.state ?? basePayload.state),
-            includeOptional:
-              typeof localDraft.includeOptional === "boolean"
-                ? localDraft.includeOptional
-                : basePayload.includeOptional,
-            currentStepIndex:
-              localDraft.currentStepIndex ?? basePayload.currentStepIndex,
-            maxVisitedIndex:
-              localDraft.maxVisitedIndex ??
-              Math.max(
-                localDraft.currentStepIndex ?? 0,
-                basePayload.maxVisitedIndex
-              ),
+            state: mergedState,
+            includeOptional: mergedIncludeOptional,
+            currentStepIndex: mergedCurrentIndex,
+            maxVisitedIndex: mergedVisitedIndex,
           };
         }
 
@@ -1558,10 +1597,6 @@ useEffect(() => {
       return;
     }
 
-    if (user?.id) {
-      clearDraft({ userId: user.id, jobId: targetJobId });
-    }
-
     router.push(`/wizard/${targetJobId}/refine`);
   }, [handleSubmit, router, showToast, user?.id, wizardState.jobId]);
 
@@ -1645,10 +1680,6 @@ useEffect(() => {
     if (!targetJobId) {
       showToast("error", "Unable to determine job for refinement.");
       return;
-    }
-
-    if (user?.id) {
-      clearDraft({ userId: user.id, jobId: targetJobId });
     }
 
     router.push(`/wizard/${targetJobId}/refine`);

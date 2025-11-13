@@ -217,6 +217,7 @@ function createBaseJob({ jobId, userId, now }) {
     companyName: "",
     logoUrl: "",
     location: "",
+    zipCode: "",
     jobDescription: "",
     coreDuties: [],
     mustHaves: [],

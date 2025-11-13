@@ -559,7 +559,7 @@ export function WizardSuggestionPanel({
                     >
                       <p className="whitespace-pre-wrap">{message.content}</p>
                       {message.metadata?.actions?.length ? (
-                        <div className="mt-2 text-xs text-primary-100">
+                        <div className="mt-2 text-xs text-primary-300">
                           Applied {message.metadata.actions.length} update
                           {message.metadata.actions.length > 1 ? "s" : ""} to the form.
                         </div>

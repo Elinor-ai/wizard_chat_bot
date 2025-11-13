@@ -19,6 +19,10 @@ import {
   REQUIRED_STEPS,
 } from "../../../../../components/wizard/wizard-schema";
 import { WizardSuggestionPanel } from "../../../../../components/wizard/wizard-suggestion-panel";
+import {
+  deepClone,
+  setDeep
+} from "../../../../../components/wizard/wizard-utils";
 
 const FIELD_DEFINITIONS = [...REQUIRED_STEPS, ...OPTIONAL_STEPS].flatMap(
   (step) => step.fields
@@ -968,6 +972,7 @@ export default function RefineJobPage() {
   const [channelRecommendations, setChannelRecommendations] = useState([]);
   const [channelUpdatedAt, setChannelUpdatedAt] = useState(null);
   const [channelFailure, setChannelFailure] = useState(null);
+  const [isFetchingChannels, setIsFetchingChannels] = useState(false);
   const [isRegeneratingChannels, setIsRegeneratingChannels] = useState(false);
   const [jobAssets, setJobAssets] = useState([]);
   const [assetRun, setAssetRun] = useState(null);
@@ -1053,14 +1058,23 @@ export default function RefineJobPage() {
   ]);
 
   const isStepTransitioning = useMemo(() => {
-    if (currentStep === "channels" && (isFinalizing || isRegeneratingChannels)) {
+    if (
+      currentStep === "channels" &&
+      (isFinalizing || isRegeneratingChannels || isFetchingChannels)
+    ) {
       return true;
     }
     if (currentStep === "assets" && isGeneratingAssets) {
       return true;
     }
     return false;
-  }, [currentStep, isFinalizing, isRegeneratingChannels, isGeneratingAssets]);
+  }, [
+    currentStep,
+    isFinalizing,
+    isRegeneratingChannels,
+    isFetchingChannels,
+    isGeneratingAssets
+  ]);
 
   const activeStage = useMemo(() => {
     if (currentStep === "channels") {
@@ -1105,14 +1119,20 @@ export default function RefineJobPage() {
     if (isFinalizing) {
       return "Preparing channel recommendations…";
     }
-    if (currentStep === "channels" && isRegeneratingChannels) {
+    if (currentStep === "channels" && (isRegeneratingChannels || isFetchingChannels)) {
       return "Refreshing channel recommendations…";
     }
     if (isGeneratingAssets) {
       return "Generating campaign assets…";
     }
     return null;
-  }, [isFinalizing, currentStep, isRegeneratingChannels, isGeneratingAssets]);
+  }, [
+    isFinalizing,
+    currentStep,
+    isRegeneratingChannels,
+    isFetchingChannels,
+    isGeneratingAssets
+  ]);
 
   useEffect(() => {
     const currentIndex = STEP_INDEX[currentStep] ?? 0;
@@ -1300,25 +1320,53 @@ useEffect(() => {
     }
   };
 
-  const handleRegenerateChannels = useCallback(async () => {
-    if (!user?.authToken || !jobId) return;
-    setIsRegeneratingChannels(true);
-    try {
-      const response = await fetchChannelRecommendations({
-        authToken: user.authToken,
-        jobId,
-        forceRefresh: true,
-      });
-      setChannelRecommendations(response.recommendations ?? []);
-      setChannelUpdatedAt(response.updatedAt ?? null);
-      setChannelFailure(response.failure ?? null);
-      syncSelectedChannels(response.recommendations ?? []);
-    } catch (error) {
-      setChannelFailure({ reason: "refresh_failed", message: error.message });
-    } finally {
-      setIsRegeneratingChannels(false);
-    }
-  }, [user?.authToken, jobId, syncSelectedChannels]);
+  const loadChannelRecommendations = useCallback(
+    async ({ forceRefresh = false } = {}) => {
+      if (!user?.authToken || !jobId) return;
+      if (isRegeneratingChannels || (isFetchingChannels && !forceRefresh)) {
+        return;
+      }
+      if (forceRefresh) {
+        setIsRegeneratingChannels(true);
+      } else {
+        setIsFetchingChannels(true);
+      }
+      try {
+        const response = await fetchChannelRecommendations({
+          authToken: user.authToken,
+          jobId,
+          forceRefresh,
+        });
+        const recommendations = response.recommendations ?? [];
+        setChannelRecommendations(recommendations);
+        setChannelUpdatedAt(response.updatedAt ?? null);
+        setChannelFailure(response.failure ?? null);
+        syncSelectedChannels(recommendations);
+      } catch (error) {
+        setChannelFailure({
+          reason: forceRefresh ? "refresh_failed" : "load_failed",
+          message: error.message,
+        });
+      } finally {
+        if (forceRefresh) {
+          setIsRegeneratingChannels(false);
+        } else {
+          setIsFetchingChannels(false);
+        }
+      }
+    },
+    [
+      user?.authToken,
+      jobId,
+      syncSelectedChannels,
+      isRegeneratingChannels,
+      isFetchingChannels,
+    ]
+  );
+
+  const handleRegenerateChannels = useCallback(() => {
+    loadChannelRecommendations({ forceRefresh: true });
+  }, [loadChannelRecommendations]);
 
   useEffect(() => {
     if (currentStep === "refine") {
@@ -1329,20 +1377,22 @@ useEffect(() => {
       currentStep === "channels" &&
       channelRecommendations.length === 0 &&
       !isRegeneratingChannels &&
+      !isFetchingChannels &&
       !channelFailure &&
       finalJobSource &&
       !channelsInitializedRef.current
     ) {
       channelsInitializedRef.current = true;
-      handleRegenerateChannels();
+      loadChannelRecommendations();
     }
   }, [
     currentStep,
     channelRecommendations.length,
     isRegeneratingChannels,
+    isFetchingChannels,
     channelFailure,
     finalJobSource,
-    handleRegenerateChannels
+    loadChannelRecommendations
   ]);
 
   const handleGenerateAssets = async () => {
@@ -1445,6 +1495,73 @@ useEffect(() => {
           stage,
         });
         applyConversationUpdate(response.messages ?? []);
+        const actions = Array.isArray(response.actions)
+          ? response.actions
+          : [];
+        if (actions.length > 0) {
+          actions.forEach((action) => {
+            if (!action || typeof action !== "object") {
+              return;
+            }
+            switch (action.type) {
+              case "field_update": {
+                const applyField = (setter) => {
+                  setter((prev) => {
+                    const next = deepClone(prev);
+                    setDeep(next, action.fieldId, action.value);
+                    return next;
+                  });
+                };
+                applyField(setOriginalDraft);
+                applyField(setInitialOriginal);
+                break;
+              }
+              case "refined_field_update": {
+                const applyField = (setter) => {
+                  setter((prev) => {
+                    const next = deepClone(prev);
+                    setDeep(next, action.fieldId, action.value);
+                    return next;
+                  });
+                };
+                applyField(setRefinedDraft);
+                applyField(setInitialRefined);
+                break;
+              }
+              case "channel_recommendations_update": {
+                if (Array.isArray(action.recommendations)) {
+                  const nextRecommendations = action.recommendations;
+                  setChannelRecommendations(nextRecommendations);
+                  setChannelUpdatedAt(new Date());
+                  setChannelFailure(null);
+                  syncSelectedChannels(nextRecommendations);
+                } else {
+                  loadChannelRecommendations();
+                }
+                break;
+              }
+              case "asset_update": {
+                setJobAssets((prev) =>
+                  prev.map((asset) =>
+                    asset.id === action.assetId
+                      ? {
+                          ...asset,
+                          content: {
+                            ...(asset.content ?? {}),
+                            ...(action.content ?? {})
+                          },
+                          updatedAt: new Date().toISOString()
+                        }
+                      : asset
+                  )
+                );
+                break;
+              }
+              default:
+                break;
+            }
+          });
+        }
         setCopilotError(null);
       } catch (error) {
         setCopilotConversation((prev) =>
@@ -1455,7 +1572,14 @@ useEffect(() => {
         setIsCopilotChatting(false);
       }
     },
-    [user?.authToken, jobId, applyConversationUpdate, activeStage]
+    [
+      user?.authToken,
+      jobId,
+      applyConversationUpdate,
+      activeStage,
+      syncSelectedChannels,
+      loadChannelRecommendations
+    ]
   );
 
   if (!user?.authToken) {
@@ -1479,8 +1603,7 @@ useEffect(() => {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="space-y-6">
+    <div className="space-y-6">
       <header className="space-y-3">
         <h1 className="text-3xl font-semibold text-neutral-900">
           Refine & publish your job
@@ -1495,17 +1618,19 @@ useEffect(() => {
         ) : null}
       </header>
 
-      <StepProgress
-        steps={FLOW_STEPS}
-        currentStep={currentStep}
-        maxEnabledIndex={maxEnabledIndex}
-        onStepChange={handleStepChange}
-      />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="space-y-6">
+          <StepProgress
+            steps={FLOW_STEPS}
+            currentStep={currentStep}
+            maxEnabledIndex={maxEnabledIndex}
+            onStepChange={handleStepChange}
+          />
 
-      {blockingSpinnerLabel ? (
-        <LoadingState label={blockingSpinnerLabel} />
-      ) : (
-        <>
+          {blockingSpinnerLabel ? (
+            <LoadingState label={blockingSpinnerLabel} />
+          ) : (
+            <>
           {currentStep === "refine" ? (
             <section className="space-y-6 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
               {summary ? (
@@ -1546,7 +1671,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="grid w-full max-w-4xl gap-5">
                   <JobEditorCard
                     title={viewMode === "refined" ? "Refined job" : "Original job"}
@@ -1557,25 +1682,12 @@ useEffect(() => {
                     refinedValues={initialRefined}
                   />
                 </div>
-
-                <div className="space-y-3 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-                  <h2 className="text-lg font-semibold text-neutral-900">
-                    Choose your final draft
-                  </h2>
-                  <p className="text-sm text-neutral-600">
-                    Select which version you want to move forward with. You can still edit
-                    the chosen draft before submitting.
-                  </p>
-                  <p className="text-sm text-neutral-500">
-                    We’ll submit whichever version is currently visible. Use the toggle
-                    above to switch between drafts, and the per-field controls to bring
-                    back original values where needed.
-                  </p>
+                <div className="flex justify-end items-end">
                   <button
                     type="button"
                     onClick={handleFinalize}
                     disabled={isFinalizing}
-                    className="w-full rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                    className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
                   >
                     {isFinalizing ? "Gathering recommendations…" : "Confirm & pick channels"}
                   </button>
@@ -1597,6 +1709,20 @@ useEffect(() => {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleRegenerateChannels}
+                    disabled={
+                      isRegeneratingChannels ||
+                      isFetchingChannels ||
+                      !finalJobSource
+                    }
+                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isRegeneratingChannels
+                      ? "Refreshing…"
+                      : "Regenerate channels"}
+                  </button>
                   <button
                     type="button"
                     onClick={() => navigateToStep("refine")}
@@ -1679,19 +1805,22 @@ useEffect(() => {
               <AssetPreviewGrid assets={jobAssets} logoUrl={jobLogoUrl} />
             </section>
           ) : null}
-        </>
-      )}
+            </>
+          )}
+        </div>
+        <div className="self-start">
+          <WizardSuggestionPanel
+            jobId={jobId}
+            jobState={activeJobState}
+            copilotConversation={copilotConversation}
+            onSendMessage={handleCopilotSend}
+            isSending={isCopilotChatting}
+            nextStepTeaser={chatTeaser}
+            isJobTabEnabled
+            stage={activeStage}
+          />
+        </div>
       </div>
-      <WizardSuggestionPanel
-        jobId={jobId}
-        jobState={activeJobState}
-        copilotConversation={copilotConversation}
-        onSendMessage={handleCopilotSend}
-        isSending={isCopilotChatting}
-        nextStepTeaser={chatTeaser}
-        isJobTabEnabled
-        stage={activeStage}
-      />
     </div>
   );
 }
