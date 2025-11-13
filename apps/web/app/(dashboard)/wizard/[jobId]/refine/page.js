@@ -736,7 +736,7 @@ function AssetPreviewCard({ asset, logoUrl }) {
           <p className="text-sm font-semibold text-neutral-900">
             {formatLabel}
           </p>
-          <p className="text-xs text-neutral-500">{channelLabel}</p>
+           <p className="text-xs text-neutral-500">{channelLabel}</p>
         </div>
         <span
           className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase ${badgeClass}`}
@@ -907,7 +907,7 @@ function HeroImageCard({ content, status }) {
         <div className="rounded-xl border border-neutral-200 bg-white p-2">
           <img
             src={imageUrl}
-            alt="AI visual"
+            alt="AI hero visual"
             className="h-auto w-full rounded-lg object-cover"
           />
         </div>
