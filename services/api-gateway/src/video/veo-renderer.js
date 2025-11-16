@@ -2,10 +2,12 @@ import { v4 as uuid } from "uuid";
 import { promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { createHash } from "node:crypto";
 import { VideoRenderTaskSchema } from "@wizard/core";
 import { buildFallbackThumbnail } from "./fallbacks.js";
 import { calculateStoryboardDuration } from "./utils.js";
 import { VeoClient } from "./veo-client.js";
+import { VERTEX_DEFAULTS } from "../vertex/constants.js";
 
 const OUTPUT_DIR = resolve(
   process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders"
@@ -14,9 +16,6 @@ const PUBLIC_BASE_URL = (
   process.env.VIDEO_RENDER_PUBLIC_BASE_URL ??
   "http://localhost:4000/video-assets"
 ).replace(/\/$/, "");
-const DEFAULT_STANDARD_MODEL = process.env.VIDEO_MODEL ?? "veo-3";
-const DEFAULT_FAST_MODEL = process.env.VIDEO_FAST_MODEL ?? "veo-3-fast";
-const EXTEND_MODEL = process.env.VIDEO_EXTEND_MODEL ?? "veo-3.1";
 const FAST_PRICE = Number(process.env.VEO_FAST_PRICE_PER_SECOND ?? 0.15);
 const STANDARD_PRICE = Number(process.env.VEO_STANDARD_PRICE_PER_SECOND ?? 0.4);
 const USE_FAST_FOR_DRAFTS = process.env.VIDEO_USE_FAST_FOR_DRAFTS !== "false";
@@ -24,25 +23,68 @@ const DOWNLOAD_TIMEOUT_MS = Number(
   process.env.VEO_DOWNLOAD_TIMEOUT_MS ?? 45000
 );
 const DOWNLOAD_RETRIES = Number(process.env.VEO_DOWNLOAD_RETRIES ?? 3);
+const FETCH_INTERVAL_SEQUENCE_MS = [30000, 30000, 30000];
+const QA_RATE_LIMIT_NOTE = "vertex-429: backoff recommended";
+
+const DEFAULT_VEO_STATE = Object.freeze({
+  operationName: null,
+  status: "none",
+  attempts: 0,
+  lastFetchAt: null,
+  hash: null,
+});
+
+function normalizeVeoState(state = {}) {
+  if (!state) return { ...DEFAULT_VEO_STATE };
+  return {
+    operationName: state.operationName ?? null,
+    status: state.status ?? "none",
+    attempts: Number.isFinite(Number(state.attempts))
+      ? Number(state.attempts)
+      : 0,
+    lastFetchAt: state.lastFetchAt ?? null,
+    hash: state.hash ?? null,
+  };
+}
+
+function hashVeoRequest(input) {
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+}
+
+function fetchDelayForAttempt(attempts = 0) {
+  const index = Math.min(attempts, FETCH_INTERVAL_SEQUENCE_MS.length - 1);
+  return FETCH_INTERVAL_SEQUENCE_MS[index];
+}
+
+function canFetchNow({ attempts, lastFetchAt }) {
+  if (!lastFetchAt) return true;
+  const lastMs = Date.parse(lastFetchAt);
+  if (Number.isNaN(lastMs)) return true;
+  const elapsed = Date.now() - lastMs;
+  return elapsed >= fetchDelayForAttempt(attempts);
+}
 
 export function createVeoRenderer({ logger }) {
   const client = new VeoClient({ logger });
 
-  async function render({ manifest, tier }) {
+  async function render({ manifest, tier, item }) {
     const requestedAt = new Date().toISOString();
+    const qa = { notes: [], flags: [] };
+    const veoState = normalizeVeoState(item?.veo);
 
     if (!client.isConfigured()) {
       logger.warn(
-        "Gemini/Veo credentials missing – falling back to storyboard render"
+        "Vertex/Veo credentials missing – falling back to storyboard render"
       );
-      return buildDryRunTask({
+      const renderTask = buildDryRunTask({
         manifest,
         requestedAt,
         renderer: "veo-missing-creds",
         status: "completed",
         reason: "missing_credentials",
-        message: "GEMINI_API_KEY is required for Veo rendering",
+        message: "Vertex ADC credentials are required for Veo rendering",
       });
+      return { renderTask, veo: veoState, httpStatus: 200 };
     }
 
     const plannedExtendsRaw = Number(manifest.generator?.plannedExtends ?? 0);
@@ -58,96 +100,78 @@ export function createVeoRenderer({ logger }) {
     const tierNormalized = (
       tier ?? (USE_FAST_FOR_DRAFTS ? "fast" : "standard")
     ).toLowerCase();
-    const model =
-      tierNormalized === "fast" ? DEFAULT_FAST_MODEL : DEFAULT_STANDARD_MODEL;
 
-    const directorPrompt = buildDirectorPrompt({ manifest });
-    const aspectRatio = manifest.spec?.aspectRatio ?? "9:16";
-    const resolution = manifest.spec?.resolution ?? "1080x1920";
-    const displayText = manifest.spec?.displayTextStrategy ?? "supers";
-    logger.info({ directorPrompt }, "Veo director prompt");
+    const requestContext = {
+      prompt: buildDirectorPrompt({ manifest }),
+      aspectRatio: manifest.spec?.aspectRatio ?? VERTEX_DEFAULTS.ASPECT_RATIO,
+      resolution: normalizeVertexResolution(manifest.spec?.resolution),
+      durationSeconds:
+        Number.isFinite(targetSeconds) && targetSeconds > 0
+          ? targetSeconds
+          : VERTEX_DEFAULTS.DURATION_SECONDS,
+      sampleCount: VERTEX_DEFAULTS.SAMPLE_COUNT,
+    };
+
+    logger.info(
+      { directorPrompt: requestContext.prompt },
+      "Veo director prompt"
+    );
+    const requestHash = hashVeoRequest({
+      prompt: requestContext.prompt,
+      aspectRatio: requestContext.aspectRatio,
+      resolution: requestContext.resolution,
+      durationSeconds: requestContext.durationSeconds,
+      sampleCount: requestContext.sampleCount,
+    });
+
+    const cacheHit = reuseCachedAsset({ item, veoState, requestHash });
+    if (cacheHit) {
+      return cacheHit;
+    }
+
+    // veoState.operationName =
+    //   "projects/botson-playground/locations/us-central1/publishers/google/models/veo-3.1-generate-preview/operations/ea2d859f-b364-4772-802e-47ee3aca4f78";
+
     try {
-      let clip = await client.generateVideo({
-        model,
-        prompt: directorPrompt,
-        aspectRatio,
-        resolution,
-        textOverlays: displayText,
-      });
-
-      const extendNotes = [];
-      for (let hop = 0; hop < plannedExtends; hop += 1) {
-        if (!clip.clipId) {
-          const error = new Error("Veo clipId missing; unable to extend");
-          error.code = "veo_missing_clip_id";
-          throw error;
-        }
-        clip = await client.extendVideo({
-          model: EXTEND_MODEL,
-          videoId: clip.clipId,
-          prompt: buildExtendPrompt({ manifest, hop }),
+      if (veoState.operationName) {
+        return await resumeOperation({
+          client,
+          manifest,
+          requestContext,
+          veoState,
+          qa,
+          requestHash,
+          plannedExtends,
+          tierNormalized,
+          logger,
         });
-        extendNotes.push({ hop: hop + 1, clipId: clip.clipId });
       }
-
-      const secondsGenerated = resolveDurationSeconds({
-        clip,
-        targetSeconds,
+      return await startPredict({
+        client,
         manifest,
-      });
-      const assets = await materializeClip({
-        clip,
-        manifest,
-        durationSeconds: secondsGenerated,
+        requestContext,
+        veoState,
+        qa,
+        requestHash,
+        plannedExtends,
+        tierNormalized,
         logger,
       });
-      const costEstimate =
-        secondsGenerated *
-        (tierNormalized === "fast" ? FAST_PRICE : STANDARD_PRICE);
-
-      const payload = {
-        id: uuid(),
-        manifestVersion: manifest.version,
-        mode: "file",
-        status: "completed",
-        renderer: "veo",
-        requestedAt,
-        completedAt: new Date().toISOString(),
-        metrics: {
-          secondsGenerated,
-          extendsRequested: plannedExtends,
-          extendsCompleted: extendNotes.length,
-          model,
-          tier: tierNormalized,
-          costEstimateUsd: Number(costEstimate.toFixed(2)),
-          synthIdWatermark: true,
-        },
-        result: {
-          videoUrl: assets.videoUrl,
-          captionFileUrl: assets.captionFileUrl,
-          posterUrl: assets.posterUrl,
-          synthesis: {
-            clipId: clip.clipId,
-            extends: extendNotes,
-          },
-        },
-      };
-
-      return VideoRenderTaskSchema.parse(payload);
     } catch (error) {
-      logger.error({ err: error }, "Veo renderer failed");
-      return buildDryRunTask({
+      return handleRendererError({
+        error,
         manifest,
+        qa,
+        veoState,
         requestedAt,
-        renderer: "veo",
-        status: "failed",
-        reason: error?.code ?? "veo_renderer_failed",
-        message: error?.message ?? "Veo renderer failed",
+        logger,
       });
     }
   }
 
-  return { render };
+  return {
+    render,
+  };
 }
 
 function resolveDurationSeconds({ clip, targetSeconds, manifest }) {
@@ -176,18 +200,291 @@ ${beats}
 Include pay ${manifest.job?.payRange ?? "as provided"} and CTA ${manifest.caption?.text ?? "Apply now"}.`;
 }
 
-function buildExtendPrompt({ manifest, hop }) {
-  const shot =
-    manifest.storyboard?.[hop + 1] ??
-    manifest.storyboard?.[manifest.storyboard.length - 1];
-  if (!shot) return "Extend scene with smooth motion.";
-  return `Extend the current shot into ${shot.phase}. Update visuals to ${shot.visual}. Keep consistent subjects and maintain camera continuity.`;
+function reuseCachedAsset({ item, veoState, requestHash }) {
+  if (!item?.renderTask) return null;
+  const hasCompletedVideo =
+    item.renderTask?.status === "completed" &&
+    Boolean(item.renderTask?.result?.videoUrl);
+  if (!hasCompletedVideo) return null;
+  if (veoState.status !== "ready") return null;
+  if (!veoState.hash || veoState.hash !== requestHash) return null;
+  return {
+    renderTask: item.renderTask,
+    veo: veoState,
+    httpStatus: 200,
+  };
+}
+
+async function startPredict({
+  client,
+  manifest,
+  requestContext,
+  veoState,
+  qa,
+  requestHash,
+  plannedExtends,
+  tierNormalized,
+  logger,
+}) {
+  const result = await client.generateVideo({
+    prompt: requestContext.prompt,
+    aspectRatio: requestContext.aspectRatio,
+    resolution: requestContext.resolution,
+    durationSeconds: requestContext.durationSeconds,
+    sampleCount: requestContext.sampleCount,
+  });
+
+  if (result?.clip) {
+    return finalizeClip({
+      clip: result.clip,
+      manifest,
+      qa,
+      requestContext,
+      requestHash,
+      plannedExtends,
+      tierNormalized,
+      logger,
+    });
+  }
+
+  if (result?.operationName) {
+    const nextVeo = {
+      operationName: result.operationName,
+      status: "predicting",
+      attempts: 0,
+      lastFetchAt: null,
+      hash: requestHash,
+    };
+    return buildPendingResponse({
+      manifest,
+      veo: nextVeo,
+      qa,
+      httpStatus: 202,
+    });
+  }
+
+  throw new Error("Vertex prediction returned neither clip nor operation");
+}
+
+async function resumeOperation({
+  client,
+  manifest,
+  requestContext,
+  veoState,
+  qa,
+  requestHash,
+  plannedExtends,
+  tierNormalized,
+  logger,
+}) {
+  if (!veoState.operationName) {
+    logger.warn(
+      { hash: veoState.hash },
+      "Veo state missing operationName; restarting prediction"
+    );
+    return startPredict({
+      client,
+      manifest,
+      requestContext,
+      veoState: normalizeVeoState(),
+      qa,
+      requestHash,
+      plannedExtends,
+      tierNormalized,
+      logger,
+    });
+  }
+
+  if (!canFetchNow(veoState)) {
+    const nextVeo = { ...veoState, status: "fetching" };
+    return buildPendingResponse({
+      manifest,
+      veo: nextVeo,
+      qa,
+      httpStatus: 202,
+    });
+  }
+
+  const fetchResult = await client.fetchPredictOperation(
+    veoState.operationName
+  );
+  if (!fetchResult.done) {
+    const nextVeo = {
+      ...veoState,
+      status: fetchResult.status ?? "fetching",
+      attempts: veoState.attempts + 1,
+      lastFetchAt: new Date().toISOString(),
+    };
+    return buildPendingResponse({
+      manifest,
+      veo: nextVeo,
+      qa,
+      httpStatus: 202,
+    });
+  }
+
+  const finalVeo = {
+    operationName: null,
+    status: "ready",
+    attempts: 0,
+    lastFetchAt: new Date().toISOString(),
+    hash: requestHash,
+  };
+
+  return finalizeClip({
+    clip: fetchResult.clip,
+    manifest,
+    qa,
+    requestContext,
+    requestHash,
+    plannedExtends,
+    tierNormalized,
+    logger,
+    overrideVeo: finalVeo,
+  });
+}
+
+async function finalizeClip({
+  clip,
+  manifest,
+  qa,
+  requestContext,
+  requestHash,
+  plannedExtends,
+  tierNormalized,
+  logger,
+  overrideVeo,
+}) {
+  const secondsGenerated = resolveDurationSeconds({
+    clip,
+    targetSeconds: requestContext.durationSeconds,
+    manifest,
+  });
+
+  if (
+    Number.isFinite(requestContext.durationSeconds) &&
+    requestContext.durationSeconds > VERTEX_DEFAULTS.DURATION_SECONDS
+  ) {
+    qa.notes.push(
+      `vertex-preview: generated ${VERTEX_DEFAULTS.DURATION_SECONDS}s; planned ${requestContext.durationSeconds}s`
+    );
+  }
+
+  if (plannedExtends > 0 && !qa.flags.includes("extend-unavailable")) {
+    qa.flags.push("extend-unavailable");
+  }
+
+  const assets = await materializeClip({
+    clip,
+    manifest,
+    durationSeconds: secondsGenerated,
+    logger,
+  });
+  const costEstimate =
+    secondsGenerated *
+    (tierNormalized === "fast" ? FAST_PRICE : STANDARD_PRICE);
+
+  const payload = {
+    id: uuid(),
+    manifestVersion: manifest.version,
+    mode: "file",
+    status: "completed",
+    renderer: "veo",
+    requestedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    metrics: {
+      secondsGenerated,
+      extendsRequested: plannedExtends,
+      extendsCompleted: 0,
+      model: VERTEX_DEFAULTS.VEO_MODEL_ID,
+      tier: tierNormalized,
+      costEstimateUsd: Number(costEstimate.toFixed(2)),
+      synthIdWatermark: true,
+    },
+    result: {
+      videoUrl: assets.videoUrl,
+      captionFileUrl: assets.captionFileUrl,
+      posterUrl: assets.posterUrl,
+      synthesis: {
+        clipId: clip.clipId,
+        extends: [],
+      },
+      qa,
+    },
+  };
+
+  const renderTask = VideoRenderTaskSchema.parse(payload);
+  if (renderTask.result) {
+    renderTask.result.qa = qa;
+  }
+  const veo = overrideVeo ?? {
+    operationName: null,
+    status: "ready",
+    attempts: 0,
+    lastFetchAt: new Date().toISOString(),
+    hash: requestHash,
+  };
+  return { renderTask, veo, httpStatus: 200 };
+}
+
+function buildPendingResponse({ manifest, veo, qa, httpStatus = 202 }) {
+  const renderTask = buildPendingRenderTask({ manifest });
+  renderTask.result = renderTask.result ?? {};
+  renderTask.result.qa = qa;
+  return { renderTask, veo, httpStatus };
+}
+
+function handleRendererError({
+  error,
+  manifest,
+  qa,
+  veoState,
+  requestedAt,
+  logger,
+}) {
+  logger?.error({ err: error }, "Veo renderer failed");
+  if (
+    error?.code === "veo_rate_limited" &&
+    !qa.notes.includes(QA_RATE_LIMIT_NOTE)
+  ) {
+    qa.notes.push(QA_RATE_LIMIT_NOTE);
+  }
+  const renderTask = buildDryRunTask({
+    manifest,
+    requestedAt,
+    renderer: "veo",
+    status: "failed",
+    reason: error?.code ?? "veo_renderer_failed",
+    message: error?.message ?? "Veo renderer failed",
+  });
+  if (renderTask.result) {
+    renderTask.result.qa = qa;
+  }
+  const nextVeo = {
+    ...veoState,
+    status: error?.code === "veo_rate_limited" ? "rate_limited" : "failed",
+  };
+  const httpStatus = error?.code === "veo_rate_limited" ? 429 : 500;
+  return { renderTask, veo: nextVeo, httpStatus };
+}
+
+function buildPendingRenderTask({ manifest }) {
+  return VideoRenderTaskSchema.parse({
+    id: uuid(),
+    manifestVersion: manifest.version,
+    mode: "dry_run",
+    status: "rendering",
+    renderer: "veo",
+    requestedAt: new Date().toISOString(),
+    result: null,
+  });
 }
 
 async function materializeClip({ clip, manifest, durationSeconds, logger }) {
-  if (!clip?.videoUrl) {
-    const error = new Error("Veo response missing downloadable videoUrl");
-    error.code = "veo_missing_video_url";
+  const inlineBuffer = extractInlineVideoBuffer(clip);
+  if (!clip?.videoUrl && !inlineBuffer) {
+    const error = new Error("Vertex preview response missing video payload");
+    error.code = "veo_missing_video_payload";
     throw error;
   }
 
@@ -200,7 +497,11 @@ async function materializeClip({ clip, manifest, durationSeconds, logger }) {
     ? join(OUTPUT_DIR, `${fileBase}.jpg`)
     : null;
 
-  await downloadAsset(clip.videoUrl, videoPath, { logger });
+  if (clip.videoUrl) {
+    await downloadAsset(clip.videoUrl, videoPath, { logger });
+  } else if (inlineBuffer) {
+    await fs.writeFile(videoPath, inlineBuffer);
+  }
 
   let posterSaved = false;
   if (clip.posterUrl && posterPath) {
@@ -284,6 +585,43 @@ async function downloadAsset(
     }
   }
   return false;
+}
+
+function extractInlineVideoBuffer(clip) {
+  if (clip?.inlineVideos?.length > 0) {
+    return clip.inlineVideos[0].buffer;
+  }
+  const prediction = clip?.metadata?.predictions?.[0];
+  const raw =
+    prediction?.bytesBase64Encoded ?? prediction?.videoBytesBase64 ?? null;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return null;
+  }
+  const parts = raw.split(",");
+  const base64 = parts.length > 1 ? parts[1] : parts[0];
+  return Buffer.from(base64.trim(), "base64");
+}
+
+function normalizeVertexResolution(specResolution) {
+  if (typeof specResolution !== "string") {
+    return VERTEX_DEFAULTS.RESOLUTION;
+  }
+  const normalized = specResolution.trim().toLowerCase();
+  if (
+    normalized === "1080x1920" ||
+    normalized === "1920x1080" ||
+    normalized === "1080p"
+  ) {
+    return "1080p";
+  }
+  if (
+    normalized === "720x1280" ||
+    normalized === "1280x720" ||
+    normalized === "720p"
+  ) {
+    return "720p";
+  }
+  return VERTEX_DEFAULTS.RESOLUTION;
 }
 
 function buildDryRunTask({

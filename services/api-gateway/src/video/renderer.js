@@ -10,8 +10,13 @@ import { createVeoRenderer } from "./veo-renderer.js";
 
 loadEnv();
 
-const OUTPUT_DIR = resolve(process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders");
-const PUBLIC_BASE_URL = (process.env.VIDEO_RENDER_PUBLIC_BASE_URL ?? "http://localhost:4000/video-assets").replace(/\/$/, "");
+const OUTPUT_DIR = resolve(
+  process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders"
+);
+const PUBLIC_BASE_URL = (
+  process.env.VIDEO_RENDER_PUBLIC_BASE_URL ??
+  "http://localhost:4000/video-assets"
+).replace(/\/$/, "");
 const FFMPEG_PATH = process.env.FFMPEG_PATH ?? "ffmpeg";
 const FONT_PATH = process.env.VIDEO_RENDER_FONT_PATH ?? null;
 const VIDEO_WIDTH = Number(process.env.VIDEO_RENDER_WIDTH ?? 720);
@@ -21,10 +26,10 @@ const COLOR_BY_PHASE = {
   PROOF: "0x0f172a",
   OFFER: "0x1e3a8a",
   ACTION: "0x065f46",
-  BRIDGE: "0x7c3aed"
+  BRIDGE: "0x7c3aed",
 };
 
-const SELECTED_RENDERER = (process.env.VIDEO_RENDERER ?? "ffmpeg").toLowerCase();
+const SELECTED_RENDERER = (process.env.VIDEO_RENDERER ?? "veo").toLowerCase();
 
 export function createRenderer(options) {
   if (SELECTED_RENDERER === "veo") {
@@ -41,7 +46,9 @@ export function createFfmpegRenderer({ logger }) {
     const requestedAt = new Date().toISOString();
 
     if (!renderingEnabled) {
-      return VideoRenderTaskSchema.parse(buildDryRunPayload({ manifest, taskId, requestedAt }));
+      return VideoRenderTaskSchema.parse(
+        buildDryRunPayload({ manifest, taskId, requestedAt })
+      );
     }
 
     try {
@@ -54,16 +61,19 @@ export function createFfmpegRenderer({ logger }) {
         renderer: "ffmpeg",
         requestedAt,
         metrics: {
-          secondsGenerated: paths?.secondsGenerated ?? manifest?.generator?.targetDurationSeconds ?? null,
+          secondsGenerated:
+            paths?.secondsGenerated ??
+            manifest?.generator?.targetDurationSeconds ??
+            null,
           extendsRequested: manifest?.generator?.plannedExtends ?? 0,
           extendsCompleted: manifest?.generator?.plannedExtends ?? 0,
           costEstimateUsd: null,
           tier: null,
           model: "ffmpeg",
-          synthIdWatermark: false
+          synthIdWatermark: false,
         },
         completedAt: new Date().toISOString(),
-        result: paths
+        result: paths,
       };
       return VideoRenderTaskSchema.parse(payload);
     } catch (error) {
@@ -78,14 +88,14 @@ export function createFfmpegRenderer({ logger }) {
         completedAt: new Date().toISOString(),
         error: {
           reason: "render_failed",
-          message: error?.message ?? "Renderer failed"
-        }
+          message: error?.message ?? "Renderer failed",
+        },
       });
     }
   }
 
   return {
-    render
+    render,
   };
 }
 
@@ -95,7 +105,8 @@ function buildDryRunPayload({ manifest, taskId, requestedAt }) {
     manifestVersion: manifest.version,
     mode: "dry_run",
     status: "completed",
-    renderer: SELECTED_RENDERER === "veo" ? "veo-storyboard" : "storyboard-dry-run",
+    renderer:
+      SELECTED_RENDERER === "veo" ? "veo-storyboard" : "storyboard-dry-run",
     requestedAt,
     completedAt: requestedAt,
     result: {
@@ -103,9 +114,9 @@ function buildDryRunPayload({ manifest, taskId, requestedAt }) {
         storyboard: manifest.storyboard,
         caption: manifest.caption,
         thumbnail: manifest.thumbnail,
-        checklist: manifest.compliance?.qaChecklist ?? []
-      }
-    }
+        checklist: manifest.compliance?.qaChecklist ?? [],
+      },
+    },
   };
 }
 
@@ -114,8 +125,18 @@ async function renderVideoWithFfmpeg({ manifest, logger }) {
   const tmpDir = await mkdtemp(join(tmpdir(), "wizard-video-"));
   try {
     const segments = await generateSegments({ manifest, tmpDir, logger });
-    const videoPath = await concatSegments({ segments, tmpDir, manifest, logger });
-    const posterPath = await createPosterFrame({ videoPath, tmpDir, manifest, logger });
+    const videoPath = await concatSegments({
+      segments,
+      tmpDir,
+      manifest,
+      logger,
+    });
+    const posterPath = await createPosterFrame({
+      videoPath,
+      tmpDir,
+      manifest,
+      logger,
+    });
     const captionPath = await createCaptionFile({ manifest, tmpDir });
 
     const videoFile = join(OUTPUT_DIR, `${manifest.manifestId}.mp4`);
@@ -130,7 +151,10 @@ async function renderVideoWithFfmpeg({ manifest, logger }) {
       videoUrl: `${PUBLIC_BASE_URL}/${manifest.manifestId}.mp4`,
       captionFileUrl: `${PUBLIC_BASE_URL}/${manifest.manifestId}.srt`,
       posterUrl: `${PUBLIC_BASE_URL}/${manifest.manifestId}.jpg`,
-      secondsGenerated: segments.reduce((sum, segment) => sum + Number(segment.duration ?? 0), 0)
+      secondsGenerated: segments.reduce(
+        (sum, segment) => sum + Number(segment.duration ?? 0),
+        0
+      ),
     };
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
@@ -139,22 +163,30 @@ async function renderVideoWithFfmpeg({ manifest, logger }) {
 
 async function generateSegments({ manifest, tmpDir, logger }) {
   const segments = [];
-  const rawShots = Array.isArray(manifest.storyboard) ? manifest.storyboard : [];
-  const shots = rawShots.length > 0
-    ? rawShots
-    : [
-        {
-          phase: "HOOK",
-          durationSeconds: 4,
-          onScreenText: manifest.job?.title ?? "Now hiring",
-          voiceOver: manifest.caption?.text ?? "Tap to apply"
-        }
-      ];
+  const rawShots = Array.isArray(manifest.storyboard)
+    ? manifest.storyboard
+    : [];
+  const shots =
+    rawShots.length > 0
+      ? rawShots
+      : [
+          {
+            phase: "HOOK",
+            durationSeconds: 4,
+            onScreenText: manifest.job?.title ?? "Now hiring",
+            voiceOver: manifest.caption?.text ?? "Tap to apply",
+          },
+        ];
   for (let index = 0; index < shots.length; index += 1) {
     const shot = shots[index];
     const duration = clamp(Number(shot.durationSeconds ?? 4), 2, 8);
     const background = COLOR_BY_PHASE[shot.phase] ?? "0x111827";
-    const headerText = (shot.onScreenText || manifest.job?.title || shot.phase || "")
+    const headerText = (
+      shot.onScreenText ||
+      manifest.job?.title ||
+      shot.phase ||
+      ""
+    )
       .toString()
       .toUpperCase();
     const bodyText = [shot.voiceOver, shot.visual]
@@ -187,7 +219,7 @@ async function generateSegments({ manifest, tmpDir, logger }) {
       "128k",
       "-t",
       duration.toFixed(2),
-      segmentPath
+      segmentPath,
     ];
     await runFfmpeg(args, logger);
     segments.push({ path: segmentPath, duration });
@@ -202,18 +234,21 @@ async function concatSegments({ segments, tmpDir, manifest, logger }) {
     .join("\n");
   await fs.writeFile(concatFile, list, "utf8");
   const stitchedPath = join(tmpDir, `${manifest.manifestId}-stitched.mp4`);
-  await runFfmpeg([
-    "-y",
-    "-f",
-    "concat",
-    "-safe",
-    "0",
-    "-i",
-    concatFile,
-    "-c",
-    "copy",
-    stitchedPath
-  ], logger);
+  await runFfmpeg(
+    [
+      "-y",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      concatFile,
+      "-c",
+      "copy",
+      stitchedPath,
+    ],
+    logger
+  );
   return stitchedPath;
 }
 
@@ -232,8 +267,12 @@ async function createCaptionFile({ manifest, tmpDir }) {
     const startTime = formatTimestamp(cursor);
     const endTime = formatTimestamp(cursor + duration);
     cursor += duration;
-    const lines = [shot.onScreenText, shot.voiceOver].filter((value) => value && value.trim().length > 0);
-    captions.push(`${index + 1}\n${startTime} --> ${endTime}\n${lines.join("\n")}\n`);
+    const lines = [shot.onScreenText, shot.voiceOver].filter(
+      (value) => value && value.trim().length > 0
+    );
+    captions.push(
+      `${index + 1}\n${startTime} --> ${endTime}\n${lines.join("\n")}\n`
+    );
   });
   const captionPath = join(tmpDir, `${manifest.manifestId}.srt`);
   await fs.writeFile(captionPath, captions.join("\n"), "utf8");
@@ -254,7 +293,7 @@ function buildDrawTextFilter({ headerText, bodyText }) {
     "boxborderw=32",
     "text='" + escapeDrawText(safeHeader) + "'",
     "x=(w-text_w)/2",
-    "y=h*0.18"
+    "y=h*0.18",
   ]
     .filter(Boolean)
     .join(":");
@@ -269,7 +308,7 @@ function buildDrawTextFilter({ headerText, bodyText }) {
     "boxborderw=28",
     "text='" + escapeDrawText(safeBody) + "'",
     "x=(w-text_w)/2",
-    "y=h*0.55"
+    "y=h*0.55",
   ]
     .filter(Boolean)
     .join(":");
@@ -323,7 +362,9 @@ async function runFfmpeg(args, logger) {
 }
 
 function formatTimestamp(totalSeconds) {
-  const milliseconds = Math.floor((totalSeconds - Math.floor(totalSeconds)) * 1000);
+  const milliseconds = Math.floor(
+    (totalSeconds - Math.floor(totalSeconds)) * 1000
+  );
   const seconds = Math.floor(totalSeconds) % 60;
   const minutes = Math.floor(totalSeconds / 60) % 60;
   const hours = Math.floor(totalSeconds / 3600);

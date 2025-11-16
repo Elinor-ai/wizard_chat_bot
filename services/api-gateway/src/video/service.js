@@ -11,6 +11,14 @@ import { incrementMetric } from "./metrics.js";
 const COLLECTION = "videoLibraryItems";
 const AUTO_RENDER = process.env.VIDEO_RENDER_AUTOSTART !== "false";
 const USE_FAST_TIER = process.env.VIDEO_USE_FAST_FOR_DRAFTS !== "false";
+const VEO_POLL_INTERVAL_MS = 30000;
+const EMPTY_VEO_STATE = Object.freeze({
+  operationName: null,
+  status: "none",
+  attempts: 0,
+  lastFetchAt: null,
+  hash: null
+});
 
 function deriveChannelName(channelId) {
   return CHANNEL_CATALOG_MAP[channelId]?.name ?? channelId;
@@ -31,7 +39,8 @@ function normaliseStatus(status) {
 function normalizeItem(raw, logger) {
   const payload = {
     ...raw,
-    status: normaliseStatus(raw?.status)
+    status: normaliseStatus(raw?.status),
+    veo: normaliseVeoState(raw?.veo)
   };
   const parsed = VideoLibraryItemSchema.safeParse(payload);
   if (!parsed.success) {
@@ -59,7 +68,19 @@ function appendAuditLog(item, entry) {
   return nextLog;
 }
 
+function normaliseVeoState(state) {
+  if (!state) return { ...EMPTY_VEO_STATE };
+  return {
+    operationName: state.operationName ?? null,
+    status: state.status ?? "none",
+    attempts: Number.isFinite(Number(state.attempts)) ? Number(state.attempts) : 0,
+    lastFetchAt: state.lastFetchAt ?? null,
+    hash: state.hash ?? null
+  };
+}
+
 export function createVideoLibraryService({ firestore, llmClient, renderer, publisherRegistry, logger }) {
+  const veoPollers = new Map();
   async function listItems({ ownerUserId, filters = {} }) {
     const docs = await firestore.listCollection(COLLECTION, [
       { field: "ownerUserId", operator: "==", value: ownerUserId }
@@ -123,6 +144,7 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       jobSnapshot: manifest.job,
       manifests: [manifest],
       activeManifest: manifest,
+      veo: { ...EMPTY_VEO_STATE },
       renderTask: null,
       publishTask: null,
       analytics: { impressions: 0, clicks: 0, applies: 0 },
@@ -141,7 +163,8 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     incrementMetric(logger, "video_manifests_created", 1, { ownerUserId });
 
     if (AUTO_RENDER) {
-      return triggerRender({ ownerUserId, itemId });
+      const outcome = await triggerRender({ ownerUserId, itemId });
+      return outcome?.item ?? null;
     }
 
     return getItem({ ownerUserId, itemId });
@@ -151,6 +174,7 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     const payload = {
       ...item,
       ...updates,
+      veo: normaliseVeoState(updates.veo ?? item.veo),
       updatedAt: new Date().toISOString()
     };
     if (auditEntry) {
@@ -182,14 +206,16 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       jobSnapshot: manifest.job,
       renderTask: null,
       publishTask: null,
-      status: VideoLibraryStatusEnum.enum.planned
+      status: VideoLibraryStatusEnum.enum.planned,
+      veo: { ...EMPTY_VEO_STATE }
     };
     const auditEntry = createAuditEntry("manifest_regenerated", "Manifest regenerated", {
       version: manifest.version
     });
     const updated = await updateItem(existing, updates, auditEntry);
     if (AUTO_RENDER) {
-      return triggerRender({ ownerUserId, itemId });
+      const outcome = await triggerRender({ ownerUserId, itemId });
+      return outcome?.item ?? null;
     }
     return updated;
   }
@@ -200,7 +226,13 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       return null;
     }
     const tier = resolveTier(existing);
-    const renderTask = await renderer.render({ manifest: existing.activeManifest, tier });
+    const outcome = await renderer.render({
+      manifest: existing.activeManifest,
+      tier,
+      item: existing
+    });
+    const renderTask = outcome?.renderTask ?? outcome;
+    const veo = normaliseVeoState(outcome?.veo ?? existing.veo);
     let status = existing.status;
     if (renderTask.status === "completed") {
       status = VideoLibraryStatusEnum.enum.ready;
@@ -210,13 +242,15 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       status = VideoLibraryStatusEnum.enum.generating;
     }
     const auditEntry = createAuditEntry("render_completed", "Render task updated", {
-      status: renderTask.status
+      status: renderTask.status,
+      veoStatus: veo.status
     });
     const updated = await updateItem(
       existing,
       {
         renderTask,
-        status
+        status,
+        veo
       },
       auditEntry
     );
@@ -225,7 +259,14 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     } else if (renderTask.status === "failed") {
       incrementMetric(logger, "video_renders_failed", 1, { ownerUserId });
     }
-    return updated;
+    const response = { item: updated, httpStatus: outcome?.httpStatus ?? 200 };
+    if (response.httpStatus === 202) {
+      clearVeoPoll(itemId);
+      scheduleVeoPoll({ ownerUserId, itemId });
+    } else {
+      clearVeoPoll(itemId);
+    }
+    return response;
   }
 
   async function approveItem({ ownerUserId, itemId }) {
@@ -317,6 +358,30 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       },
       auditEntry
     );
+  }
+
+  function scheduleVeoPoll({ ownerUserId, itemId }) {
+    if (!ownerUserId || !itemId || veoPollers.has(itemId)) {
+      return;
+    }
+    const timeout = setTimeout(async () => {
+      veoPollers.delete(itemId);
+      try {
+        await triggerRender({ ownerUserId, itemId });
+      } catch (error) {
+        logger.warn({ err: error, itemId }, "Veo auto-fetch failed; retrying");
+        scheduleVeoPoll({ ownerUserId, itemId });
+      }
+    }, VEO_POLL_INTERVAL_MS);
+    veoPollers.set(itemId, timeout);
+  }
+
+  function clearVeoPoll(itemId) {
+    const timeout = veoPollers.get(itemId);
+    if (timeout) {
+      clearTimeout(timeout);
+      veoPollers.delete(itemId);
+    }
   }
 
   return {
