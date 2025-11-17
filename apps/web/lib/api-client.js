@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CompanySchema, CompanyDiscoveredJobSchema } from "@wizard/core";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
@@ -183,6 +184,24 @@ const jobAssetResponseSchema = z.object({
   jobId: z.string(),
   assets: z.array(jobAssetSchema).default([]),
   run: jobAssetRunSchema.nullable().optional()
+});
+
+const companyOverviewResponseSchema = z.object({
+  company: CompanySchema,
+  hasDiscoveredJobs: z.boolean().optional().default(false)
+});
+
+const companyJobsResponseSchema = z.object({
+  companyId: z.string().nullable(),
+  jobs: z.array(CompanyDiscoveredJobSchema).default([])
+});
+
+const companyListResponseSchema = z.object({
+  companies: z.array(CompanySchema).default([])
+});
+
+const companyUpdateResponseSchema = z.object({
+  company: CompanySchema
 });
 
 const jobDetailsSchema = z
@@ -846,6 +865,149 @@ export const WizardApi = {
 
     const data = await response.json();
     return copilotConversationResponseSchema.parse(data);
+  },
+
+  async fetchCompanyOverview(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/companies/me`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error("Failed to load company intelligence");
+    }
+
+    const data = await response.json();
+    return companyOverviewResponseSchema.parse(data);
+  },
+
+  async fetchCompanyJobs(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/companies/me/jobs`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (response.status === 404) {
+      return {
+        companyId: null,
+        jobs: []
+      };
+    }
+
+    if (!response.ok) {
+      throw new Error("Failed to load discovered jobs");
+    }
+
+    const data = await response.json();
+    return companyJobsResponseSchema.parse(data);
+  },
+
+  async confirmCompanyName(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/companies/me/confirm-name`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      let message = "Unable to confirm company name";
+      try {
+        const body = await response.json();
+        if (typeof body?.error === "string") {
+          message = body.error;
+        }
+      } catch (error) {
+        const text = await response.text();
+        if (text) message = text;
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return companyOverviewResponseSchema.parse(data);
+  },
+
+  async confirmCompanyProfile(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/companies/me/confirm-profile`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      let message = "Unable to confirm company profile";
+      try {
+        const body = await response.json();
+        if (typeof body?.error === "string") {
+          message = body.error;
+        }
+      } catch {
+        const text = await response.text();
+        if (text) message = text;
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return companyOverviewResponseSchema.parse(data);
+  },
+
+  async fetchMyCompanies(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/companies/my-companies`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load companies");
+    }
+
+    const data = await response.json();
+    return companyListResponseSchema.parse(data);
+  },
+
+  async updateCompany(companyId, payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/companies/my-companies/${companyId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      let message = "Unable to update company";
+      try {
+        const body = await response.json();
+        if (typeof body?.error === "string") {
+          message = body.error;
+        }
+      } catch {
+        const text = await response.text();
+        if (text) message = text;
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return companyUpdateResponseSchema.parse(data);
   }
 };
 

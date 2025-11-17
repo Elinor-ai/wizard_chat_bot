@@ -14,6 +14,8 @@ import { contactRouter } from "./routes/contact.js";
 import { usersRouter } from "./routes/users.js";
 import { requireAuth } from "./middleware/require-auth.js";
 import { videosRouter } from "./routes/videos.js";
+import { companiesRouter } from "./routes/companies.js";
+import { startCompanyIntelWorker } from "./services/company-intel.js";
 
 const corsConfig = {
   origin: "http://localhost:3000",
@@ -23,6 +25,7 @@ const corsConfig = {
 
 export function createApp({ logger, firestore, llmClient }) {
   const app = express();
+  startCompanyIntelWorker({ firestore, llmClient, logger });
 
   app.use(cors(corsConfig));
   app.options("*", cors(corsConfig));
@@ -51,6 +54,7 @@ export function createApp({ logger, firestore, llmClient }) {
   app.use("/videos", authMiddleware, videosRouter({ firestore, llmClient, logger }));
   app.use("/dashboard", authMiddleware, dashboardRouter({ firestore, logger }));
   app.use("/users", authMiddleware, usersRouter({ firestore, logger }));
+  app.use("/companies", authMiddleware, companiesRouter({ firestore, logger }));
 
   app.use(notFound);
   app.use(errorHandler(logger));

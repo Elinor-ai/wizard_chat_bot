@@ -30,10 +30,12 @@ import {
   buildImagePromptInstructions,
   buildImageGenerationPayload
 } from "./prompts/image.js";
+import { buildCompanyIntelPrompt } from "./prompts/company-intel.js";
 import {
   parseImagePromptResult,
   parseImageGenerationResult
 } from "./parsers/image.js";
+import { parseCompanyIntelResult } from "./parsers/company-intel.js";
 import {
   logChannelPreview,
   logAssetPreview,
@@ -184,6 +186,17 @@ export const TASK_REGISTRY = {
     retries: 1,
     strictOnRetry: true,
     previewLogger: logVideoPreview,
+  },
+  company_intel: {
+    system:
+      "You are Gemini's research and enrichment agent collective. Respond ONLY with JSON that matches the response contract.",
+    builder: buildCompanyIntelPrompt,
+    parser: parseCompanyIntelResult,
+    mode: "json",
+    temperature: 0.2,
+    maxTokens: { default: 1000, gemini: 4096 },
+    retries: 2,
+    strictOnRetry: true
   },
   image_prompt_generation: {
     system:

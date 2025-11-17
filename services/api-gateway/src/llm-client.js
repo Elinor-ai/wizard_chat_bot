@@ -122,6 +122,15 @@ const providerSelectionConfig = {
       gemini: DEFAULT_GEMINI_CHAT_MODEL,
     },
   },
+  company_intel: {
+    env: "LLM_COMPANY_INTEL_PROVIDER",
+    defaultProvider: "gemini",
+    defaultSpec: `gemini:${DEFAULT_GEMINI_CHAT_MODEL}`,
+    providerDefaults: {
+      gemini: DEFAULT_GEMINI_CHAT_MODEL,
+      openai: DEFAULT_OPENAI_CHAT_MODEL
+    }
+  },
   asset_master: {
     env: "LLM_ASSET_PROVIDER",
     defaultProvider: "openai",
@@ -339,6 +348,38 @@ async function askChat({ userMessage, draftState, intent }) {
   } catch (error) {
     llmLogger.warn({ err: error }, "askChat orchestrator failure");
     return buildChatFallback({ draftState });
+  }
+}
+
+async function askCompanyIntel(context) {
+  try {
+    const result = await orchestrator.run("company_intel", context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model
+        }
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      profile: result.profile ?? {},
+      branding: result.branding ?? {},
+      socials: result.socials ?? {},
+      jobs: result.jobs ?? [],
+      metadata: result.metadata ?? null
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "askCompanyIntel orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error)
+      }
+    };
   }
 }
 
@@ -685,6 +726,7 @@ export const llmClient = {
   askSuggestions,
   askChannelRecommendations,
   askRefineJob,
+  askCompanyIntel,
   askChannelPicker,
   askAssetMaster,
   askAssetChannelBatch,

@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { wrapAsync, httpError } from "@wizard/utils";
 import { UserSchema } from "@wizard/core";
 import { issueAuthToken } from "../utils/auth-tokens.js";
+import { ensureCompanyForEmail } from "../services/company-intel.js";
 
 const signupSchema = z.object({
   email: z.string().email(),
@@ -39,6 +40,7 @@ function buildNewUser(payload, passwordHash = null) {
     profile: {
       name: payload.name,
       companyName: payload.companyName ?? "",
+      companyDomain: payload.companyDomain ?? null,
       timezone: payload.timezone,
       locale: payload.locale,
       phone: ""
@@ -97,6 +99,48 @@ function buildNewUser(payload, passwordHash = null) {
   return UserSchema.parse(user);
 }
 
+async function linkUserToCompany({ firestore, logger, user }) {
+  const email = user?.auth?.email;
+  if (!email) {
+    return user;
+  }
+  const result = await ensureCompanyForEmail({
+    firestore,
+    logger,
+    email,
+    createdByUserId: user.id,
+    nameHint: user.profile?.companyName
+  });
+  if (!result?.domain) {
+    return user;
+  }
+
+  const currentDomain = user.profile?.companyDomain?.toLowerCase?.() ?? null;
+  if (currentDomain === result.domain) {
+    return user;
+  }
+
+  const updatedProfile = {
+    ...(user.profile ?? {}),
+    companyDomain: result.domain
+  };
+
+  await firestore.saveDocument("users", user.id, {
+    profile: updatedProfile,
+    updatedAt: new Date()
+  });
+
+  logger?.info?.(
+    { userId: user.id, domain: result.domain },
+    "Linked user profile to company domain"
+  );
+
+  return {
+    ...user,
+    profile: updatedProfile
+  };
+}
+
 export function authRouter({ firestore, logger }) {
   const router = Router();
 
@@ -148,12 +192,14 @@ export function authRouter({ firestore, logger }) {
       });
 
       const { passwordHash, ...authWithoutPassword } = existing.auth;
-      const sanitizedUser = {
+      let sanitizedUser = {
         ...existing,
         auth: authWithoutPassword,
         usage: updatedUsage,
         security: updatedSecurity
       };
+      sanitizedUser = await linkUserToCompany({ firestore, logger, user: sanitizedUser });
+
       const token = issueAuthToken(sanitizedUser);
 
       res.json({
@@ -188,10 +234,11 @@ export function authRouter({ firestore, logger }) {
       logger.info({ email: payload.email, userId: newUser.id }, "Created new user");
 
       const { passwordHash: _, ...authWithoutPassword } = storedUser.auth;
-      const sanitizedUser = {
+      let sanitizedUser = {
         ...storedUser,
         auth: authWithoutPassword
       };
+      sanitizedUser = await linkUserToCompany({ firestore, logger, user: sanitizedUser });
       const token = issueAuthToken(sanitizedUser);
 
       res.json({
@@ -265,10 +312,11 @@ export function authRouter({ firestore, logger }) {
       }
 
       const { passwordHash: _, ...authWithoutPassword } = user.auth;
-      const sanitizedUser = {
+      let sanitizedUser = {
         ...user,
         auth: authWithoutPassword
       };
+      sanitizedUser = await linkUserToCompany({ firestore, logger, user: sanitizedUser });
       const token = issueAuthToken(sanitizedUser);
 
       res.json({

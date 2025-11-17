@@ -77,6 +77,13 @@ export {
   HeroImageFailureSchema
 } from "./schemas/job-hero-image.js";
 export {
+  CompanySchema,
+  CompanyTypeEnum,
+  CompanyEnrichmentStatusEnum,
+  CompanyJobDiscoveryStatusEnum,
+  CompanyDiscoveredJobSchema
+} from "./schemas/company.js";
+export {
   CopilotMessageSchema,
   WizardCopilotChatSchema
 } from "./schemas/copilot-chat.js";

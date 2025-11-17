@@ -4,6 +4,9 @@ import admin from "firebase-admin";
 import { z } from "zod";
 import { loadEnv, createLogger } from "@wizard/utils";
 
+const COMPANY_COLLECTION = "companies";
+const COMPANY_JOBS_COLLECTION = "companyJobs";
+
 const firestoreConfigSchema = z.object({
   projectId: z.string().min(1, "Firestore projectId required"),
   serviceAccountPath: z.string().optional(),
@@ -121,6 +124,43 @@ export function createFirestoreAdapter(options = {}) {
       });
       const snapshot = await query.get();
       return snapshot.docs.map((doc) => ({ id: doc.id, ...normalize(doc.data()) }));
+    },
+    async getCompanyByDomain(domain) {
+      if (!domain) return null;
+      const normalizedDomain = String(domain).trim().toLowerCase();
+      if (!normalizedDomain) {
+        return null;
+      }
+      const docs = await this.queryDocuments(
+        COMPANY_COLLECTION,
+        "primaryDomain",
+        "==",
+        normalizedDomain
+      );
+      return docs[0] ?? null;
+    },
+    async saveCompanyDocument(id, data) {
+      if (!id) {
+        throw new Error("Company id is required");
+      }
+      return this.saveDocument(COMPANY_COLLECTION, id, data);
+    },
+    async listCompanyJobs(companyId) {
+      if (!companyId) {
+        return [];
+      }
+      return this.queryDocuments(
+        COMPANY_JOBS_COLLECTION,
+        "companyId",
+        "==",
+        companyId
+      );
+    },
+    async saveCompanyJob(id, data) {
+      if (!id) {
+        throw new Error("Company job id is required");
+      }
+      return this.saveDocument(COMPANY_JOBS_COLLECTION, id, data);
     }
   };
 }

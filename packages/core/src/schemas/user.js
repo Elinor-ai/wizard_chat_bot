@@ -20,6 +20,7 @@ export const UserSchema = z.object({
   profile: z.object({
     name: z.string(),
     companyName: z.string().optional(),
+    companyDomain: z.string().nullable().optional(),
     timezone: z.string(),
     locale: z.string(),
     phone: z.string().optional()

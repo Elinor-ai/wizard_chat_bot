@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useUser } from "../../../components/user-context";
-import { User, Bell, Shield, CreditCard, BarChart3 } from "lucide-react";
+import { User, Bell, Shield, CreditCard, BarChart3, Building2 } from "lucide-react";
 
 // Import all settings sections
 import ProfileSection from "../../../components/settings/profile-section";
@@ -11,12 +11,14 @@ import PreferencesSection from "../../../components/settings/preferences-section
 import SecuritySection from "../../../components/settings/security-section";
 import BillingSection from "../../../components/settings/billing-section";
 import AttributionSection from "../../../components/settings/attribution-section";
+import CompaniesSection from "../../../components/settings/companies-section";
 
 const tabs = [
   { id: "profile", label: "Profile", icon: User },
   { id: "preferences", label: "Preferences", icon: Bell },
   { id: "security", label: "Security", icon: Shield },
   { id: "billing", label: "Billing", icon: CreditCard },
+  { id: "companies", label: "Companies", icon: Building2 },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
 ];
 
@@ -41,6 +43,8 @@ export default function SettingsPage() {
         return <SecuritySection user={currentUser} />;
       case "billing":
         return <BillingSection user={currentUser} />;
+      case "companies":
+        return <CompaniesSection user={currentUser} />;
       case "analytics":
         return <AttributionSection user={currentUser} />;
       default:
