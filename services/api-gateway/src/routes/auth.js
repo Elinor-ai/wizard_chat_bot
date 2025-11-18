@@ -41,6 +41,8 @@ function buildNewUser(payload, passwordHash = null) {
       name: payload.name,
       companyName: payload.companyName ?? "",
       companyDomain: payload.companyDomain ?? null,
+      mainCompanyId: null,
+      companyIds: [],
       timezone: payload.timezone,
       locale: payload.locale,
       phone: ""
@@ -115,20 +117,38 @@ async function linkUserToCompany({ firestore, logger, user }) {
     return user;
   }
 
-  const currentDomain = user.profile?.companyDomain?.toLowerCase?.() ?? null;
-  if (currentDomain === result.domain) {
-    return user;
+  const companyId = result.company?.id ?? null;
+  const existingProfile = user.profile ?? {};
+  const normalizedExistingDomain = existingProfile.companyDomain?.toLowerCase?.() ?? null;
+  const nextProfile = {
+    ...existingProfile
+  };
+  let changed = false;
+  if (result.domain && normalizedExistingDomain !== result.domain) {
+    nextProfile.companyDomain = result.domain;
+    changed = true;
+  }
+  const existingCompanyIds = Array.isArray(existingProfile.companyIds)
+    ? [...existingProfile.companyIds]
+    : [];
+  if (companyId && !existingCompanyIds.includes(companyId)) {
+    existingCompanyIds.push(companyId);
+    changed = true;
+  }
+  if (existingCompanyIds.length > 0) {
+    nextProfile.companyIds = existingCompanyIds;
+  }
+  if (!nextProfile.mainCompanyId && companyId) {
+    nextProfile.mainCompanyId = companyId;
+    changed = true;
   }
 
-  const updatedProfile = {
-    ...(user.profile ?? {}),
-    companyDomain: result.domain
-  };
-
-  await firestore.saveDocument("users", user.id, {
-    profile: updatedProfile,
-    updatedAt: new Date()
-  });
+  if (changed) {
+    await firestore.saveDocument("users", user.id, {
+      profile: nextProfile,
+      updatedAt: new Date()
+    });
+  }
 
   logger?.info?.(
     { userId: user.id, domain: result.domain },
@@ -137,7 +157,7 @@ async function linkUserToCompany({ firestore, logger, user }) {
 
   return {
     ...user,
-    profile: updatedProfile
+    profile: nextProfile
   };
 }
 

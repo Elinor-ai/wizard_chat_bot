@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { useUser } from "../../components/user-context";
+import Link from "next/link";
+import { WizardLaunchTrigger } from "../../components/wizard/launch-wizard-trigger";
 
 const highlights = [
   {
@@ -92,12 +93,17 @@ export default function MarketingPage() {
             </div>
           ) : displayUser ? (
             <>
-              <Link
-                href="/wizard"
-                className="rounded-full border border-primary-500 px-5 py-2 text-primary-600 transition hover:bg-primary-50"
-              >
-                Launch Wizard
-              </Link>
+              <WizardLaunchTrigger>
+                {({ onClick }) => (
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    className="rounded-full border border-primary-500 px-5 py-2 text-primary-600 transition hover:bg-primary-50"
+                  >
+                    Launch Wizard
+                  </button>
+                )}
+              </WizardLaunchTrigger>
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}

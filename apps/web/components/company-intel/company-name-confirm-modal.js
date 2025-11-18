@@ -9,23 +9,30 @@ export function CompanyNameConfirmModal({
   onApprove,
   onSubmitCorrections,
   onClose,
-  loading
+  loading,
+  startInEditing = false,
+  domainEditable = false,
+  titleOverride,
+  descriptionOverride,
+  showApproveButton = true
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startInEditing);
   const [form, setForm] = useState({
     name: company?.name ?? company?.primaryDomain ?? "",
     country: company?.hqCountry ?? "",
-    city: company?.hqCity ?? ""
+    city: company?.hqCity ?? "",
+    domain: company?.primaryDomain ?? ""
   });
 
   useEffect(() => {
-    setEditing(false);
+    setEditing(startInEditing);
     setForm({
       name: company?.name ?? company?.primaryDomain ?? "",
       country: company?.hqCountry ?? "",
-      city: company?.hqCity ?? ""
+      city: company?.hqCity ?? "",
+      domain: company?.primaryDomain ?? ""
     });
-  }, [company?.id, company?.name]);
+  }, [company?.id, company?.name, company?.primaryDomain, startInEditing]);
 
   if (!isOpen || !company) {
     return null;
@@ -33,12 +40,18 @@ export function CompanyNameConfirmModal({
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    onSubmitCorrections?.({
+    const payload = {
       name: form.name,
       country: form.country,
       city: form.city
-    });
+    };
+    if (domainEditable) {
+      payload.primaryDomain = form.domain;
+    }
+    onSubmitCorrections?.(payload);
   };
+
+  const displayDomain = domainEditable ? form.domain || company.primaryDomain : company.primaryDomain;
 
   return createPortal(
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 px-4 py-8">
@@ -47,16 +60,36 @@ export function CompanyNameConfirmModal({
           Company setup
         </p>
         <h2 className="mt-2 text-2xl font-bold text-neutral-900">
-          Is your company {company.name || company.primaryDomain}?
+          {titleOverride ?? `Is your company ${company.name || displayDomain || ""}?`}
         </h2>
         <p className="mt-2 text-sm text-neutral-600">
-          We use the domain <span className="font-semibold">{company.primaryDomain}</span> to run
-          enrichment. Let us know if we should update the legal name or headquarters before we look
-          for public intel.
+          {descriptionOverride ?? (
+            <>
+              We use the domain{" "}
+              <span className="font-semibold">{displayDomain || "your domain"}</span> to run
+              enrichment. Let us know if we should update the legal name or headquarters before we
+              look for public intel.
+            </>
+          )}
         </p>
 
         {editing ? (
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+            {domainEditable ? (
+              <label className="grid gap-1 text-sm font-medium text-neutral-700">
+                Primary domain
+                <input
+                  type="text"
+                  className="rounded-2xl border border-neutral-300 px-3 py-2 text-sm text-neutral-800"
+                  value={form.domain}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, domain: event.target.value.trim() }))
+                  }
+                  required
+                  disabled={loading}
+                />
+              </label>
+            ) : null}
             <label className="grid gap-1 text-sm font-medium text-neutral-700">
               Company name
               <input
@@ -116,14 +149,16 @@ export function CompanyNameConfirmModal({
           </form>
         ) : (
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <button
-              type="button"
-              onClick={onApprove}
-              disabled={loading}
-              className="flex-1 rounded-2xl bg-primary-600 px-4 py-3 text-center text-sm font-semibold uppercase tracking-wide text-white shadow-lg shadow-primary-200 transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-            >
-              Yes, that's us
-            </button>
+            {showApproveButton ? (
+              <button
+                type="button"
+                onClick={onApprove}
+                disabled={loading}
+                className="flex-1 rounded-2xl bg-primary-600 px-4 py-3 text-center text-sm font-semibold uppercase tracking-wide text-white shadow-lg shadow-primary-200 transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+              >
+                Yes, that's us
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setEditing(true)}

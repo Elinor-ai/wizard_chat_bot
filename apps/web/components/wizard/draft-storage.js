@@ -45,6 +45,7 @@ export function saveDraft({
   includeOptional,
   currentStepIndex,
   maxVisitedIndex,
+  companyId = null,
   ttl = ONE_HOUR_MS,
 } = {}) {
   const key = buildKey(userId, jobId);
@@ -57,6 +58,7 @@ export function saveDraft({
       includeOptional: Boolean(includeOptional),
       currentStepIndex: Number.isFinite(currentStepIndex) ? currentStepIndex : 0,
       maxVisitedIndex: Number.isFinite(maxVisitedIndex) ? maxVisitedIndex : 0,
+      companyId: companyId ?? null,
       updatedAt: Date.now(),
       ttl,
     };

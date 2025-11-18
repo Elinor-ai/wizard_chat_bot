@@ -213,13 +213,14 @@ function mergeStateSnapshots(base = {}, override = {}) {
   return result;
 }
 
-export function useWizardController({ user, initialJobId = null }) {
+export function useWizardController({ user, initialJobId = null, initialCompanyId = null }) {
   const router = useRouter();
   const [wizardState, dispatch] = useReducer(
     wizardReducer,
     {
       userId: user?.id ?? null,
       jobId: initialJobId ?? null,
+      companyIdSeed: initialCompanyId ?? user?.profile?.mainCompanyId ?? null,
     },
     (seed) => {
       const next = createInitialWizardState();
@@ -233,6 +234,7 @@ export function useWizardController({ user, initialJobId = null }) {
         userId: seed.userId,
         jobId: seed.jobId ?? null,
       });
+      next.companyId = seed.companyIdSeed ?? null;
       if (draft) {
         next.state = deepClone(draft.state ?? {});
         next.committedState = deepClone(next.state);
@@ -242,6 +244,7 @@ export function useWizardController({ user, initialJobId = null }) {
         next.maxVisitedIndex =
           draft.maxVisitedIndex ??
           Math.max(draft.currentStepIndex ?? 0, 0);
+        next.companyId = draft.companyId ?? next.companyId;
       }
       if (typeof window !== "undefined" && seed?.jobId) {
         const cachedConversation = loadConversationFromCache(seed.jobId);
@@ -274,6 +277,10 @@ export function useWizardController({ user, initialJobId = null }) {
       }
     },
     [debugEnabled]
+  );
+  const resolvedDefaultCompanyId = useMemo(
+    () => initialCompanyId ?? user?.profile?.mainCompanyId ?? null,
+    [initialCompanyId, user?.profile?.mainCompanyId]
   );
 
   useEffect(() => {
@@ -325,6 +332,15 @@ export function useWizardController({ user, initialJobId = null }) {
     wizardState.copilotConversationVersion,
     wizardState.jobId,
   ]);
+
+  useEffect(() => {
+    if (!wizardState.companyId && resolvedDefaultCompanyId) {
+      dispatch({
+        type: "PATCH_STATE",
+        payload: { companyId: resolvedDefaultCompanyId },
+      });
+    }
+  }, [dispatch, resolvedDefaultCompanyId, wizardState.companyId]);
 
   useEffect(() => {
     lastSuggestionSnapshotRef.current = {};
@@ -519,6 +535,7 @@ useEffect(() => {
       includeOptional: wizardState.includeOptional,
       currentStepIndex: wizardState.currentStepIndex,
       maxVisitedIndex: wizardState.maxVisitedIndex,
+      companyId: wizardState.companyId ?? resolvedDefaultCompanyId ?? null,
     });
     clearDraft({ userId: user.id, jobId: null });
     migratedJobIdRef.current = nextJobId;
@@ -561,6 +578,10 @@ useEffect(() => {
               maxVisitedIndex:
                 localDraft.maxVisitedIndex ??
                 Math.max(localDraft.currentStepIndex ?? 0, 0),
+              companyId:
+                localDraft.companyId ??
+                resolvedDefaultCompanyId ??
+                null,
             },
           });
         } else {
@@ -574,6 +595,7 @@ useEffect(() => {
               includeOptional: false,
               currentStepIndex: 0,
               maxVisitedIndex: 0,
+              companyId: resolvedDefaultCompanyId ?? null,
             },
           });
         }
@@ -608,6 +630,7 @@ useEffect(() => {
           includeOptional: includeOptionalFromServer,
           currentStepIndex: baseIndex,
           maxVisitedIndex: baseVisited,
+          companyId: serverJob.companyId ?? resolvedDefaultCompanyId ?? null,
         };
 
         let mergedPayload = basePayload;
@@ -649,9 +672,15 @@ useEffect(() => {
           mergedPayload = {
             ...basePayload,
             state: mergedState,
+            committedState: mergedState,
             includeOptional: mergedIncludeOptional,
             currentStepIndex: mergedCurrentIndex,
             maxVisitedIndex: mergedVisitedIndex,
+            companyId:
+              localDraft.companyId ??
+              basePayload.companyId ??
+              resolvedDefaultCompanyId ??
+              null,
           };
         }
 
@@ -687,7 +716,7 @@ useEffect(() => {
     return () => {
       cancelled = true;
     };
-  }, [hydrationKey, initialJobId, user?.authToken, user?.id]);
+  }, [hydrationKey, initialJobId, resolvedDefaultCompanyId, user?.authToken, user?.id]);
 
   useEffect(() => {
     if (totalSteps === 0) {
@@ -1330,6 +1359,7 @@ useEffect(() => {
           intent,
           stepId,
           wizardMeta,
+          companyId: wizardState.companyId ?? resolvedDefaultCompanyId ?? null,
         });
 
         dispatch({
@@ -1338,6 +1368,11 @@ useEffect(() => {
             committedState: wizardState.state,
             jobId: response?.jobId ?? wizardState.jobId,
             includeOptional: intent.includeOptional,
+            companyId:
+              response?.companyId ??
+              wizardState.companyId ??
+              resolvedDefaultCompanyId ??
+              null,
           },
         });
         debug("persist:success", {
@@ -1373,6 +1408,8 @@ useEffect(() => {
       wizardState.state,
       wizardState.unlockAction,
       persistMutation,
+      resolvedDefaultCompanyId,
+      wizardState.companyId,
     ]
   );
 
@@ -1406,6 +1443,7 @@ useEffect(() => {
         includeOptional: wizardState.includeOptional,
         currentStepIndex: wizardState.currentStepIndex,
         maxVisitedIndex: wizardState.maxVisitedIndex,
+        companyId: wizardState.companyId ?? resolvedDefaultCompanyId ?? null,
       });
     }, 400);
 
@@ -1424,6 +1462,7 @@ useEffect(() => {
     wizardState.maxVisitedIndex,
     wizardState.jobId,
     initialJobId,
+    resolvedDefaultCompanyId,
   ]);
 
   const persistUnsavedChangesIfNeeded = useCallback(async () => {

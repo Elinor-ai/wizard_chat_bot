@@ -114,6 +114,7 @@ export const JobSchema = z.object({
   id: z.string(),
   ownerUserId: z.string(),
   orgId: z.string().nullable().optional(),
+  companyId: z.string().nullable().optional(),
   status: JobStatusEnum.default("draft"),
   stateMachine: StateMachineSchema,
   roleTitle: z.string().default(""),

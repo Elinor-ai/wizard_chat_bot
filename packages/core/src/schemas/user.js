@@ -21,6 +21,8 @@ export const UserSchema = z.object({
     name: z.string(),
     companyName: z.string().optional(),
     companyDomain: z.string().nullable().optional(),
+    mainCompanyId: z.string().nullable().optional(),
+    companyIds: z.array(z.string()).default([]),
     timezone: z.string(),
     locale: z.string(),
     phone: z.string().optional()

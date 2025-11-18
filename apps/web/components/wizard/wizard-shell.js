@@ -98,9 +98,9 @@ function InlineSuggestionList({ suggestions = [], onApply }) {
   );
 }
 
-export function WizardShell({ jobId = null }) {
+export function WizardShell({ jobId = null, initialCompanyId = null }) {
   const { user } = useUser();
-  const controller = useWizardController({ user, initialJobId: jobId });
+  const controller = useWizardController({ user, initialJobId: jobId, initialCompanyId });
   const [logoErrors, setLogoErrors] = useState({});
 
   const {

@@ -96,7 +96,8 @@ const draftRequestSchema = z.object({
   jobId: z.string().optional(),
   state: looseObjectSchema.default({}),
   intent: looseObjectSchema.optional(),
-  currentStepId: z.string()
+  currentStepId: z.string(),
+  companyId: z.string().nullable().optional()
 });
 
 const suggestionsRequestSchema = z.object({
@@ -233,11 +234,12 @@ function setDeep(target, path, value) {
   }
 }
 
-function createBaseJob({ jobId, userId, now }) {
+function createBaseJob({ jobId, userId, companyId = null, now }) {
   return JobSchema.parse({
     id: jobId,
     ownerUserId: userId,
     orgId: null,
+    companyId: companyId ?? null,
     status: "draft",
     stateMachine: {
       currentState: "DRAFT",
@@ -1285,6 +1287,25 @@ export function wizardRouter({ firestore, logger, llmClient }) {
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
       const payload = draftRequestSchema.parse(req.body ?? {});
+      const userProfile = req.user?.profile ?? {};
+      const normalizedMainCompanyId =
+        typeof userProfile.mainCompanyId === "string" && userProfile.mainCompanyId.trim().length > 0
+          ? userProfile.mainCompanyId.trim()
+          : null;
+      const allowedCompanySet = new Set(
+        Array.isArray(userProfile.companyIds)
+          ? userProfile.companyIds.filter((value) => typeof value === "string" && value.trim().length > 0)
+          : []
+      );
+      if (normalizedMainCompanyId) {
+        allowedCompanySet.add(normalizedMainCompanyId);
+      }
+      const requestedCompanyId =
+        typeof payload.companyId === "string" && payload.companyId.trim().length > 0
+          ? payload.companyId.trim()
+          : null;
+      const selectedCompanyId =
+        requestedCompanyId && allowedCompanySet.has(requestedCompanyId) ? requestedCompanyId : null;
 
       const jobId = payload.jobId ?? `job_${uuid()}`;
       const now = new Date();
@@ -1303,16 +1324,31 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           baseJob = createBaseJob({
             jobId,
             userId: existing.ownerUserId ?? userId,
+            companyId: selectedCompanyId ?? normalizedMainCompanyId ?? null,
             now
           });
         }
+        if (!baseJob.companyId) {
+          baseJob = {
+            ...baseJob,
+            companyId: selectedCompanyId ?? normalizedMainCompanyId ?? null
+          };
+        }
       } else {
-        baseJob = createBaseJob({ jobId, userId, now });
+        baseJob = createBaseJob({
+          jobId,
+          userId,
+          companyId: selectedCompanyId ?? normalizedMainCompanyId ?? null,
+          now
+        });
       }
 
       const mergedJob = mergeIntakeIntoJob(baseJob, payload.state ?? {}, { userId, now });
       const progress = computeRequiredProgress(mergedJob);
       const jobWithProgress = applyRequiredProgress(mergedJob, progress, now);
+      if (!jobWithProgress.companyId && (selectedCompanyId || normalizedMainCompanyId)) {
+        jobWithProgress.companyId = selectedCompanyId ?? normalizedMainCompanyId ?? null;
+      }
       const validatedJob = JobSchema.parse(jobWithProgress);
 
       const savedJob = await firestore.saveDocument(JOB_COLLECTION, jobId, validatedJob);
@@ -1330,7 +1366,8 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       res.json({
         jobId,
         status: savedJob.status,
-        state: savedJob.stateMachine?.currentState ?? "DRAFT"
+        state: savedJob.stateMachine?.currentState ?? "DRAFT",
+        companyId: savedJob.companyId ?? null
       });
     })
   );
@@ -2197,7 +2234,8 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         state: latestFields,
         includeOptional: Boolean(parsedJob.stateMachine?.optionalComplete),
         updatedAt: parsedJob.updatedAt ?? parsedJob.createdAt ?? null,
-        status: parsedJob.status ?? null
+        status: parsedJob.status ?? null,
+        companyId: parsedJob.companyId ?? null
       });
     })
   );

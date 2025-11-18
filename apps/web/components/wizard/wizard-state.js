@@ -34,6 +34,7 @@ export function createInitialWizardState() {
     state: {},
     committedState: {},
     jobId: null,
+    companyId: null,
     includeOptional: false,
     currentStepIndex: 0,
     maxVisitedIndex: 0,
@@ -188,11 +189,13 @@ export function wizardReducer(state, action) {
         committedState = state.state,
         jobId = state.jobId,
         includeOptional = state.includeOptional,
+        companyId = state.companyId,
       } = action.payload ?? {};
       return applyPatch(state, {
         committedState: deepClone(committedState),
         jobId,
         includeOptional,
+        companyId,
       });
     }
 

@@ -38,6 +38,10 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(8, "New password must be at least 8 characters")
 });
 
+const setMainCompanySchema = z.object({
+  companyId: z.string().min(1)
+});
+
 export function usersRouter({ firestore, logger }) {
   const router = Router();
 
@@ -174,6 +178,34 @@ export function usersRouter({ firestore, logger }) {
         success: true,
         message: "Password changed successfully"
       });
+    })
+  );
+
+  router.patch(
+    "/me/main-company",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const payload = setMainCompanySchema.parse(req.body ?? {});
+      const userDoc = await firestore.getDocument("users", userId);
+      if (!userDoc) {
+        throw httpError(404, "User not found");
+      }
+      const companyIds = Array.isArray(userDoc.profile?.companyIds)
+        ? userDoc.profile.companyIds.filter((value) => typeof value === "string" && value.trim().length > 0)
+        : [];
+      if (!companyIds.includes(payload.companyId)) {
+        throw httpError(400, "Company not linked to this user");
+      }
+      const nextProfile = {
+        ...(userDoc.profile ?? {}),
+        mainCompanyId: payload.companyId,
+        companyIds
+      };
+      await firestore.saveDocument("users", userId, {
+        profile: nextProfile,
+        updatedAt: new Date()
+      });
+      res.json({ success: true, mainCompanyId: payload.companyId });
     })
   );
 

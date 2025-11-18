@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Globe, MapPin, RefreshCcw, Link as LinkIcon } from "lucide-react";
 import { WizardApi } from "../../lib/api-client";
+import { useUser } from "../user-context";
 
 const COMPANY_TYPE_OPTIONS = [
   { value: "company", label: "Company" },
@@ -86,6 +87,7 @@ function buildUpdatePayload(formState) {
 export default function CompaniesSection({ user }) {
   const authToken = user?.authToken ?? null;
   const queryClient = useQueryClient();
+  const { setUser: setUserContext } = useUser();
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [formState, setFormState] = useState(buildFormState(null));
   const [message, setMessage] = useState(null);
@@ -138,6 +140,29 @@ export default function CompaniesSection({ user }) {
       setMessage({
         type: "error",
         text: error?.message ?? "Failed to update company."
+      });
+    }
+  });
+
+  const setMainCompany = useMutation({
+    mutationFn: (companyId) => WizardApi.setMainCompany(companyId, { authToken }),
+    onSuccess: (_, companyId) => {
+      if (user) {
+        const profile = user.profile ?? {};
+        setUserContext({
+          ...user,
+          profile: {
+            ...profile,
+            mainCompanyId: companyId
+          }
+        });
+      }
+      setMessage({ type: "success", text: "Main company updated." });
+    },
+    onError: (error) => {
+      setMessage({
+        type: "error",
+        text: error?.message ?? "Failed to update main company."
       });
     }
   });
@@ -219,6 +244,7 @@ export default function CompaniesSection({ user }) {
         <div className="divide-y divide-neutral-100">
           {companies.map((company) => {
             const isActive = company.id === selectedCompanyId;
+            const isMain = user?.profile?.mainCompanyId === company.id;
             const label = company.name?.trim() || company.primaryDomain;
             return (
               <button
@@ -240,6 +266,21 @@ export default function CompaniesSection({ user }) {
                     label={company.profileConfirmed ? "Profile approved" : "Needs approval"}
                     tone={company.profileConfirmed ? "success" : "warning"}
                   />
+                  {isMain ? (
+                    <StatusBadge label="Main company" tone="success" />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setMainCompany.mutate(company.id);
+                      }}
+                      disabled={setMainCompany.isLoading}
+                      className="rounded-full border border-neutral-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600 transition hover:border-primary-300 hover:text-primary-600 disabled:opacity-50"
+                    >
+                      Make main
+                    </button>
+                  )}
                 </div>
               </button>
             );

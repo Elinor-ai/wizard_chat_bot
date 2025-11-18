@@ -19,6 +19,7 @@ import {
 import { GiBearFace } from "react-icons/gi";
 import { clsx } from "../../lib/cn";
 import { useUser } from "../../components/user-context";
+import { WizardLaunchTrigger } from "../../components/wizard/launch-wizard-trigger";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", Icon: LayoutDashboard },
@@ -613,26 +614,55 @@ export default function DashboardLayout({ children }) {
             className="flex-1 space-y-2 overflow-y-auto pr-1 text-sm font-medium text-neutral-600"
           >
             {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={clsx(
-                  "flex items-center gap-3 rounded-xl py-2 transition hover:bg-primary-50 hover:text-primary-600",
-                  isSidebarCollapsed ? "justify-center px-2" : "px-3",
-                  pathname === item.href ? "bg-primary-50 text-primary-600" : ""
-                )}
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                <item.Icon className="h-5 w-5" />
-                <span
-                  className={clsx(
-                    "transition-opacity duration-150",
-                    isSidebarCollapsed ? "hidden" : "block"
+              item.href === "/wizard" ? (
+                <WizardLaunchTrigger key={item.href}>
+                  {({ onClick }) => (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClick();
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className={clsx(
+                        "flex w-full items-center gap-3 rounded-xl py-2 text-left transition hover:bg-primary-50 hover:text-primary-600",
+                        isSidebarCollapsed ? "justify-center px-2" : "px-3",
+                        pathname === item.href ? "bg-primary-50 text-primary-600" : ""
+                      )}
+                    >
+                      <item.Icon className="h-5 w-5" />
+                      <span
+                        className={clsx(
+                          "transition-opacity	duration-150",
+                          isSidebarCollapsed ? "hidden" : "block"
+                        )}
+                      >
+                        {item.label}
+                      </span>
+                    </button>
                   )}
+                </WizardLaunchTrigger>
+              ) : (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={clsx(
+                    "flex items-center gap-3 rounded-xl py-2 transition hover:bg-primary-50 hover:text-primary-600",
+                    isSidebarCollapsed ? "justify-center px-2" : "px-3",
+                    pathname === item.href ? "bg-primary-50 text-primary-600" : ""
+                  )}
+                  onClick={() => setIsMobileMenuOpen(false)}
                 >
-                  {item.label}
-                </span>
-              </Link>
+                  <item.Icon className="h-5 w-5" />
+                  <span
+                    className={clsx(
+                      "transition-opacity duration-150",
+                      isSidebarCollapsed ? "hidden" : "block"
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                </Link>
+              )
             ))}
           </nav>
 

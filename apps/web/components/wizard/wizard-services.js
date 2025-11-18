@@ -11,6 +11,7 @@ export async function persistJobDraft({
   intent = {},
   stepId,
   wizardMeta = {},
+  companyId = null,
 }) {
   return WizardApi.persistJob(state, {
     authToken,
@@ -18,6 +19,7 @@ export async function persistJobDraft({
     intent,
     currentStepId: stepId,
     wizardMeta,
+    companyId,
   });
 }
 

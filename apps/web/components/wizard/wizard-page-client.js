@@ -2,7 +2,7 @@
 
 import { WizardShell } from "./wizard-shell";
 
-export function WizardPageClient({ jobId = null }) {
+export function WizardPageClient({ jobId = null, companyId = null }) {
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-2">
@@ -16,7 +16,7 @@ export function WizardPageClient({ jobId = null }) {
         </p>
       </header>
 
-      <WizardShell jobId={jobId ?? null} />
+      <WizardShell jobId={jobId ?? null} initialCompanyId={companyId ?? null} />
     </div>
   );
 }

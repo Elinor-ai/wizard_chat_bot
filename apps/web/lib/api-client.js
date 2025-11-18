@@ -204,6 +204,15 @@ const companyUpdateResponseSchema = z.object({
   company: CompanySchema
 });
 
+const companyCreateResponseSchema = z.object({
+  company: CompanySchema
+});
+
+const setMainCompanyResponseSchema = z.object({
+  success: z.boolean().optional(),
+  mainCompanyId: z.string()
+});
+
 const jobDetailsSchema = z
   .object({
     roleTitle: z.string().optional().nullable(),
@@ -310,7 +319,8 @@ const persistResponseSchema = z
     jobId: z.string().optional(),
     draftId: z.string().optional(),
     status: z.string(),
-    state: z.string().optional()
+    state: z.string().optional(),
+    companyId: z.string().nullable().optional()
   })
   .transform((data) => {
     const jobId = data.jobId ?? data.draftId;
@@ -320,7 +330,8 @@ const persistResponseSchema = z
     return {
       jobId,
       status: data.status,
-      state: data.state ?? null
+      state: data.state ?? null,
+      companyId: data.companyId ?? null
     };
   });
 
@@ -449,7 +460,8 @@ const wizardJobResponseSchema = z
     state: z.record(z.string(), z.unknown()).optional(),
     includeOptional: z.boolean().optional(),
     updatedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional(),
-    status: z.string().nullable().optional()
+    status: z.string().nullable().optional(),
+    companyId: z.string().nullable().optional()
   })
   .transform((data) => ({
       jobId: data.jobId,
@@ -460,7 +472,8 @@ const wizardJobResponseSchema = z
           ? data.updatedAt
           : new Date(data.updatedAt)
         : null,
-      status: data.status ?? null
+      status: data.status ?? null,
+      companyId: data.companyId ?? null
     }));
 
 const heroImageSchema = z
@@ -802,7 +815,8 @@ export const WizardApi = {
         state,
         jobId: normalizedJobId,
         intent: options.intent ?? {},
-        currentStepId: options.currentStepId
+        currentStepId: options.currentStepId,
+        companyId: options.companyId ?? null
       })
     });
 
@@ -1008,6 +1022,62 @@ export const WizardApi = {
 
     const data = await response.json();
     return companyUpdateResponseSchema.parse(data);
+  },
+
+  async createCompany(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/companies/my-companies`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      let message = "Unable to create company";
+      try {
+        const body = await response.json();
+        if (typeof body?.error === "string") {
+          message = body.error;
+        }
+      } catch {
+        const text = await response.text();
+        if (text) message = text;
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return companyCreateResponseSchema.parse(data);
+  },
+
+  async setMainCompany(companyId, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/users/me/main-company`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify({ companyId })
+    });
+
+    if (!response.ok) {
+      let message = "Unable to update main company";
+      try {
+        const body = await response.json();
+        if (typeof body?.error === "string") {
+          message = body.error;
+        }
+      } catch {
+        const text = await response.text();
+        if (text) message = text;
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return setMainCompanyResponseSchema.parse(data);
   }
 };
 

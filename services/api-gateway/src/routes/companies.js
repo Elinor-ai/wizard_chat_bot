@@ -11,7 +11,8 @@ import {
 import {
   extractEmailDomain,
   isGenericEmailDomain,
-  ensureCompanyEnrichmentQueued
+  ensureCompanyEnrichmentQueued,
+  ensureCompanyForDomain
 } from "../services/company-intel.js";
 
 const PLACEHOLDER_URL_PATTERNS = [/example\.com/i, /sample/i, /placeholder/i, /dummy/i];
@@ -56,7 +57,10 @@ async function resolveCompanyContext({ firestore, user, logger }) {
     throw httpError(404, "User context not found");
   }
   let rawCompany = null;
-  const profileCompanyId = userDoc.profile?.companyId ?? null;
+  const profileCompanyId =
+    userDoc.profile?.mainCompanyId ??
+    userDoc.profile?.companyId ??
+    null;
   let lookupDomain = userDoc.profile?.companyDomain?.toLowerCase?.() ?? null;
 
   if (profileCompanyId) {
@@ -133,9 +137,16 @@ async function listCompaniesForUser({ firestore, user, logger }) {
     companies.set(parsed.data.id, parsed.data);
   };
 
-  const profileCompanyId = userDoc.profile?.companyId ?? null;
-  if (profileCompanyId) {
-    const direct = await firestore.getDocument("companies", profileCompanyId);
+  const profileCompanyIds = Array.isArray(userDoc.profile?.companyIds)
+    ? userDoc.profile.companyIds.filter((value) => typeof value === "string" && value.trim().length > 0)
+    : [];
+  const mainCompanyId = userDoc.profile?.mainCompanyId ?? null;
+  const uniqueCompanyIds = new Set(profileCompanyIds);
+  if (typeof mainCompanyId === "string" && mainCompanyId.trim().length > 0) {
+    uniqueCompanyIds.add(mainCompanyId.trim());
+  }
+  for (const companyId of uniqueCompanyIds) {
+    const direct = await firestore.getDocument("companies", companyId);
     collect(direct);
   }
 
@@ -237,6 +248,13 @@ const companyUpdateSchema = z
     socials: socialUpdateSchema.optional()
   })
   .strict();
+
+const createCompanySchema = z.object({
+  primaryDomain: z.string().min(3),
+  name: z.string().min(2).optional(),
+  hqCountry: z.string().optional(),
+  hqCity: z.string().optional()
+});
 
 export function companiesRouter({ firestore, logger }) {
   const router = Router();
@@ -412,6 +430,71 @@ export function companiesRouter({ firestore, logger }) {
         company: refreshed,
         hasDiscoveredJobs: refreshed.jobDiscoveryStatus === "FOUND_JOBS"
       });
+    })
+  );
+
+  router.post(
+    "/my-companies",
+    wrapAsync(async (req, res) => {
+      const user = req.user;
+      if (!user) {
+        throw httpError(401, "Unauthorized");
+      }
+      const payload = createCompanySchema.parse(req.body ?? {});
+      const normalizedDomain = payload.primaryDomain.trim().toLowerCase();
+      const result = await ensureCompanyForDomain({
+        firestore,
+        logger,
+        domain: normalizedDomain,
+        createdByUserId: user.id,
+        autoEnqueue: false,
+        nameHint: payload.name,
+        locationHint: [payload.hqCity, payload.hqCountry].filter(Boolean).join(", ")
+      });
+      if (!result?.company) {
+        throw httpError(500, "Unable to create company");
+      }
+      const company = result.company;
+      const companyUpdates = {
+        updatedAt: new Date(),
+        nameConfirmed: true,
+        profileConfirmed: false,
+        name: payload.name ?? company.name ?? "",
+        hqCountry: payload.hqCountry ?? company.hqCountry ?? "",
+        hqCity: payload.hqCity ?? company.hqCity ?? "",
+        locationHint:
+          [payload.hqCity, payload.hqCountry].filter((value) => value && value.length > 0).join(", ") ||
+          company.locationHint ||
+          ""
+      };
+      const savedCompany = CompanySchema.parse(
+        await firestore.saveCompanyDocument(company.id, companyUpdates)
+      );
+      await ensureCompanyEnrichmentQueued({ firestore, logger, company: savedCompany });
+
+      const userDoc = await firestore.getDocument("users", user.id);
+      if (!userDoc) {
+        throw httpError(404, "User not found");
+      }
+      const existingProfile = userDoc.profile ?? {};
+      const companyIds = Array.isArray(existingProfile.companyIds)
+        ? [...existingProfile.companyIds]
+        : [];
+      if (!companyIds.includes(savedCompany.id)) {
+        companyIds.push(savedCompany.id);
+      }
+      const nextProfile = {
+        ...existingProfile,
+        companyIds,
+        companyDomain: existingProfile.companyDomain ?? savedCompany.primaryDomain,
+        mainCompanyId: existingProfile.mainCompanyId ?? savedCompany.id
+      };
+      await firestore.saveDocument("users", user.id, {
+        profile: nextProfile,
+        updatedAt: new Date()
+      });
+
+      res.status(201).json({ company: savedCompany });
     })
   );
 
