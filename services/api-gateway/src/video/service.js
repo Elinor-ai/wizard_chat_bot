@@ -259,10 +259,14 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     } else if (renderTask.status === "failed") {
       incrementMetric(logger, "video_renders_failed", 1, { ownerUserId });
     }
-    const response = { item: updated, httpStatus: outcome?.httpStatus ?? 200 };
+    const response = {
+      item: updated,
+      httpStatus: outcome?.httpStatus ?? 200,
+      pollDelayMs: outcome?.pollDelayMs
+    };
     if (response.httpStatus === 202) {
       clearVeoPoll(itemId);
-      scheduleVeoPoll({ ownerUserId, itemId });
+      scheduleVeoPoll({ ownerUserId, itemId, delayMs: response.pollDelayMs });
     } else {
       clearVeoPoll(itemId);
     }
@@ -360,19 +364,21 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     );
   }
 
-  function scheduleVeoPoll({ ownerUserId, itemId }) {
+  function scheduleVeoPoll({ ownerUserId, itemId, delayMs }) {
     if (!ownerUserId || !itemId || veoPollers.has(itemId)) {
       return;
     }
+    const waitMs =
+      Number.isFinite(delayMs) && delayMs > 0 ? delayMs : VEO_POLL_INTERVAL_MS;
     const timeout = setTimeout(async () => {
       veoPollers.delete(itemId);
       try {
         await triggerRender({ ownerUserId, itemId });
       } catch (error) {
         logger.warn({ err: error, itemId }, "Veo auto-fetch failed; retrying");
-        scheduleVeoPoll({ ownerUserId, itemId });
+        scheduleVeoPoll({ ownerUserId, itemId, delayMs });
       }
-    }, VEO_POLL_INTERVAL_MS);
+    }, waitMs);
     veoPollers.set(itemId, timeout);
   }
 

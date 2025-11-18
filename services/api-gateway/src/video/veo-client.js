@@ -7,10 +7,10 @@ import { QuotaMeter } from "../vertex/quota-meter.js";
 
 loadEnv();
 
-const PREDICT_BACKOFF_SEQUENCE_MS = [10000, 30000];
+const PREDICT_BACKOFF_SEQUENCE_MS = [15000, 45000, 90000];
 const FETCH_BACKOFF_SEQUENCE_MS = [10000, 20000, 30000];
 const MAX_OPERATION_CACHE = 100;
-const MAX_PREDICT_ATTEMPTS = PREDICT_BACKOFF_SEQUENCE_MS.length;
+const MAX_PREDICT_ATTEMPTS = 1;
 const TOKEN_EARLY_REFRESH_MS = 30000;
 const CLOUD_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"];
 
@@ -142,8 +142,6 @@ export class VeoClient {
       );
       return { clip };
     }
-
-    console.log("operationName", operationName);
 
     const operationName = this.#extractOperationName(payload);
     if (operationName) {

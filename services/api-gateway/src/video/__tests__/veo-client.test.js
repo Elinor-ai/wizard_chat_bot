@@ -150,7 +150,7 @@ describe("VeoClient", () => {
     });
 
     const renderPromise = client.generateVideo({ prompt: "retry please" });
-    await vi.advanceTimersByTimeAsync(15000);
+    await vi.advanceTimersByTimeAsync(20000);
     const { clip } = await renderPromise;
 
     randomSpy.mockRestore();
@@ -158,7 +158,7 @@ describe("VeoClient", () => {
     expect(quotaMock.note429).toHaveBeenCalledTimes(1);
     expect(quotaMock.noteSuccess).toHaveBeenCalledTimes(1);
     expect(clip.videoUrl).toBe("https://vertex.example/retry.mp4");
-  }, 15000);
+  }, 30000);
 
   it("throws a descriptive error on non-429 failures", async () => {
     const fetchSpy = vi.fn(async () => ({

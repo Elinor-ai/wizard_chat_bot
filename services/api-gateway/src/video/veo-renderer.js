@@ -24,6 +24,9 @@ const DOWNLOAD_TIMEOUT_MS = Number(
 );
 const DOWNLOAD_RETRIES = Number(process.env.VEO_DOWNLOAD_RETRIES ?? 3);
 const FETCH_INTERVAL_SEQUENCE_MS = [30000, 30000, 30000];
+const RATE_LIMIT_POLL_DELAY_MS = Number(
+  process.env.VEO_RATE_LIMIT_POLL_DELAY_MS ?? 90000
+);
 const QA_RATE_LIMIT_NOTE = "vertex-429: backoff recommended";
 
 const DEFAULT_VEO_STATE = Object.freeze({
@@ -128,9 +131,6 @@ export function createVeoRenderer({ logger }) {
     if (cacheHit) {
       return cacheHit;
     }
-
-    // veoState.operationName =
-    //   "projects/botson-playground/locations/us-central1/publishers/google/models/veo-3.1-generate-preview/operations/ea2d859f-b364-4772-802e-47ee3aca4f78";
 
     try {
       if (veoState.operationName) {
@@ -449,6 +449,28 @@ function handleRendererError({
   ) {
     qa.notes.push(QA_RATE_LIMIT_NOTE);
   }
+
+  if (error?.code === "veo_rate_limited") {
+    const renderTask = buildPendingRenderTask({ manifest });
+    renderTask.result = renderTask.result ?? {};
+    renderTask.result.qa = qa;
+    renderTask.error = {
+      reason: error.code,
+      message: error?.message ?? "Veo renderer rate limited; retrying shortly",
+    };
+    const nextVeo = {
+      ...veoState,
+      status: "rate_limited",
+      lastFetchAt: new Date().toISOString(),
+    };
+    return {
+      renderTask,
+      veo: nextVeo,
+      httpStatus: 202,
+      pollDelayMs: RATE_LIMIT_POLL_DELAY_MS,
+    };
+  }
+
   const renderTask = buildDryRunTask({
     manifest,
     requestedAt,
@@ -462,10 +484,9 @@ function handleRendererError({
   }
   const nextVeo = {
     ...veoState,
-    status: error?.code === "veo_rate_limited" ? "rate_limited" : "failed",
+    status: "failed",
   };
-  const httpStatus = error?.code === "veo_rate_limited" ? 429 : 500;
-  return { renderTask, veo: nextVeo, httpStatus };
+  return { renderTask, veo: nextVeo, httpStatus: 500 };
 }
 
 function buildPendingRenderTask({ manifest }) {
