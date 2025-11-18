@@ -84,6 +84,10 @@ export {
   CompanyDiscoveredJobSchema
 } from "./schemas/company.js";
 export {
+  LlmUsageEntrySchema,
+  LlmUsageStatusEnum
+} from "./schemas/llm-usage.js";
+export {
   CopilotMessageSchema,
   WizardCopilotChatSchema
 } from "./schemas/copilot-chat.js";

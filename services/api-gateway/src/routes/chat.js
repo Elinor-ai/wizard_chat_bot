@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { wrapAsync } from "@wizard/utils";
 import { JobSchema } from "@wizard/core";
+import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 
 const chatRequestSchema = z.object({
   jobId: z.string().optional(),
@@ -18,6 +19,7 @@ export function chatRouter({ firestore, llmClient, logger }) {
     "/message",
     wrapAsync(async (req, res) => {
       const payload = chatRequestSchema.parse(req.body ?? {});
+      const userId = req.user?.id ?? null;
 
       let draftState = {};
       if (payload.jobId) {
@@ -30,15 +32,26 @@ export function chatRouter({ firestore, llmClient, logger }) {
         }
       }
 
-      const assistantMessage = await llmClient.askChat({
+      const assistantResponse = await llmClient.askChat({
         userMessage: payload.userMessage,
         draftState,
         intent: payload.intent ?? {}
       });
 
+      await recordLlmUsageFromResult({
+        firestore,
+        logger,
+        usageContext: {
+          userId,
+          jobId: payload.jobId ?? null,
+          taskType: "copilot_chat"
+        },
+        result: assistantResponse
+      });
+
       logger.info({ jobId: payload.jobId, messageLength: payload.userMessage.length }, "Chat message handled");
 
-      res.json({ assistantMessage });
+      res.json({ assistantMessage: assistantResponse.message });
     })
   );
 

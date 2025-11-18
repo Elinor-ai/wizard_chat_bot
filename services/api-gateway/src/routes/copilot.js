@@ -4,6 +4,7 @@ import { z } from "zod";
 import { wrapAsync, httpError } from "@wizard/utils";
 import { JobSchema, JobSuggestionSchema } from "@wizard/core";
 import { WizardCopilotAgent } from "../copilot/agent.js";
+import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 import { COPILOT_TOOLS } from "../copilot/tools.js";
 import {
   DEFAULT_COPILOT_STAGE,
@@ -130,7 +131,14 @@ export function copilotRouter({ firestore, llmClient, logger }) {
   const agent = new WizardCopilotAgent({
     llmClient,
     tools: COPILOT_TOOLS,
-    logger
+    logger,
+    usageTracker: ({ result, usageContext }) =>
+      recordLlmUsageFromResult({
+        firestore,
+        logger,
+        usageContext,
+        result
+      })
   });
 
   router.get(

@@ -7,6 +7,7 @@ import {
 } from "@wizard/core";
 import { buildVideoManifest } from "./manifest-builder.js";
 import { incrementMetric } from "./metrics.js";
+import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 
 const COLLECTION = "videoLibraryItems";
 const AUTO_RENDER = process.env.VIDEO_RENDER_AUTOSTART !== "false";
@@ -60,6 +61,14 @@ function appendAuditLog(item, entry) {
 }
 
 export function createVideoLibraryService({ firestore, llmClient, renderer, publisherRegistry, logger }) {
+  const usageTracker = ({ result, usageContext }) =>
+    recordLlmUsageFromResult({
+      firestore,
+      logger,
+      usageContext,
+      result
+    });
+
   async function listItems({ ownerUserId, filters = {} }) {
     const docs = await firestore.listCollection(COLLECTION, [
       { field: "ownerUserId", operator: "==", value: ownerUserId }
@@ -108,7 +117,8 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       recommendedMedium,
       llmClient,
       logger,
-      version: 1
+      version: 1,
+      usageTracker
     });
     const now = new Date().toISOString();
     const baseItem = {
@@ -172,7 +182,8 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       recommendedMedium,
       llmClient,
       logger,
-      version: existing.manifestVersion + 1
+      version: existing.manifestVersion + 1,
+      usageTracker
     });
     const manifests = [...existing.manifests, manifest];
     const updates = {

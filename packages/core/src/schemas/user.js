@@ -72,7 +72,10 @@ export const UserSchema = z.object({
     jobsCreated: z.number().int().min(0),
     assetsGenerated: z.number().int().min(0),
     tokensMonth: z.number().int().min(0),
-    lastActiveAt: TimestampSchema.nullable()
+    lastActiveAt: TimestampSchema.nullable(),
+    totalTokensUsed: z.number().int().min(0).default(0),
+    remainingTokens: z.number().int().default(0),
+    remainingCredits: z.number().default(0)
   }),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema

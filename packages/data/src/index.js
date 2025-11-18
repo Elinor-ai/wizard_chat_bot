@@ -6,6 +6,7 @@ import { loadEnv, createLogger } from "@wizard/utils";
 
 const COMPANY_COLLECTION = "companies";
 const COMPANY_JOBS_COLLECTION = "companyJobs";
+const LLM_USAGE_COLLECTION = "LLMsUsage";
 
 const firestoreConfigSchema = z.object({
   projectId: z.string().min(1, "Firestore projectId required"),
@@ -161,6 +162,16 @@ export function createFirestoreAdapter(options = {}) {
         throw new Error("Company job id is required");
       }
       return this.saveDocument(COMPANY_JOBS_COLLECTION, id, data);
+    },
+    async recordLlmUsage(entry) {
+      if (!entry) {
+        return null;
+      }
+      const payload = {
+        ...entry,
+        timestamp: entry.timestamp ?? new Date()
+      };
+      return this.addDocument(LLM_USAGE_COLLECTION, payload);
     }
   };
 }

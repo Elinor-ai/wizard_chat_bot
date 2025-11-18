@@ -20,6 +20,7 @@ import {
   JobHeroImageSchema
 } from "@wizard/core";
 import { createAssetPlan } from "../llm/domain/asset-plan.js";
+import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
@@ -1061,7 +1062,9 @@ async function runAssetGenerationPipeline({
   assetRecords,
   jobSnapshot,
   channelMetaMap,
-  logger
+  logger,
+  trackUsage,
+  usageContext
 }) {
   const stats = {
     assetsPlanned: plan.items.length,
@@ -1070,6 +1073,16 @@ async function runAssetGenerationPipeline({
     responseTokens: 0
   };
   let hasFailures = false;
+  const baseUsage = {
+    userId: usageContext?.userId ?? null,
+    jobId: usageContext?.jobId ?? null
+  };
+  const logUsage = async (result, taskType) => {
+    if (typeof trackUsage !== "function" || !result) {
+      return;
+    }
+    await trackUsage(result, { ...baseUsage, taskType });
+  };
 
   const markFailure = async (
     record,
@@ -1130,6 +1143,7 @@ async function runAssetGenerationPipeline({
       channelMeta: channelMetaMap[item.channelId],
       jobSnapshot
     });
+    await logUsage(result, "asset_master");
     if (result?.asset) {
       await markSuccess(
         record,
@@ -1171,6 +1185,7 @@ async function runAssetGenerationPipeline({
       jobSnapshot,
       channelMetaMap
     });
+    await logUsage(result, "asset_channel_batch");
 
     if (result?.error) {
       for (const record of records) {
@@ -1239,6 +1254,7 @@ async function runAssetGenerationPipeline({
       jobSnapshot,
       channelMeta: channelMetaMap[item.channelId]
     });
+    await logUsage(result, "asset_adapt");
     if (result?.asset) {
       await markSuccess(
         record,
@@ -1281,6 +1297,13 @@ function valueProvidedAt(state, path) {
 }
 export function wizardRouter({ firestore, logger, llmClient }) {
   const router = Router();
+  const trackLlmUsage = (result, usageContext) =>
+    recordLlmUsageFromResult({
+      firestore,
+      logger,
+      usageContext,
+      result
+    });
 
   router.post(
     "/draft",
@@ -1430,6 +1453,11 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         };
 
         const llmResult = await llmClient.askSuggestions(llmPayload);
+        await trackLlmUsage(llmResult, {
+          userId,
+          jobId: payload.jobId,
+          taskType: "wizard_suggestions"
+        });
         if (llmResult?.candidates?.length > 0) {
           suggestionDoc = await overwriteSuggestionDocument({
             firestore,
@@ -1555,6 +1583,11 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           jobSnapshot,
           confirmed: parsedJob.confirmed ?? {},
         });
+        await trackLlmUsage(llmResult, {
+          userId,
+          jobId: payload.jobId,
+          taskType: "job_refinement"
+        });
 
         if (llmResult?.refinedJob) {
           refinementDoc = await overwriteRefinementDocument({
@@ -1663,6 +1696,11 @@ export function wizardRouter({ firestore, logger, llmClient }) {
               .map((campaign) => campaign?.channel)
               .filter((channel) => typeof channel === "string")
           : []
+      });
+      await trackLlmUsage(channelResult, {
+        userId,
+        jobId: payload.jobId,
+        taskType: "channel_recommendations"
       });
 
       let channelDoc = null;
@@ -1786,7 +1824,9 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             assetRecords,
             jobSnapshot,
             channelMetaMap: buildChannelMetaMap(plan.channelMeta),
-            logger
+            logger,
+            usageContext: { userId, jobId: payload.jobId },
+            trackUsage: trackLlmUsage
           });
 
         run.stats = stats;
@@ -1901,6 +1941,11 @@ export function wizardRouter({ firestore, logger, llmClient }) {
                 .map((campaign) => campaign?.channel)
                 .filter((channel) => typeof channel === "string")
             : []
+        });
+        await trackLlmUsage(llmResult, {
+          userId,
+          jobId: payload.jobId,
+          taskType: "channel_recommendations"
         });
 
         if (llmResult?.recommendations?.length > 0) {
@@ -2054,6 +2099,11 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           promptResult = await llmClient.askHeroImagePrompt({
             refinedJob: refinedSnapshot
           });
+          await trackLlmUsage(promptResult, {
+            userId,
+            jobId: payload.jobId,
+            taskType: "image_prompt_generation"
+          });
 
           if (promptResult.error) {
             await persistHeroImageFailure({
@@ -2113,6 +2163,11 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             prompt: promptResult.prompt,
             negativePrompt: promptResult.negativePrompt ?? undefined,
             style: promptResult.style ?? undefined
+          });
+          await trackLlmUsage(imageResult, {
+            userId,
+            jobId: payload.jobId,
+            taskType: "image_generation"
           });
 
           if (imageResult.error) {

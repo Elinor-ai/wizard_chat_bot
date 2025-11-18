@@ -34,11 +34,12 @@ function buildActionSummary(actions = []) {
 }
 
 export class WizardCopilotAgent {
-  constructor({ llmClient, tools, logger, maxTurns = 8 }) {
+  constructor({ llmClient, tools, logger, maxTurns = 8, usageTracker = null }) {
     this.llmClient = llmClient;
     this.toolRegistry = new Map(tools.map((tool) => [tool.name, tool]));
     this.logger = logger;
     this.maxTurns = maxTurns;
+    this.usageTracker = usageTracker;
   }
 
   resolveTools(tools) {
@@ -84,6 +85,16 @@ export class WizardCopilotAgent {
           schema: tool.schemaDescription
         }))
       });
+      if (this.usageTracker) {
+        await this.usageTracker({
+          result: llmResult,
+          usageContext: {
+            jobId,
+            userId,
+            taskType: "copilot_agent"
+          }
+        });
+      }
 
       if (!llmResult || llmResult.error) {
         this.logger?.warn({ jobId, turn, error: llmResult?.error }, "Copilot agent LLM error");

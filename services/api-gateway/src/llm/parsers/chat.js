@@ -11,5 +11,8 @@ export function parseChatResult(response) {
       },
     };
   }
-  return { message: text };
+  return {
+    message: text,
+    metadata: response?.metadata ?? null
+  };
 }

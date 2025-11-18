@@ -5,6 +5,7 @@ import {
   CompanyEnrichmentStatusEnum,
   CompanyJobDiscoveryStatusEnum
 } from "@wizard/core";
+import { recordLlmUsageFromResult } from "./llm-usage-ledger.js";
 const GENERIC_EMAIL_DOMAINS = new Set([
   "gmail.com",
   "googlemail.com",
@@ -608,6 +609,16 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
   const intelResult = await llmClient.askCompanyIntel({
     domain: company.primaryDomain,
     company
+  });
+  await recordLlmUsageFromResult({
+    firestore,
+    logger,
+    usageContext: {
+      userId: company.createdByUserId ?? null,
+      jobId: null,
+      taskType: "company_intel"
+    },
+    result: intelResult
   });
 
   if (intelResult?.error) {

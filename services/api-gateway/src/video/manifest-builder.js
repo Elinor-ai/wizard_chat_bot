@@ -26,13 +26,27 @@ export async function buildVideoManifest({
   recommendedMedium,
   llmClient,
   logger,
-  version = 1
+  version = 1,
+  usageTracker
 }) {
   const durationPlan = computeDurationPlan({ channelId });
   const spec = durationPlan.spec ?? resolveVideoSpec(channelId);
   const jobSnapshot = deriveJobSnapshot(job);
   const warnings = [];
   const manifestId = uuid();
+  const usageContext = {
+    userId: job?.ownerUserId ?? null,
+    jobId: job?.id ?? null
+  };
+  const trackUsage = async (result, taskType) => {
+    if (!usageTracker || !result) {
+      return;
+    }
+    await usageTracker({
+      result,
+      usageContext: { ...usageContext, taskType }
+    });
+  };
 
   let storyboard;
   let thumbnail;
@@ -51,6 +65,7 @@ export async function buildVideoManifest({
         channelName,
         recommendedMedium: recommendedMedium ?? spec.medium
       });
+      await trackUsage(storyboardResult, "video_storyboard");
       if (!storyboardResult.error && Array.isArray(storyboardResult.shots) && storyboardResult.shots.length >= 4) {
         storyboard = normaliseShots(storyboardResult.shots, spec);
         thumbnail = storyboardResult.thumbnail ?? null;
@@ -82,6 +97,7 @@ export async function buildVideoManifest({
         spec,
         channelId
       });
+      await trackUsage(captionResult, "video_caption");
       if (!captionResult.error && captionResult.caption) {
         caption = captionResult.caption;
         llmProvider = captionResult.provider ?? llmProvider;
@@ -107,6 +123,7 @@ export async function buildVideoManifest({
         spec,
         channelId
       });
+      await trackUsage(complianceResult, "video_compliance");
       if (!complianceResult.error && Array.isArray(complianceResult.flags)) {
         complianceFlags = complianceResult.flags;
         llmProvider = complianceResult.provider ?? llmProvider;

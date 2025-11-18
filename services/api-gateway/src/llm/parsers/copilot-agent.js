@@ -34,7 +34,8 @@ export function parseCopilotAgentResult(response) {
     return {
       type: "tool_call",
       tool: parsed.tool,
-      input: parsed.input ?? {}
+      input: parsed.input ?? {},
+      metadata: response?.metadata ?? null
     };
   }
 
@@ -42,7 +43,8 @@ export function parseCopilotAgentResult(response) {
     return {
       type: "final",
       message: typeof parsed.message === "string" ? parsed.message : "",
-      actions: Array.isArray(parsed.actions) ? parsed.actions : []
+      actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+      metadata: response?.metadata ?? null
     };
   }
 

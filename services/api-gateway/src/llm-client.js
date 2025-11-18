@@ -342,12 +342,32 @@ async function askChat({ userMessage, draftState, intent }) {
         { error: result.error, provider: result.provider },
         "Chat task returned error"
       );
-      return buildChatFallback({ draftState });
+      return {
+        provider: result.provider ?? null,
+        model: result.model ?? null,
+        message: buildChatFallback({ draftState }),
+        metadata: result.metadata ?? null,
+        error: result.error
+      };
     }
-    return result.message;
+    return {
+      provider: result.provider,
+      model: result.model,
+      message: result.message,
+      metadata: result.metadata ?? null
+    };
   } catch (error) {
     llmLogger.warn({ err: error }, "askChat orchestrator failure");
-    return buildChatFallback({ draftState });
+    return {
+      provider: null,
+      model: null,
+      message: buildChatFallback({ draftState }),
+      metadata: null,
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error)
+      }
+    };
   }
 }
 
@@ -396,6 +416,9 @@ async function runCopilotAgent(context) {
       };
     }
     return {
+      provider: result.provider,
+      model: result.model,
+      metadata: result.metadata ?? null,
       type: result.type,
       tool: result.tool,
       input: result.input,
