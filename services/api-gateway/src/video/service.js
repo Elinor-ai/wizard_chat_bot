@@ -74,17 +74,6 @@ function appendAuditLog(item, entry) {
   return nextLog;
 }
 
-<<<<<<< HEAD
-export function createVideoLibraryService({ firestore, llmClient, renderer, publisherRegistry, logger }) {
-  const usageTracker = ({ result, usageContext }) =>
-    recordLlmUsageFromResult({
-      firestore,
-      logger,
-      usageContext,
-      result
-    });
-
-=======
 function normaliseVeoState(state) {
   if (!state) return { ...INITIAL_RENDER_STATE };
   return {
@@ -128,7 +117,14 @@ export function createVideoLibraryService({
   publisherRegistry,
   logger,
 }) {
->>>>>>> Social-Image-Generator
+  const usageTracker = ({ result, usageContext }) =>
+    recordLlmUsageFromResult({
+      firestore,
+      logger,
+      usageContext,
+      result,
+    });
+
   async function listItems({ ownerUserId, filters = {} }) {
     const docs = await firestore.listCollection(COLLECTION, [
       { field: "ownerUserId", operator: "==", value: ownerUserId },
@@ -186,10 +182,7 @@ export function createVideoLibraryService({
       llmClient,
       logger,
       version: 1,
-<<<<<<< HEAD
-      usageTracker
-=======
->>>>>>> Social-Image-Generator
+      usageTracker,
     });
     const now = new Date().toISOString();
     const baseItem = {
@@ -268,10 +261,7 @@ export function createVideoLibraryService({
       llmClient,
       logger,
       version: existing.manifestVersion + 1,
-<<<<<<< HEAD
-      usageTracker
-=======
->>>>>>> Social-Image-Generator
+      usageTracker,
     });
     const manifests = [...existing.manifests, manifest];
     const updates = {
