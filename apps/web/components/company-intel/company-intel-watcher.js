@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { WizardApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
 import { CompanyIntelModal } from "./company-intel-modal";
@@ -76,6 +76,7 @@ function shouldAutoOpenStage(stage, company) {
 
 export function CompanyIntelWatcher() {
   const { user, isHydrated } = useUser();
+  const queryClient = useQueryClient();
   const authToken = user?.authToken;
   const [storageKey, setStorageKey] = useState(null);
   const [dismissedMap, setDismissedMap] = useState({});
@@ -175,7 +176,10 @@ export function CompanyIntelWatcher() {
 
   const confirmNameMutation = useMutation({
     mutationFn: (payload) => WizardApi.confirmCompanyName(payload, { authToken }),
-    onSuccess: () => {
+    onSuccess: (response) => {
+      if (response) {
+        queryClient.setQueryData(["company-intel", "me"], response);
+      }
       setDismissedMap({});
       persistDismissed({});
       setActiveStage(null);
@@ -201,7 +205,7 @@ export function CompanyIntelWatcher() {
   return (
     <>
       <CompanyNameConfirmModal
-        isOpen={activeStage === "name-confirm"}
+        isOpen={activeStage === "name-confirm" && !confirmNameMutation.isLoading}
         company={company}
         onApprove={() => confirmNameMutation.mutate({ approved: true })}
         onSubmitCorrections={(values) =>
@@ -209,6 +213,7 @@ export function CompanyIntelWatcher() {
         }
         onClose={dismissStage}
         loading={confirmNameMutation.isLoading}
+        domainEditable
       />
       <CompanyIntelModal
         isOpen={intelModalOpen}

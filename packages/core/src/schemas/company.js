@@ -10,7 +10,8 @@ const SocialHandlesSchema = z.object({
   facebook: z.string().url().optional(),
   instagram: z.string().url().optional(),
   tiktok: z.string().url().optional(),
-  twitter: z.string().url().optional()
+  twitter: z.string().url().optional(),
+  youtube: z.string().url().optional()
 });
 
 const EnrichmentErrorSchema = z
@@ -21,6 +22,38 @@ const EnrichmentErrorSchema = z
   })
   .nullable()
   .optional();
+
+const BrandColorsSchema = z
+  .object({
+    primary: z.string().nullable().optional(),
+    secondary: z.string().nullable().optional(),
+    palette: z.array(z.string()).default([])
+  })
+  .default({ palette: [] });
+
+const BrandFontsSchema = z
+  .object({
+    primary: z.string().nullable().optional(),
+    secondary: z.string().nullable().optional(),
+    all: z.array(z.string()).default([])
+  })
+  .default({ all: [] });
+
+const BrandProfileSchema = z
+  .object({
+    name: z.string().nullable().optional(),
+    domain: z.string().nullable().optional(),
+    logoUrl: z.string().nullable().optional(),
+    iconUrl: z.string().nullable().optional(),
+    bannerUrl: z.string().nullable().optional(),
+    colors: BrandColorsSchema.optional(),
+    fonts: BrandFontsSchema.optional(),
+    toneOfVoiceHint: z.string().nullable().optional()
+  })
+  .default({
+    colors: { palette: [] },
+    fonts: { all: [] }
+  });
 
 export const CompanySchema = z.object({
   id: z.string(),
@@ -43,7 +76,13 @@ export const CompanySchema = z.object({
   fontFamilyPrimary: z.string().optional(),
   toneOfVoice: z.string().optional(),
   tagline: z.string().optional(),
+  description: z.string().optional(),
+  longDescription: z.string().optional(),
   intelSummary: z.string().optional(),
+  brand: BrandProfileSchema.default({
+    colors: { palette: [] },
+    fonts: { all: [] }
+  }),
   socials: SocialHandlesSchema.partial().optional(),
   enrichmentStatus: CompanyEnrichmentStatusEnum.default("PENDING"),
   jobDiscoveryStatus: CompanyJobDiscoveryStatusEnum.default("UNKNOWN"),

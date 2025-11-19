@@ -30,6 +30,7 @@ const SOCIAL_FIELDS = [
   { id: "twitter", label: "Twitter" },
   { id: "tiktok", label: "TikTok" }
 ];
+const DOMAIN_REGEX = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 function buildFormState(company) {
   return {
@@ -46,6 +47,7 @@ function buildFormState(company) {
     primaryColor: company?.primaryColor ?? "",
     secondaryColor: company?.secondaryColor ?? "",
     fontFamilyPrimary: company?.fontFamilyPrimary ?? "",
+    primaryDomain: company?.primaryDomain ?? "",
     socials: {
       linkedin: company?.socials?.linkedin ?? "",
       facebook: company?.socials?.facebook ?? "",
@@ -66,7 +68,7 @@ function buildUpdatePayload(formState) {
     }
   });
 
-  return {
+  const payload = {
     name: formState.name.trim(),
     companyType: formState.companyType,
     industry: formState.industry.trim(),
@@ -82,6 +84,11 @@ function buildUpdatePayload(formState) {
     fontFamilyPrimary: formState.fontFamilyPrimary.trim(),
     socials
   };
+  const normalizedDomain = formState.primaryDomain?.trim().toLowerCase();
+  if (normalizedDomain && DOMAIN_REGEX.test(normalizedDomain)) {
+    payload.primaryDomain = normalizedDomain;
+  }
+  return payload;
 }
 
 export default function CompaniesSection({ user }) {
@@ -177,6 +184,12 @@ export default function CompaniesSection({ user }) {
             ...prev.socials,
             [key]: value
           }
+        };
+      }
+      if (field === "primaryDomain") {
+        return {
+          ...prev,
+          primaryDomain: value
         };
       }
       return {
@@ -326,8 +339,13 @@ export default function CompaniesSection({ user }) {
                 />
                 <TextField
                   label="Primary domain"
-                  value={selectedCompany.primaryDomain}
-                  disabled
+                  value={formState.primaryDomain}
+                  onChange={(event) =>
+                    handleFieldChange("primaryDomain", event.target.value.trim().toLowerCase())
+                  }
+                  required
+                  pattern={DOMAIN_REGEX.source}
+                  placeholder="acme.com"
                   icon={<Globe className="h-4 w-4 text-neutral-400" />}
                 />
               </div>
@@ -466,18 +484,30 @@ export default function CompaniesSection({ user }) {
   );
 }
 
-function TextField({ label, value, onChange, disabled = false, required = false, icon = null }) {
+function TextField({
+  label,
+  value,
+  onChange,
+  disabled = false,
+  required = false,
+  icon = null,
+  type = "text",
+  pattern,
+  placeholder
+}) {
   return (
     <label className="grid gap-1 text-sm font-semibold text-neutral-700">
       {label}
       <div className="flex items-center gap-2 rounded-2xl border border-neutral-300 px-3 py-2 focus-within:border-primary-500">
         {icon}
         <input
-          type="text"
+          type={type}
           value={value}
           required={required}
           onChange={onChange}
           disabled={disabled}
+          pattern={pattern}
+          placeholder={placeholder}
           className="w-full bg-transparent text-sm text-neutral-900 outline-none disabled:cursor-not-allowed disabled:text-neutral-400"
         />
       </div>

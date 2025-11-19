@@ -6,449 +6,409 @@
 If you are an AI assistant working on this repo, **read and follow this spec** when touching:
 
 - `packages/core/src/schemas/company.js`
-- `packages/core/src/schemas/user.js` (companyDomain)
-- `packages/data/src/index.js` (companies / companyJobs / enrichmentJobs adapters)
+- `packages/core/src/schemas/user.js`
+- `packages/core/src/schemas/job.js`
+- `packages/data/src/index.js`
 - `services/api-gateway/src/services/company-intel.js`
 - `services/api-gateway/src/routes/auth.js`
 - `services/api-gateway/src/routes/companies.js`
+- `services/api-gateway/src/routes/users.js` (where relevant to mainCompanyId)
 - Any React components/hooks that render company modals or call `/companies/*`
+- Any UI that launches the wizard (“Launch Wizard”) or chooses a company context
 
 ---
 
 ## 1. High-Level Purpose
 
-We want to turn **login** into a **data-intelligence entry point**:
+We want to turn **login + job creation** into a **data-intelligence entry point**:
 
 - Recruiter logs in (email/password or Google).
-- We extract their **email domain** and infer a **company**.
+- We infer their **main company** from the email domain (when applicable).
 - We:
 
   1. Confirm with the user that this is really their company.
-  2. Enrich the company profile from the web.
+  2. Enrich the company profile from the web (Brandfetch + our own “agent” tools).
   3. Discover existing open jobs for that company (if any).
   4. Let the UI:
      - Skip or shorten the wizard when jobs already exist.
      - Brand all generated assets based on the company profile.
+     - Allow **agencies / multi-brand users** to recruit for multiple companies.
 
 Constraints:
 
-- **Login must remain fast** → enrichment/discovery is **async**.
+- **Login must remain fast** → enrichment/discovery is **async**, never blocks auth.
 - No fake data:
   - **No placeholder URLs** like `https://example.com/...`.
-  - Only show jobs if we have **real, clickable URLs**.
-- All behavior should be driven by **company + job documents in Firestore**, not by ad hoc state.
+  - Only show jobs if we have **real, meaningful data**.
+- All behavior should be driven by **company + job documents in Firestore**, not by ad hoc in-memory state.
+- The system must support:
+
+  - Normal companies (user recruits only for their own company).
+  - Agencies / groups (user recruits for multiple companies, choosing per wizard).
 
 ---
 
 ## 2. Architecture Context
 
-Monorepo components (already in place):
+Monorepo components:
 
 - `apps/web` – Next.js 14 (React 18) app with marketing + console, NextAuth, React Query.
 - `services/api-gateway` – Express API gateway, Firestore adapter, LLM client, main REST surface.
-- `packages/core` – Shared schemas (users, jobs, LLM artifacts, and now **companies**).
+- `packages/core` – Shared schemas (users, jobs, LLM artifacts, and **companies**).
 - `packages/data` – Firestore adapter (`createFirestoreAdapter`) using `firebase-admin`.
-- Other services (wizard-chat, asset-generation, campaign-orchestrator, publishing, screening, credits) exist as **stubs** for now.
+- Other services (wizard-chat, asset-generation, campaign-orchestrator, publishing, screening, credits) currently exist as **stubs**.
 
 The **company-intel** layer lives mostly in:
 
 - `packages/core/src/schemas/company.js`
+- `packages/core/src/schemas/user.js`
+- `packages/core/src/schemas/job.js`
 - `packages/data/src/index.js`
 - `services/api-gateway/src/services/company-intel.js`
 - `services/api-gateway/src/routes/auth.js`
 - `services/api-gateway/src/routes/companies.js`
+- `services/api-gateway/src/routes/users.js`
+- UI components/hooks in `apps/web` that implement:
+  - Company approval modals
+  - Company intel modal
+  - Settings → Companies
+  - Launch Wizard → company selection
 
 ---
 
 ## 3. Data Model
 
-### 3.1 User additions
+### 3.1 User additions (multi-company support)
 
-Users are stored in `"users"` with `UserSchema` (in `packages/core/src/schemas/user.js`).
+Users are stored in `"users"` with `UserSchema` (`packages/core/src/schemas/user.js`).
 
-Company linkage:
+**Legacy field (kept for compatibility):**
 
 - `user.profile.companyDomain` (optional string)
   - The domain inferred from the email address:
     - `stav@botson.ai` → `botson.ai`.
-  - Only set for **non-generic** domains (not `gmail.com`, `outlook.com`, etc.).
-  - This is the primary link between a user and their company.
+  - Set only for **non-generic** domains (`gmail.com`, `outlook.com`, etc. are skipped).
+  - Still useful as a hint, but no longer the primary source of truth.
 
-Later we might add:
+**New core fields:**
 
-- `user.profile.companyId` as a direct reference to a `companies` doc.
-  - If this exists, use it as the canonical link.
-  - If not, derive company via `companyDomain`.
+- `user.profile.mainCompanyId` (string | null)
+  - The primary company this user belongs to (often derived from email domain on first login).
+  - Used as the **default** when no explicit company is specified (login intel, /companies/me, etc.).
+
+- `user.profile.companyIds` (array<string>)
+  - The list of **all company IDs** this user can recruit for.
+  - Must always include `mainCompanyId` if one exists.
+  - Supports:
+    - Agencies recruiting for multiple client companies.
+    - Groups / multi-brand organizations.
+
+Rules:
+
+- On login, if `mainCompanyId` is missing but `companyDomain` is non-generic:
+  - Resolve or create a company by that domain.
+  - Set `mainCompanyId` to that company’s ID.
+  - Initialize `companyIds = [mainCompanyId]` if empty.
+- Settings → Companies must allow the user to choose which of `companyIds` is the main company (updating `mainCompanyId`).
 
 ### 3.2 Company document schema
 
-Stored in the `"companies"` collection, schema in `packages/core/src/schemas/company.js`.
+Stored in the `"companies"` collection, defined in `packages/core/src/schemas/company.js`.
 
-Core identity:
+**Core identity:**
 
 - `id` (string) – Firestore doc ID.
 - `primaryDomain` (string) – e.g. `"botson.ai"`.
 - `additionalDomains` (array<string>) – optional aliases.
 - `name` (string | null) – company name (may start as a guess).
-- `companyType` (string | null) – `"company" | "agency" | "freelancer" | null`.
-- `industry` (string | null).
+- `companyType` (string | null) – e.g. `"company" | "agency" | "freelancer" | null`.
+- `industry` (string | null) or `industries` (array) depending on implementation.
 
-Size & location:
+**Size & location:**
 
 - `employeeCountBucket` (string | null) – e.g. `"1-10"`, `"11-50"`, `"51-200"`.
 - `hqCountry` (string | null).
 - `hqCity` (string | null).
+- Optional:
+  - `hqCountryCode` (string | null).
+  - `hqRegion`, `hqState` (string | null).
 
-Brand:
+**Branding (root-level high-level fields):**
 
-- `website` (string | null) – e.g. `"https://botson.ai"`.
-- `logoUrl` (string | null).
-- `primaryColor` (string | null).
-- `secondaryColor` (string | null).
-- `fontFamilyPrimary` (string | null).
-- `toneOfVoice` (string | null) – e.g. `"innovative and data-driven"`.
+- `website` (string | null) – canonical URL, e.g. `"https://botson.ai"`.
 - `tagline` (string | null).
+- `toneOfVoice` (string | null) – e.g. `"innovative and data-driven"`.
 
-Socials (all optional strings):
+**Nested `brand` object (Brandfetch + branding info):**
 
-- `socials.linkedin`
-- `socials.facebook`
-- `socials.instagram`
-- `socials.twitter`
-- `socials.tiktok`
-- (others may be added later).
+A dedicated nested object to hold purely **brand-related** fields:
+
+```js
+brand: {
+  name: string | null,         // Brand name (may mirror company name)
+  domain: string | null,       // Domain used for Brandfetch lookups (e.g. botson.ai)
+
+  logoUrl: string | null,      // Primary logo URL (from Brandfetch logos)
+  iconUrl: string | null,      // Icon URL if available
+  bannerUrl: string | null,    // Banner / cover image (from Brandfetch images)
+
+  colors: {
+    primary: string | null,    // primary hex color
+    secondary: string | null,  // secondary hex color
+    palette: string[]          // all hex colors we keep
+  },
+
+  fonts: {
+    primary: string | null,    // main font name
+    secondary: string | null,  // secondary font name
+    all: string[]              // all font names from Brandfetch
+  },
+
+  toneOfVoiceHint: string | null // textual hint about brand tone (can be derived later)
+}
+Socials (root-level nested object):
+
+All optional strings:
+
+socials.linkedin
+
+socials.facebook
+
+socials.instagram
+
+socials.twitter
+
+socials.tiktok
+
+socials.youtube
+
+(others may be added later).
+
+These may come from Brandfetch links or from the agent’s web-search tools.
 
 Enrichment & job status:
 
-- `enrichmentStatus` (string) – `"PENDING" | "READY" | "FAILED"`.
-- `jobDiscoveryStatus` (string) – `"UNKNOWN" | "FOUND_JOBS" | "NOT_FOUND"`.
+All enrichment state lives on the company doc (no dedicated companyEnrichmentJobs collection):
 
-Approvals (important for UX & cost control):
+enrichmentStatus – "PENDING" | "READY" | "FAILED".
 
-- `nameConfirmed` (boolean) – has the user confirmed the initial company *name*?
-- `profileConfirmed` (boolean) – has the user confirmed the enriched *profile*?
+enrichmentQueuedAt, enrichmentStartedAt, enrichmentCompletedAt, enrichmentLockedAt (timestamps).
 
-Enrichment metadata:
+enrichmentAttempts (number).
 
-- `lastEnrichedAt` (timestamp | null).
-- `lastJobDiscoveryAt` (timestamp | null).
-- `confidenceScore` (number | null) – 0–1.
-- `sourcesUsed` (array<string>) – e.g. `["website", "search", "linkedin"]`.
+enrichmentError – e.g. { reason: string, message: string, occurredAt: timestamp } | null.
+
+lastEnrichedAt (timestamp | null).
+
+jobDiscoveryStatus – "UNKNOWN" | "FOUND_JOBS" | "NOT_FOUND".
+
+jobDiscoveryQueuedAt, jobDiscoveryAttempts, lastJobDiscoveryAt (timestamps).
+
+sourcesUsed (array<string>) – coarse list, e.g. ["brandfetch", "website", "linkedin"].
+
+confidenceScore (number | null) – 0–1.
+
+Per-field evidence (field sources):
+
+To track where specific values came from:
+
+js
+Copy code
+fieldSources: {
+  [fieldName: string]: {
+    value?: any,             // optional copy of value (or omit if redundant)
+    sources: string[]        // e.g. ["brandfetch", "linkedin-company-page"]
+  }
+}
+Examples:
+
+fieldSources.employeeCountBucket = { value: "1-10", sources: ["linkedin-company-page"] }
+
+fieldSources.hqCity = { value: "Tel Aviv", sources: ["brandfetch"] }
+
+fieldSources.brand.colors.primary = { value: "#123456", sources: ["brandfetch"] }
+
+Approvals:
+
+nameConfirmed (boolean) – user confirmed initial company name.
+
+profileConfirmed (boolean) – user confirmed enriched profile for this company.
 
 Audit:
 
-- `createdAt` (timestamp).
-- `updatedAt` (timestamp).
-- `createdByUserId` (string | null).
+createdAt (timestamp).
 
-### 3.3 Company job schema (discovered jobs)
+updatedAt (timestamp).
 
-Collection: either `"companyJobs"` or a subcollection under `companies`.  
-Schema is defined in `packages/core/src/schemas/company.js` as `CompanyJob` (or equivalent).
+createdByUserId (string | null) – who created this company record.
+
+3.3 Company job schema (discovered jobs)
+Collection: "companyJobs" (or a subcollection under companies, implementation detail).
+Schema defined in packages/core/src/schemas/company.js as CompanyJob (or similar).
 
 Fields:
 
-- `companyId` (string) – ID of the company.
-- `companyDomain` (string) – redundant but useful for queries.
-- `source` (string) – `"careers-site" | "linkedin" | "other"`; no `"stub"` in real data.
-- `externalId` (string | null) – ID from source if available.
-- `title` (string) – job title.
-- `location` (string | null).
-- `description` (string | null) – snippet or full description (optional).
-- `url` (string | null) – **MUST be real, clickable URL**, not placeholder.
-- `postedAt` (timestamp | null).
-- `discoveredAt` (timestamp).
-- `isActive` (boolean) – if job appears open/visible.
+id (string) – job doc ID.
 
-**Important rule:**  
-Do **not** create placeholder jobs with fake URLs like `https://example.com/...`.  
-If no real jobs are found, return **zero** jobs and the UI must hide the “Open postings” section.
+companyId (string) – ID of the company.
 
-### 3.4 Company enrichment lifecycle (on the company doc)
+companyDomain (string) – redundant but helpful.
 
-All enrichment + job-discovery state must live directly on the `companies` document. Keep the company record as the single source of truth with fields like:
+source (string) – "careers-site" | "linkedin" | "linkedin-post" | "other".
 
-- `enrichmentStatus` – `"PENDING" | "READY" | "FAILED"`.
-- `enrichmentQueuedAt`, `enrichmentStartedAt`, `enrichmentCompletedAt`, `enrichmentLockedAt`.
-- `enrichmentAttempts` (number) and `enrichmentError` `{ reason, message, occurredAt }`.
-- `lastEnrichedAt`, `sourcesUsed`, `confidenceScore`.
-- `jobDiscoveryStatus`, `jobDiscoveryQueuedAt`, `jobDiscoveryAttempts`, `lastJobDiscoveryAt`.
-- `nameConfirmed`, `profileConfirmed`, and other metadata listed above.
+externalId (string | null) – ID from source if available.
 
-No secondary enrichment collection should exist—the company document itself tracks progress and can be extended with more enrichment metadata as needed.
+title (string) – job title.
 
----
+location (string | null).
 
-## 4. Backend Flows
+description (string | null) – snippet or full description.
 
-### 4.1 Auth → domain association
+url (string | null) – MUST be real, clickable URL if present.
 
-Auth routes live in `services/api-gateway/src/routes/auth.js`.
+postedAt (timestamp | null).
 
-For **email/password login** and **Google OAuth**, behavior:
+discoveredAt (timestamp).
 
-1. User authenticates as usual (password or Google).
-2. Extract email domain:
-   - `stav@botson.ai` → `botson.ai`.
-3. If the domain is **generic** (e.g. `gmail.com`, `outlook.com`, `yahoo.com`, etc.):
-   - Do **not** set `companyDomain`.
-   - Do **not** create a company.
-4. If the domain is **non-generic**:
-   - Set `user.profile.companyDomain = domain` (if not already set).
-   - Ensure a `companies` document exists with `primaryDomain = domain`. If not, create it:
-     - `primaryDomain = domain`
-     - `name` = null or a guess.
-     - `enrichmentStatus = "PENDING"` (or `"NEW"` if you want an intermediate state).
-     - `jobDiscoveryStatus = "UNKNOWN"`.
-     - `nameConfirmed = false`
-     - `profileConfirmed = false`
-   - **Do NOT run full enrichment yet** (see first approval flow below).
-5. Login must **not be blocked** by any enrichment logic.
+isActive (boolean).
 
-Helpers performing this logic live in `services/api-gateway/src/services/company-intel.js`.
+Important rule:
+Do not create placeholder jobs with fake URLs such as https://example.com/....
+If no real jobs are found, companyJobs stays empty, and the UI must hide the “Open postings” section.
 
-### 4.2 First approval – confirm company name **before** enrichment
+3.4 Job schema (wizard-created jobs)
+Jobs created by the wizard live in a normal "jobs" collection (packages/core/src/schemas/job.js).
 
-Goal: don’t waste enrichment calls on the wrong company.
+Required additions:
+
+companyId (string | null)
+
+The company this job is for.
+
+Required for new jobs where we know the company context.
+
+Optional denormalized fields:
+
+companyName (string | null) – copy of company name at creation time.
+
+Rules:
+
+When launching the wizard, we must know which company the job is for (see multi-company flows below).
+
+/wizard/draft and related endpoints must attach companyId to each job.
+
+If companyId is missing (legacy), default to user.profile.mainCompanyId.
+
+3.5 Company enrichment lifecycle (single collection)
+All enrichment + job-discovery state is tracked on the companies collection:
+
+No separate companyEnrichmentJobs collection.
+
+The company doc itself is the “job” and the “result”.
+
+Key fields:
+
+enrichmentStatus, enrichmentQueuedAt, enrichmentStartedAt, enrichmentCompletedAt, enrichmentError.
+
+jobDiscoveryStatus, jobDiscoveryQueuedAt, lastJobDiscoveryAt.
+
+fieldSources, sourcesUsed, confidenceScore.
+
+nameConfirmed, profileConfirmed.
+
+4. Backend Flows
+4.1 Auth → domain association and main company
+Auth routes live in services/api-gateway/src/routes/auth.js.
+
+For email/password login and Google OAuth, behavior:
+
+User authenticates normally (password or Google).
+
+Extract email domain:
+
+stav@botson.ai → botson.ai.
+
+If the domain is generic (e.g. gmail.com, outlook.com, yahoo.com):
+
+Do not set companyDomain.
+
+Do not create a company implicitly.
+
+If the domain is non-generic:
+
+Set user.profile.companyDomain = domain if not already set (legacy).
+
+Use company-intel helpers to ensure a companies doc exists with primaryDomain = domain. If not, create it:
+
+primaryDomain = domain
+
+brand.domain = domain
+
+name = null or a domain-derived guess.
+
+enrichmentStatus = "PENDING" (or "NEW").
+
+jobDiscoveryStatus = "UNKNOWN".
+
+nameConfirmed = false
+
+profileConfirmed = false
+
+createdByUserId = user.id
+
+Link the user to this company:
+
+If profile.mainCompanyId is null, set it to this company’s ID.
+
+Ensure this company’s ID is included in profile.companyIds.
+
+Rules:
+
+Do NOT run full enrichment in the auth route.
+
+Only mark the company as needing enrichment (via enqueueCompanyEnrichment) once the user has passed the first approval (name confirmation).
+
+4.2 First approval – confirm company name before enrichment (main company)
+Goal: avoid wasting enrichment calls and mis-associating users with the wrong company.
 
 Flow:
 
-1. After login, frontend console fetches `/companies/me`.
-2. If:
+After login, the console front-end fetches /companies/me, which returns the user’s main company:
 
-   - The user has a `companyDomain`, AND  
-   - The company exists, AND  
-   - `nameConfirmed !== true`,
+This uses user.profile.mainCompanyId if present.
 
-   Then show **First Approval Modal**:
+If missing, the backend may fall back to companyDomain → primaryDomain.
 
-   - Shows:
-     - Guessed company name (from `company.name`, or a domain-derived guess).
-     - The domain.
-   - Buttons:
-     - ✅ **Yes, that’s my company**
-     - ❌ **No / Edit**
+If:
 
-3. Backend support:
+The user has a main company, AND
 
-   - Add/keep an endpoint, e.g. `POST /companies/me/confirm-name`.
-   - Request body:
-     - Case 1 – user confirms:
-       - `{ approved: true }`
-     - Case 2 – user edits:
-       - `{ approved: false, name: "Correct Name", country: "Country", city: "City" }`
-   - Behavior:
-     - If `approved: true`:
-       - Set `nameConfirmed = true`.
-       - If `name` is null/empty, keep current name or derive from domain.
-       - Now safe to **trigger enrichment** if `enrichmentStatus` is `"PENDING"` or `"NEW"`.
-     - If `approved: false`:
-       - Update:
-         - `name` = provided `name`.
-         - `hqCountry` / `hqCity` from `country` / `city` (or store as hints).
-       - Set `nameConfirmed = true`.
-       - Trigger enrichment using **user-provided name/location** as hints.
+nameConfirmed !== true,
 
-### 4.3 Enrichment pipeline (stub + future agents)
+Then show First Approval Modal.
 
-Triggered only **after** `nameConfirmed = true`.
+First Approval Modal:
 
-Implemented in `services/api-gateway/src/services/company-intel.js`:
+Displays:
 
-- `enqueueCompanyEnrichment(companyId | domain)`:
-  - Mark the company as needing enrichment (e.g., `enrichmentStatus = "PENDING"`).
-  - Update metadata directly on the company doc (`enrichmentQueuedAt = now`, clear `enrichmentError`, etc.).
-  - Do **not** create a secondary job document; the company record itself represents the queue.
+Guessed company name (from company.name or derived from domain).
 
-- `runCompanyEnrichmentOnce(companyDoc)`:
-  - **Must not be called in the auth request path**.
-  - Called by:
-    - A worker process, cron job, or a debug/manual route.
-  - Responsibilities:
-    1. Use tools (see section 6) to:
-       - Infer `website` (e.g. `https://<primaryDomain>`).
-       - Fetch homepage HTML.
-       - Extract name, tagline, maybe location.
-       - Search the web for:
-         - Company website.
-         - Social accounts (especially LinkedIn).
-       - Fill `socials` and brand fields where possible.
-    2. Update the company doc:
-       - `enrichmentStatus = "READY"` (or `"FAILED"` on error).
-       - `lastEnrichedAt = now`.
-       - `confidenceScore` set to a rough value.
-       - `sourcesUsed` list.
-    3. Call `discoverJobsForCompany(company)` (see next section).
+Domain (company.primaryDomain).
 
-In early versions, this can be **stubbed**:
+Provides:
 
-- At minimum:
-  - Set `website = https://<primaryDomain>` if empty.
-  - Set `enrichmentStatus = "READY"`.
-  - Set `lastEnrichedAt` and low `confidenceScore`.
-- But agents / future improvements should plug into this function.
+✅ Yes, that’s my company
 
-### 4.4 Job discovery pipeline
+❌ No / Edit
 
-Lives alongside enrichment in `company-intel.js`.
+Backend endpoint:
 
-Function: `discoverJobsForCompany(company)`:
+POST /companies/me/confirm-name
 
-- **Must not** create placeholder jobs.
-- Uses:
+Request body:
 
-  - Company website and discovered `careerPageUrl` to scrape job cards.
-  - Web search to discover LinkedIn job listings or a careers page.
-  - Any connectors we add later.
-
-Returns: an array of **real** job objects:
-
-- Each job must have a meaningful `title`; if `url` is present, it must be a real URL.
-
-Then `saveDiscoveredJobs(company, jobs)`:
-
-- Writes jobs to the `companyJobs` collection with:
-
-  - `companyId`, `companyDomain`
-  - `source`
-  - `title`, `location`, `description`, `url`, `postedAt`, `discoveredAt`, `isActive`
-
-Company-level updates:
-
-- If `jobs.length > 0`:
-
-  - `jobDiscoveryStatus = "FOUND_JOBS"`
-  - `lastJobDiscoveryAt = now`
-
-- Else:
-
-  - `jobDiscoveryStatus = "NOT_FOUND"`
-  - `lastJobDiscoveryAt = now`
-
-**UI rule:**  
-If `/companies/me/jobs` returns an empty array, do **not** render any “Open postings”/job list.
-
-### 4.5 Second approval – confirm enriched profile
-
-After enrichment completes:
-
-1. Backend:
-
-   - `/companies/me` now returns company with:
-     - `enrichmentStatus = "READY"`.
-     - Some fields filled in (website, socials, maybe jobs discovered).
-
-2. Frontend:
-
-   - If:
-     - `nameConfirmed === true`, AND
-     - `profileConfirmed !== true`, AND
-     - `enrichmentStatus === "READY"`,
-   - Show **Second Approval Modal**:
-
-     - Display key profile fields:
-       - Name
-       - Domain
-       - Website
-       - HQ location (if known)
-       - Socials (links)
-       - Number of open jobs discovered
-
-     - Ask:
-       > “Is this your company?”
-
-     - Buttons:
-       - ✅ Yes, this is my company
-       - ❌ No / This is wrong
-
-3. Backend endpoint:
-
-   - `POST /companies/me/confirm-profile`
-   - Request body:
-     - `{ approved: true }`  
-     - OR `{ approved: false, name?: ..., country?: ..., city?: ... }`
-   - Behavior:
-     - If `approved: true`:
-       - Set `profileConfirmed = true`.
-     - If `approved: false`:
-       - Update fields with corrections.
-       - Optionally:
-         - Reset `enrichmentStatus = "PENDING"`.
-         - Re-enqueue enrichment with new hints.
-
-After `profileConfirmed = true`, the platform can safely use this company profile for:
-
-- Branding
-- Job list prefill
-- Channel recommendations and creative tone
-
----
-
-## 5. API Endpoints
-
-All under `services/api-gateway/src/routes/companies.js`, mounted in `server.js`.
-
-### 5.1 `GET /companies/me`
-
-- **Auth required** (`requireAuth`).
-- Determine company from:
-  - `req.user.profile.companyId` if present, else
-  - `req.user.profile.companyDomain` → `companies.primaryDomain`.
-- Returns:
-
-  ```jsonc
-  {
-    "company": {
-      // Full company document per schema
-      "id": "...",
-      "primaryDomain": "...",
-      "name": "...",
-      "nameConfirmed": true,
-      "profileConfirmed": false,
-      "enrichmentStatus": "PENDING" | "READY" | "FAILED",
-      "jobDiscoveryStatus": "UNKNOWN" | "FOUND_JOBS" | "NOT_FOUND",
-      // ... other fields
-    }
-  }
-
-If the user has no company, return 404 or a consistent JSON null with a clear status.
-
-5.2 GET /companies/me/jobs
-
-Auth required.
-
-Same company lookup as /companies/me.
-
-Fetch related companyJobs for that company.
-
-Return:
-
-{
-  "jobs": [
-    {
-      "id": "...",
-      "companyId": "...",
-      "title": "Senior Backend Engineer",
-      "url": "https://real.company/careers/123",
-      "source": "careers-site",
-      "location": "Tel Aviv, Israel",
-      "isActive": true,
-      "postedAt": "...",
-      "discoveredAt": "..."
-    },
-    // ...
-  ]
-}
-
-
-If no jobs exist, return "jobs": [].
-
-5.3 POST /companies/me/confirm-name
-
-Auth required.
-
-Body:
-
+jsonc
+Copy code
 // user accepts guessed name
 { "approved": true }
 
@@ -457,42 +417,485 @@ Body:
   "approved": false,
   "name": "Correct Company Ltd.",
   "country": "Israel",
-  "city": "Tel Aviv"
+  "city": "Tel Aviv",
+  "domain": "correct-company.com" // optional for corrections
 }
+Behavior:
 
+If approved: true:
 
-Behavior (see section 4.2).
+Set nameConfirmed = true.
+
+If name is null, keep existing guess or derive from domain.
+
+After this, call enqueueCompanyEnrichment(company) to queue enrichment.
+
+If approved: false:
+
+Update:
+
+name = provided name.
+
+hqCountry / hqCity from country / city.
+
+Optionally update primaryDomain and brand.domain if user corrected domain.
+
+Set nameConfirmed = true.
+
+Call enqueueCompanyEnrichment(company).
+
+enqueueCompanyEnrichment(company):
+
+Sets enrichmentStatus = "PENDING".
+
+Sets enrichmentQueuedAt = now.
+
+Clears previous enrichmentError if any.
+
+Does not perform heavy work inline.
+
+Login must never wait for enrichment.
+
+4.3 Enrichment pipeline (Brandfetch + agent tools)
+The enrichment pipeline is implemented in services/api-gateway/src/services/company-intel.js.
+
+Top-level function:
+
+runCompanyEnrichmentOnce(companyDoc)
+
+This must not be invoked from auth routes. It is intended to be called from:
+
+A worker/cron job, or
+
+A manual debug route.
+
+The pipeline:
+
+Pre-checks:
+
+If enrichmentStatus is not "PENDING", or if there is a lock, skip.
+
+Set enrichmentStartedAt = now.
+
+Brandfetch integration (first step):
+
+If company.brand.domain or company.primaryDomain is available and non-generic:
+
+Call Brandfetch:
+
+js
+Copy code
+const url = `https://api.brandfetch.io/v2/brands/${domain}`;
+const response = await fetch(url, {
+  method: 'GET',
+  headers: {
+    Authorization: 'Bearer <BRANDFETCH_TOKEN>'
+  }
+});
+const brandfetchData = await response.json();
+Map Brandfetch data into the company doc via a helper like:
+
+applyBrandfetchToCompany(company, brandfetchData)
+
+Mapping rules:
+
+Root-level:
+
+company.name if currently null.
+
+company.description / company.longDescription (if you store both).
+
+company.industry or industries list from company.industries in Brandfetch.
+
+hqCountry, hqCity, hqCountryCode from company.location.
+
+companyType from company.kind if meaningful.
+
+company.brand nested:
+
+brand.name
+
+brand.domain
+
+brand.logoUrl, brand.iconUrl, brand.bannerUrl from logos / images.
+
+brand.colors.primary, secondary, palette from colors.
+
+brand.fonts.primary, secondary, all from fonts.
+
+Optionally brand.toneOfVoiceHint from Brandfetch descriptions.
+
+Socials:
+
+Map Brandfetch links array into company.socials.*:
+
+twitter, facebook, etc.
+
+For each field set from Brandfetch, update fieldSources accordingly, e.g.:
+
+js
+Copy code
+fieldSources.name = { value: company.name, sources: ["brandfetch"] }
+fieldSources.brand.colors.primary = { value: "#133864", sources: ["brandfetch"] }
+Add "brandfetch" to sourcesUsed if any mapping was applied.
+
+If Brandfetch fails (no data, 404, network error):
+
+Log structured error, set enrichmentError if needed.
+
+Continue to our own agent-based enrichment without Brandfetch data.
+
+Agent-based / web-based enrichment (second step):
+
+Use helper tools (see section 6) to:
+
+searchCompanyOnWeb({ domain, name, locationHints })
+
+fetchWebsite(company) / fetchHtml(url)
+
+extractBrandFromHtml(html)
+
+extractSocialLinksFromResults(results, html)
+
+discoverCareerPage({ domain, html, searchResults })
+
+discoverJobsFromLinkedInJobs(company, linkedinUrl)
+
+discoverJobsFromLinkedInFeed(company, linkedinUrl) (for job posts, not just Jobs tab).
+
+Fill any missing or low-confidence fields in the company:
+
+website if Brandfetch didn’t set it.
+
+Additional socials (e.g. LinkedIn company page).
+
+employeeCountBucket.
+
+Additional location details.
+
+toneOfVoice (root) and/or brand.toneOfVoiceHint.
+
+Update fieldSources for each field updated here with sources such as:
+
+"website-homepage-html"
+
+"linkedin-company-page"
+
+"web-search-result:google"
+
+Update sourcesUsed to include these sources.
+
+Job discovery (third step):
+
+Call discoverJobsForCompany(company) which:
+
+Uses careers page, LinkedIn Jobs and possibly LinkedIn posts:
+
+discoverJobsFromCareersPage(...)
+
+discoverJobsFromLinkedInJobs(...)
+
+discoverJobsFromLinkedInFeed(...) (posts that look like hiring announcements).
+
+Returns an array of real job objects with:
+
+title, source, url (or null), location, description, postedAt.
+
+Call saveDiscoveredJobs(company, jobs) to:
+
+Write jobs into companyJobs.
+
+Set:
+
+If jobs.length > 0:
+
+jobDiscoveryStatus = "FOUND_JOBS"
+
+Else:
+
+jobDiscoveryStatus = "NOT_FOUND"
+
+Always update lastJobDiscoveryAt = now.
+
+Jobs must not be placeholders; if nothing real is found, they are simply not created.
+
+Completion:
+
+Set:
+
+enrichmentStatus = "READY" (or "FAILED" on fatal error).
+
+enrichmentCompletedAt = now.
+
+lastEnrichedAt = now.
+
+Increment enrichmentAttempts.
+
+Log a structured summary including fieldSources for debugging.
+
+The pipeline must be robust: exceptions should be caught and recorded in enrichmentError, not crash the process.
+
+## 5. API Endpoints
+
+All under `services/api-gateway/src/routes/companies.js` and `services/api-gateway/src/routes/users.js`, mounted in `server.js`.
+
+### 5.1 `GET /companies/me`
+
+- **Auth required** (`requireAuth`).
+- Returns the user’s **main company**.
+
+Resolution order:
+
+1. If `req.user.profile.mainCompanyId` is set:
+   - Load that company by ID from `companies`.
+2. Else, if `req.user.profile.companyDomain` is non-generic:
+   - Find `companies` by `primaryDomain = companyDomain`.
+   - If found, treat as main company.
+3. If no company can be resolved:
+   - Return `404` or `{ company: null }` with a clear status.
+
+Response:
+
+```jsonc
+{
+  "company": {
+    "id": "...",
+    "primaryDomain": "botson.ai",
+    "name": "Botson AI",
+    "nameConfirmed": true,
+    "profileConfirmed": false,
+    "enrichmentStatus": "PENDING" | "READY" | "FAILED",
+    "jobDiscoveryStatus": "UNKNOWN" | "FOUND_JOBS" | "NOT_FOUND",
+    "brand": { /* brand sub-document */ },
+    "socials": { /* social links */ },
+    "fieldSources": { /* evidence */ },
+    // ... all other fields per Company schema
+  }
+}
+5.2 GET /companies/me/jobs
+Auth required.
+
+Uses the same main-company resolution as /companies/me.
+
+Fetches related companyJobs for that company.
+
+Response:
+
+js
+Copy code
+{
+  "jobs": [
+    {
+      "id": "...",
+      "companyId": "...",
+      "source": "careers-site",
+      "title": "Senior Backend Engineer",
+      "url": "https://real.company/careers/123",
+      "location": "Tel Aviv, Israel",
+      "description": "...",
+      "isActive": true,
+      "postedAt": "...",
+      "discoveredAt": "..."
+    }
+  ]
+}
+If no jobs exist, return "jobs": [].
+
+5.3 GET /companies/my-companies
+Auth required.
+
+Returns all companies linked to the user:
+
+Query by user.profile.companyIds, or
+
+Use createdByUserId = req.user.id in addition as needed.
+
+Response:
+
+jsonc
+Copy code
+{
+  "companies": [
+    {
+      "id": "...",
+      "name": "Main Company",
+      "primaryDomain": "main.com",
+      "isMain": true,
+      // ... subset or full Company document
+    },
+    {
+      "id": "...",
+      "name": "Client A Ltd.",
+      "primaryDomain": "client-a.com",
+      "isMain": false
+    }
+  ]
+}
+The backend doesn’t need to literally store isMain; you can compute it by comparing each company.id to user.profile.mainCompanyId.
+
+5.4 POST /companies
+Auth required.
+
+Creates a new company initiated by the user (used for agencies / additional client companies).
+
+Request body (typical):
+
+jsonc
+Copy code
+{
+  "name": "Client A Ltd.",
+  "domain": "client-a.com",
+  "country": "Israel",
+  "city": "Tel Aviv",
+  "companyType": "company"
+}
+Behavior:
+
+Create a companies doc with:
+
+primaryDomain = domain
+
+brand.domain = domain
+
+name, hqCountry, hqCity, companyType from body.
+
+createdByUserId = user.id.
+
+nameConfirmed = true (user explicitly provided name).
+
+profileConfirmed = false.
+
+enrichmentStatus = "PENDING" (or "NEW") and jobDiscoveryStatus = "UNKNOWN".
+
+Link this company to the user:
+
+Add company.id to user.profile.companyIds (if not present).
+
+If mainCompanyId is null, set it to this company’s ID.
+
+Trigger enrichment:
+
+Call enqueueCompanyEnrichment(company) after creation.
+
+Response: the created company document.
+
+5.5 POST /companies/me/confirm-name
+Auth required.
+
+Confirms or corrects the main company’s name (and optionally domain/HQ info).
+
+Request body:
+
+jsonc
+Copy code
+// user accepts guessed name
+{ "approved": true }
+
+// user corrects name + location (+ optional domain)
+{
+  "approved": false,
+  "name": "Correct Company Ltd.",
+  "country": "Israel",
+  "city": "Tel Aviv",
+  "domain": "correct-company.com"
+}
+Behavior:
+
+See section 4.2 First approval.
+
+Always updates nameConfirmed = true.
+
+Enqueues enrichment afterward via enqueueCompanyEnrichment(company).
 
 Response: updated company object.
 
-5.4 POST /companies/me/confirm-profile
-
+5.6 POST /companies/me/confirm-profile
 Auth required.
 
-Body:
+Confirms or corrects the enriched profile of the main company.
 
+Request body:
+
+jsonc
+Copy code
+// user accepts enriched profile
 { "approved": true }
 
+// user corrects some fields
 {
   "approved": false,
   "name": "Correct Company Ltd.",
   "country": "Israel",
   "city": "Ramat Gan"
+  // additional corrections allowed
 }
+Behavior:
 
+If approved: true:
 
-Behavior (see section 4.5).
+Set profileConfirmed = true.
+
+If approved: false:
+
+Apply corrections.
+
+Optionally reset enrichmentStatus = "PENDING" and re-enqueue enrichment with new hints.
 
 Response: updated company object.
 
+5.7 PATCH /companies/:companyId
+Auth required.
+
+Used primarily by Settings → Companies to edit company fields.
+
+Behavior:
+
+Validate that the user is allowed to edit this company (e.g., it’s in companyIds or they created it).
+
+Accept a subset of Company fields to update, e.g.:
+
+name, companyType, industry, employeeCountBucket
+
+hqCountry, hqCity
+
+website
+
+tagline, toneOfVoice
+
+socials.*
+
+brand.* (logo, colors, fonts)
+
+Do not automatically reset nameConfirmed or profileConfirmed here; these edits are considered “manual improvements.”
+
+Response: updated company object.
+
+5.8 PATCH /users/me/main-company
+Auth required.
+
+Sets user.profile.mainCompanyId to one of the companies in companyIds.
+
+Request body:
+
+jsonc
+Copy code
+{
+  "companyId": "..." 
+}
+Behavior:
+
+Validate that companyId is in user.profile.companyIds.
+
+Update mainCompanyId.
+
+/companies/me will now resolve to this company.
+
+Response: updated user profile or a simple success status.
+
 6. Agent Tools & company-intel.js
-
-The file services/api-gateway/src/services/company-intel.js should expose small, composable helpers, not one giant monolith.
-
-Core helpers (names can vary slightly but the responsibilities must exist):
+The file services/api-gateway/src/services/company-intel.js exposes small, composable helpers.
 
 6.1 Domain & company linkage
-
 normalizeEmailDomain(email):
 
 Returns { localPart, domain }.
@@ -509,73 +912,97 @@ Sets basic fields (domain, createdByUserId).
 
 Does not run full enrichment yet.
 
-6.2 Enrichment orchestration
+Returns the company doc.
 
+6.2 Enrichment orchestration
 enqueueCompanyEnrichment(company):
 
-Marks company as needing enrichment (e.g., `enrichmentStatus = "PENDING"`, `enrichmentQueuedAt = now`, clears any previous `enrichmentError`) directly on the company document. There is no separate job collection.
+Marks the company as needing enrichment on the company doc itself:
+
+enrichmentStatus = "PENDING".
+
+enrichmentQueuedAt = now.
+
+Clears enrichmentError.
+
+Does not do heavy work.
 
 runCompanyEnrichmentOnce(company):
 
-Performs one enrichment run:
+Performs a single enrichment pass:
 
-Uses tools like:
+Guard / lock.
 
-searchCompanyOnWeb({ domain, name, location })
+Brandfetch integration (if domain available).
 
-fetchWebsite(company) / fetchHtml(url)
+Agent / web-based enrichment.
 
-extractBrandFromHtml(html)
+Job discovery.
 
-extractSocialLinksFromResults(results, html)
+Update statuses & timestamps.
 
-discoverCareerPage({ domain, html, searchResults })
+Catches errors and records them in enrichmentError instead of throwing to caller.
 
-Updates company fields.
+Logging:
 
-Calls discoverJobsForCompany(company) → saveDiscoveredJobs(...).
+Each run should log a structured summary, e.g.:
 
-Sets statuses and timestamps.
-
-Everything heavy (network calls, scraping, LLM calls) should live here or in sub-modules, not inside auth routes.
-
+js
+Copy code
+console.log("[company-intel] enrichment completed", {
+  companyId: company.id,
+  enrichmentStatus: company.enrichmentStatus,
+  jobDiscoveryStatus: company.jobDiscoveryStatus,
+  sourcesUsed: company.sourcesUsed,
+  fieldSources: company.fieldSources
+});
 6.3 Job discovery
-
 discoverJobsForCompany(company):
 
-Attempts to find real jobs from:
+Orchestrates:
 
-careers page
+discoverJobsFromCareersPage(company)
 
-LinkedIn jobs
+discoverJobsFromLinkedInJobs(company)
 
-other sources later
+discoverJobsFromLinkedInFeed(company) (for job-looking posts)
 
-Returns clean job objects with real URLs or none.
+Returns an array of real jobs, or an empty array.
 
 saveDiscoveredJobs(company, jobs):
 
-Writes into Firestore and updates company jobDiscoveryStatus.
+Writes jobs into companyJobs.
 
-Important:
-Jobs with url = null should still be allowed, but the UI must handle them carefully; ideally, most real jobs have a URL.
-Never create jobs just to “show something” (no example.com).
+Updates:
+
+jobDiscoveryStatus and lastJobDiscoveryAt.
+
+6.4 Brandfetch helper
+fetchBrandfetchData(domain):
+
+Wraps the Brandfetch API call, handles errors and HTTP statuses.
+
+Returns null on failure.
+
+applyBrandfetchToCompany(company, brandfetchData):
+
+Maps fields into the company doc and updates fieldSources + sourcesUsed.
+
+Only fills missing fields (unless we explicitly want Brandfetch to override low-quality values).
 
 7. Frontend Behavior
+Frontend code lives in apps/web (Next.js 14 + React 18 + React Query).
 
-Front-end is in apps/web (console UI using Next.js + React Query).
-
-7.1 Data fetching
-
+7.1 Data fetching & modal auto-open rules
 On console load (authenticated):
 
-Fetch /companies/me (React Query or similar).
+Fetch /companies/me and store in React Query.
 
-Depending on company fields:
+Behavior:
 
-If no company:
+If there is no company for the user:
 
-Do nothing for now.
+Do nothing (no auto modal, no intel).
 
 If nameConfirmed !== true:
 
@@ -583,140 +1010,287 @@ Show First Approval Modal.
 
 Else if nameConfirmed === true and enrichmentStatus === "PENDING":
 
-Start polling /companies/me until enrichmentStatus becomes "READY" or "FAILED".
+Show a small bottom-right status indicator (spinner / “Company intel running…”).
+
+Poll /companies/me until enrichmentStatus is "READY" or "FAILED".
 
 Once enrichmentStatus === "READY" and profileConfirmed !== true:
 
-Open the CompanyIntelModal (single modal) for second approval.
+Automatically open CompanyIntelModal in approval mode (see below) exactly once.
 
 When profileConfirmed === true:
 
-- Do **not** auto-open the modal on future refreshes/logins.
-- Keep the bottom-right indicator/pill so the user can open the modal manually.
-- Optionally fetch /companies/me/jobs to drive job-based flows.
+Do not auto-open the modal anymore on future logins/refreshes.
 
-No full-page refresh should be required for any of these transitions.
-The UI must react to status changes and only auto-open during the first-approval flow or the second-approval flow before profileConfirmed flips to true.
+Keep the bottom-right indicator/pill to allow manual opening.
+
+No full page refresh should be required; all state changes should be driven by React Query refetching and local modal state.
 
 7.2 First Approval Modal (Name)
+Trigger: company exists but nameConfirmed !== true.
 
-Trigger: company exists, nameConfirmed !== true.
+Shows:
 
-Content:
+Guessed name.
 
-Show guessed name + domain.
+Domain.
+
+Possibly a “company setup” form (name, country, city, domain).
 
 Actions:
 
 ✅ Yes → POST /companies/me/confirm-name with { approved: true }.
 
-❌ No → show form for name + location → POST /companies/me/confirm-name with { approved: false, name, country, city }.
+❌ No → show inputs for name, country, city, domain → POST /companies/me/confirm-name with { approved: false, ... }.
 
 After success:
 
 Close modal.
 
-Start enrichment (backend side).
+The backend enqueues enrichment.
 
-Begin watching enrichmentStatus (PENDING → READY).
+UI transitions into enrichment-pending state (popover/pill with spinner).
 
-7.3 Second Approval Modal (Profile)
+7.3 CompanyIntelModal – second approval & read-only modes
+There is one primary modal component (e.g. CompanyIntelModal) that behaves in two modes:
+
+Approval mode (second approval):
 
 Trigger: nameConfirmed === true, enrichmentStatus === "READY", profileConfirmed !== true.
 
-Modal rules:
+Auto-opens the first time these conditions are met.
 
-- **CompanyIntelModal** is the single modal for both profile review and read-only intel.
-- When profileConfirmed is false, show the snapshot plus the approval CTA directly in this modal (no second stacked modal).
-- When profileConfirmed becomes true, this modal should only open on explicit user action (indicator click, settings tab, etc.).
+Shows:
 
-Content:
+Company snapshot:
 
-- Name, domain, website, location, socials, tone, job count, etc.
-- CTA area asking “Is this your company?” with approve + correction modes.
+Name, domain, website, HQ, social links, headcount, brand colors, fonts, tagline, tone of voice.
 
-Actions:
+Optionally show fieldSources for debugging or as tooltips.
 
-- ✅ Yes → POST /companies/me/confirm-profile with { approved: true }.
-- ❌ No → show correction form within the same modal → POST /companies/me/confirm-profile with corrections.
+Summary of discovered jobs (count, sources).
 
-After success:
+Provides approval CTA:
 
-- Close modal.
-- If confirmed, consider fetching /companies/me/jobs for job-driven flows.
+✅ Yes, this is my company → POST /companies/me/confirm-profile with { approved: true }.
 
-When profileConfirmed === true:
+❌ No / Fix → show correction inputs → POST /companies/me/confirm-profile with { approved: false, ... }.
 
-- Modal no longer auto-opens. Users can manually reopen it via the indicator or via Settings → Companies (see 7.6).
+After a successful approval/correction:
+
+Set profileConfirmed = true in state.
+
+Close modal.
+
+Do not auto-open again for this company.
+
+Read-only mode:
+
+Trigger: user manually opens intel (via bottom-right pill or Settings → Companies).
+
+Only available when profileConfirmed === true.
+
+Shows the same snapshot but without approval CTAs.
+
+Acts as a reference view of the company data and brand.
 
 7.4 Jobs in UI (discovered jobs)
-
 After profileConfirmed === true:
 
-Call /companies/me/jobs.
+The app may call /companies/me/jobs.
 
 If jobs.length > 0:
 
-Show “Open postings” section.
+Show an “Open postings” section in the relevant UI (dashboard, wizard intro, etc.).
 
 Each job:
 
-Displays title, source, maybe location.
+Displays title, source, location (if present).
 
-If url is non-null, clicking opens in new tab.
+Uses url as a link when non-null, opening in a new tab.
 
 If jobs.length === 0:
 
-Do not show an “Open postings” list.
+Do not render an “Open postings” list.
 
-Fallback: use wizard as usual.
+Fall back to the standard wizard flow.
 
-7.5 Wizard vs “Skip wizard” behavior
+7.5 Wizard vs “Use existing postings”
+The wizard is the main job-intake flow. Company intel may shorten it:
 
-The wizard currently controls all job creation.
+If:
 
-With company-intel:
+profileConfirmed === true, and
 
-If profileConfirmed === true AND jobDiscoveryStatus === "FOUND_JOBS" AND there are jobs:
+jobDiscoveryStatus === "FOUND_JOBS", and
 
-Offer a UI option:
+/companies/me/jobs returns jobs,
 
-“Use existing job posting as a base” (select job)
+The UI can offer options like:
 
-or “Create a brand-new job” (wizard).
+“Use an existing posting as a base” (select a discovered job).
 
-If jobDiscoveryStatus === "NOT_FOUND" or no jobs:
+“Create a new job from scratch.”
 
-Just show the normal wizard.
-
-The existing wizard behavior must not break.
+This is optional sugar; the core requirement is that nothing breaks if job discovery finds nothing.
 
 7.6 Settings → Companies tab
+The console’s Settings area must include a “Companies” tab.
 
-- Console settings must include a “Companies” tab listing every company linked to the user (via companyDomain/companyId/createdByUserId).
-- Selecting a company shows a form with all editable Company schema fields:
-  - name, companyType, industry, employeeCountBucket, HQ info, website, logoUrl, tagline, toneOfVoice, socials, brand colors, etc.
-- Saving writes directly to the `companies` document (respecting the schema) and refreshes cached company intel data.
-- This UI does **not** reset `nameConfirmed` or `profileConfirmed`; it lets users improve agent results without re-enrichment.
+Behavior:
+
+On load:
+
+Fetch /companies/my-companies and user profile (to know mainCompanyId).
+
+Display:
+
+A list of companies:
+
+Name
+
+Domain
+
+Some key fields (industry, HQ, type)
+
+A badge or label for the main company.
+
+Actions:
+
+Selecting a company:
+
+Shows a details/edit form with editable Company fields:
+
+Name, companyType, industry, employeeCountBucket
+
+HQ country/city
+
+Website
+
+Tagline, toneOfVoice
+
+Social links
+
+Brand logo/icon/banner URLs, colors, fonts (if present)
+
+On save:
+
+Call PATCH /companies/:companyId.
+
+Update React Query cache.
+
+Set as main company:
+
+Button or toggle on each company row.
+
+Calls PATCH /users/me/main-company with that companyId.
+
+Updates UI to reflect new main company.
+
+These settings do not reset nameConfirmed or profileConfirmed; they allow the user to refine agent and Brandfetch results.
+
+7.7 Launch Wizard → company selection (multi-company)
+When the user clicks “Launch Wizard”:
+
+Instead of going directly into the wizard route:
+
+Open a CompanySelectionModal.
+
+CompanySelectionModal:
+
+Fetches /companies/my-companies.
+
+Lists all companies (from user.profile.companyIds) with:
+
+Name
+
+Domain
+
+Maybe “main” badge.
+
+Allows selection of one company to use as the wizard context.
+
+Provides an “Add new company” button.
+
+If the user selects an existing company:
+
+Close the modal.
+
+Navigate to the wizard with that companyId (e.g. /wizard?companyId=... or via context).
+
+The wizard and backend must associate all created jobs with this companyId.
+
+If the user clicks “Add new company”:
+
+Open the Company Setup modal (re-using the first-approval UI components as needed).
+
+Require:
+
+Company name
+
+Domain
+
+HQ country + city (if possible)
+
+On submit:
+
+Call POST /companies to create the new company.
+
+Add to user.profile.companyIds.
+
+Trigger enrichment for this company.
+
+Treat this company as “selected” and continue to the wizard with its companyId.
+
+Enrichment and second-approval for additional companies:
+
+Brandfetch + agent enrichment still run for newly created companies.
+
+profileConfirmed logic applies per company.
+
+However, we generally should not spam users with auto-open modals for every company; we can:
+
+Auto-open once right after creating a new company, or
+
+Let the user inspect via Settings → Companies and CompanyIntelModal on demand.
+
+The main requirement: every job created by the wizard must be linked to a specific companyId.
 
 8. Rules for AI Assistants (Codex, etc.)
-
 If you’re an AI model modifying this repo:
 
-Treat this file as the authoritative spec for company-intel behavior.
+Treat this file as the authoritative spec for company-intel and multi-company behavior.
 
 When asked to “improve company-intel” or “fix company modal/job discovery”:
 
 Use the data models and flows described here.
 
+Prefer ID-based company linkage (mainCompanyId, companyIds, job.companyId) over just domains.
+
 Do not:
 
-Reintroduce placeholder jobs with fake URLs.
+Reintroduce placeholder jobs with fake URLs (e.g. https://example.com/...).
 
 Block auth/login routes on enrichment work.
 
-Break the existing wizard endpoints.
+Break existing wizard endpoints or flows.
+
+Add secondary enrichment-job collections (all state lives on the companies docs).
 
 If you need to change behavior that contradicts this spec:
 
-Update this spec and the code together so they stay in sync.
+Update both this spec and the code together so they stay in sync.
+
+markdown
+Copy code
+
+---
+
+Now your spec is up to date with:
+
+- Single `companies` collection (no enrichment jobs collection).
+- Brandfetch integration + `brand` nested object.
+- Field evidence tracking.
+- Multi-company users (`mainCompanyId`, `companyIds`).
+- Company selection before launching the wizard.
+- All modal/auto-open rules.

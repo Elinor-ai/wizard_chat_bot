@@ -7,6 +7,13 @@ import { WizardApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
 import { CompanyNameConfirmModal } from "./company-name-confirm-modal";
 
+const DOMAIN_REGEX = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+function normalizeDomainInput(value) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+}
+
 function CompanyList({ companies, mainCompanyId, onSelect }) {
   if (!companies.length) {
     return (
@@ -129,8 +136,13 @@ export function CompanySelectionModal({
   };
 
   const handleCreate = (values) => {
+    const normalizedDomain = normalizeDomainInput(values.primaryDomain ?? "");
+    if (!DOMAIN_REGEX.test(normalizedDomain)) {
+      setErrorMessage("Please enter a valid domain (example.com).");
+      return;
+    }
     createCompanyMutation.mutate({
-      primaryDomain: values.primaryDomain ?? "",
+      primaryDomain: normalizedDomain,
       name: values.name ?? "",
       hqCountry: values.country ?? "",
       hqCity: values.city ?? ""
