@@ -1,8 +1,8 @@
 import { v4 as uuid } from "uuid";
 import { loadEnv } from "@wizard/utils";
 import { VideoRenderTaskSchema } from "@wizard/core";
-import { UnifiedVideoRenderer } from "./renderers/unified-renderer.js";
-import { VideoRendererError } from "./renderers/contracts.js";
+import { UnifiedVideoRenderer } from "./renderers/unified-renderer.js"; // ודאי שהנתיב נכון
+import { VideoRendererError } from "./renderers/contracts.js"; // ודאי שהנתיב נכון
 
 loadEnv();
 
@@ -42,6 +42,43 @@ export function createRenderer(options = {}) {
     soraApiToken: options.soraApiToken,
   });
 
+  const assetBaseSetting =
+    process.env.VIDEO_RENDER_PUBLIC_BASE_URL ?? "http://localhost:4000/video-assets";
+  const assetBaseUrl = new URL(assetBaseSetting, "http://localhost");
+  const basePath =
+    assetBaseUrl.pathname === "/" ? "" : assetBaseUrl.pathname.replace(/\/$/, "");
+
+  function toAbsoluteUrl(rawUrl) {
+    if (!rawUrl) {
+      return rawUrl;
+    }
+
+    let candidatePath = rawUrl;
+    if (/^https?:\/\//i.test(rawUrl)) {
+      try {
+        candidatePath = new URL(rawUrl).pathname || "/";
+      } catch (_error) {
+        candidatePath = "/";
+      }
+    }
+
+    if (!candidatePath.startsWith("/")) {
+      candidatePath = `/${candidatePath}`;
+    }
+
+    if (basePath && candidatePath.startsWith(basePath)) {
+      return `${assetBaseUrl.origin}${candidatePath}`;
+    }
+    if (!basePath && candidatePath.startsWith("/")) {
+      return `${assetBaseUrl.origin}${candidatePath}`;
+    }
+
+    const segments = candidatePath.split("/").filter(Boolean);
+    const fileSegment = segments.pop() ?? "";
+    const normalizedPath = `${basePath}/${fileSegment}`.replace(/\/{2,}/g, "/");
+    return `${assetBaseUrl.origin}${normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`}`;
+  }
+
   return {
     async render({ manifest, provider }) {
       const requestedAt = new Date().toISOString();
@@ -51,7 +88,11 @@ export function createRenderer(options = {}) {
         aspectRatio: manifest?.spec?.aspectRatio,
       };
       try {
-        const videoUrl = await unified.renderVideo(provider, request);
+        // 1. קבלת ה-URL (שהוא כרגע נתיב יחסי)
+        let videoUrl = await unified.renderVideo(provider, request);
+        videoUrl = toAbsoluteUrl(videoUrl);
+
+        // 3. יצירת האובייקט וולידציה
         return VideoRenderTaskSchema.parse({
           id: uuid(),
           manifestVersion: manifest.version,
@@ -61,7 +102,7 @@ export function createRenderer(options = {}) {
           requestedAt,
           completedAt: new Date().toISOString(),
           result: {
-            videoUrl,
+            videoUrl, // עכשיו זה URL מלא ותקין
           },
         });
       } catch (error) {
@@ -72,7 +113,7 @@ export function createRenderer(options = {}) {
           error?.message ?? "Video generation pipeline failed",
           {
             code: "PROVIDER_ERROR",
-            context: { provider },
+            context: { provider, originalError: error.message },
           }
         );
       }

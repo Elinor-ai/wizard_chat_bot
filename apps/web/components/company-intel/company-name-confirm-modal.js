@@ -11,7 +11,7 @@ export function CompanyNameConfirmModal({
   onClose,
   loading,
   startInEditing = false,
-  domainEditable = false,
+  domainEditable = true,
   titleOverride,
   descriptionOverride,
   showApproveButton = true
@@ -46,11 +46,12 @@ export function CompanyNameConfirmModal({
       city: form.city
     };
     if (domainEditable) {
-      payload.primaryDomain = form.domain;
+      payload.primaryDomain = form.domain.trim().toLowerCase();
     }
     onSubmitCorrections?.(payload);
   };
 
+  const domainPattern = "^[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$";
   const displayDomain = domainEditable ? form.domain || company.primaryDomain : company.primaryDomain;
 
   return createPortal(
@@ -83,9 +84,14 @@ export function CompanyNameConfirmModal({
                   className="rounded-2xl border border-neutral-300 px-3 py-2 text-sm text-neutral-800"
                   value={form.domain}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, domain: event.target.value.trim() }))
+                    setForm((prev) => ({
+                      ...prev,
+                      domain: event.target.value.trim().toLowerCase()
+                    }))
                   }
                   required
+                  pattern={domainPattern}
+                  placeholder="acme.com"
                   disabled={loading}
                 />
               </label>

@@ -11,7 +11,7 @@ import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 
 const COLLECTION = "videoLibraryItems";
 const AUTO_RENDER = process.env.VIDEO_RENDER_AUTOSTART !== "false";
-const DEFAULT_RENDER_PROVIDER = (process.env.VIDEO_DEFAULT_PROVIDER ?? "sora")
+const DEFAULT_RENDER_PROVIDER = (process.env.VIDEO_DEFAULT_PROVIDER ?? "veo")
   .toString()
   .toLowerCase();
 const INITIAL_RENDER_STATE = Object.freeze({

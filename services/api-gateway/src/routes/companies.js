@@ -16,6 +16,11 @@ import {
 } from "../services/company-intel.js";
 
 const PLACEHOLDER_URL_PATTERNS = [/example\.com/i, /sample/i, /placeholder/i, /dummy/i];
+const DomainStringSchema = z
+  .string()
+  .min(3)
+  .regex(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)
+  .transform((value) => value.trim().toLowerCase());
 
 function ensureEnumValue(enumShape, value, fallback) {
   const allowed = Object.values(enumShape.enum ?? {});
@@ -208,7 +213,8 @@ const confirmNameSchema = z.object({
   hqCountry: z.string().optional(),
   hqCity: z.string().optional(),
   country: z.string().optional(),
-  city: z.string().optional()
+  city: z.string().optional(),
+  primaryDomain: DomainStringSchema.optional()
 });
 
 const confirmProfileSchema = z.object({
@@ -245,12 +251,13 @@ const companyUpdateSchema = z
     primaryColor: z.string().max(64).optional(),
     secondaryColor: z.string().max(64).optional(),
     fontFamilyPrimary: z.string().max(160).optional(),
+    primaryDomain: DomainStringSchema.optional(),
     socials: socialUpdateSchema.optional()
   })
   .strict();
 
 const createCompanySchema = z.object({
-  primaryDomain: z.string().min(3),
+  primaryDomain: DomainStringSchema,
   name: z.string().min(2).optional(),
   hqCountry: z.string().optional(),
   hqCity: z.string().optional()
@@ -349,6 +356,23 @@ export function companiesRouter({ firestore, logger }) {
         }
       }
 
+      if (payload.primaryDomain) {
+        const normalized = payload.primaryDomain;
+        if (normalized !== company.primaryDomain) {
+          const previousDomains = Array.isArray(company.additionalDomains)
+            ? company.additionalDomains.filter((value) => typeof value === "string" && value.length > 0)
+            : [];
+          if (company.primaryDomain) {
+            previousDomains.push(company.primaryDomain);
+          }
+          updates.primaryDomain = normalized;
+          updates.additionalDomains = Array.from(new Set(previousDomains));
+          if (!company.website) {
+            updates.website = `https://${normalized}`;
+          }
+        }
+      }
+
       if (
         payload.approved === false ||
         company.enrichmentStatus !== CompanyEnrichmentStatusEnum.enum.READY
@@ -441,7 +465,7 @@ export function companiesRouter({ firestore, logger }) {
         throw httpError(401, "Unauthorized");
       }
       const payload = createCompanySchema.parse(req.body ?? {});
-      const normalizedDomain = payload.primaryDomain.trim().toLowerCase();
+      const normalizedDomain = payload.primaryDomain;
       const result = await ensureCompanyForDomain({
         firestore,
         logger,
@@ -459,6 +483,7 @@ export function companiesRouter({ firestore, logger }) {
         updatedAt: new Date(),
         nameConfirmed: true,
         profileConfirmed: false,
+        primaryDomain: normalizedDomain,
         name: payload.name ?? company.name ?? "",
         hqCountry: payload.hqCountry ?? company.hqCountry ?? "",
         hqCity: payload.hqCity ?? company.hqCity ?? "",
@@ -529,6 +554,19 @@ export function companiesRouter({ firestore, logger }) {
       }
 
       const patch = buildCompanyUpdatePatch(payload);
+      if (payload.primaryDomain && payload.primaryDomain !== targetCompany.primaryDomain) {
+        const previousDomains = Array.isArray(targetCompany.additionalDomains)
+          ? targetCompany.additionalDomains.filter((value) => typeof value === "string" && value.length > 0)
+          : [];
+        if (targetCompany.primaryDomain) {
+          previousDomains.push(targetCompany.primaryDomain);
+        }
+        patch.primaryDomain = payload.primaryDomain;
+        patch.additionalDomains = Array.from(new Set(previousDomains));
+        if (!targetCompany.website) {
+          patch.website = `https://${payload.primaryDomain}`;
+        }
+      }
       await firestore.saveCompanyDocument(targetCompany.id, patch);
       const refreshed = CompanySchema.parse(
         await firestore.getDocument("companies", targetCompany.id)
