@@ -13,7 +13,6 @@ import { contactRouter } from "./routes/contact.js";
 import { usersRouter } from "./routes/users.js";
 import { requireAuth } from "./middleware/require-auth.js";
 import { videosRouter } from "./routes/videos.js";
-import { debugVeoRouter } from "./routes/debug-veo.js";
 
 const corsConfig = {
   origin: "http://localhost:3000",
@@ -50,9 +49,6 @@ export function createApp({ logger, firestore, llmClient }) {
   app.use("/videos", authMiddleware, videosRouter({ firestore, llmClient, logger }));
   app.use("/dashboard", authMiddleware, dashboardRouter({ firestore, logger }));
   app.use("/users", authMiddleware, usersRouter({ firestore, logger }));
-  if ((process.env.NODE_ENV ?? "development") !== "production") {
-    app.use("/debug", debugVeoRouter());
-  }
 
   app.use(notFound);
   app.use(errorHandler(logger));

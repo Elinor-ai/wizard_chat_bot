@@ -15,7 +15,7 @@ Authoritative data lives in the Firestore collection `videoLibraryItems`. Each d
 | **Asset manifest** | Versioned plan containing storyboard (Hook → Proof → Offer → Action), caption, thumbnail note, QA checklist, compliance flags, and tracking. Always valid JSON whet                 |
 
 her produced by LLM or deterministic fallback. |
-| **Render task** | Result from the pluggable renderer. Defaults to `dry_run` bundles (storyboard + caption) but can emit stubbed file URLs when `VIDEO_RENDERING_ENABLED=true`. |
+| **Render task** | Result from the pluggable renderer. Defaults to `dry_run` bundles (storyboard + caption) but emits hosted video/caption/poster URLs when the Sora/Veo pipeline succeeds. |
 | **Publish task** | Adapter output for TikTok/Instagram/YouTube/Snapchat/X stubs. Marks status `ready` if manual upload required, or `published` when a render file exists. |
 | **Library item** | User-facing record referencing job, channel, manifest version, render/publish tasks, analytics counters, and audit log. |
 
@@ -26,13 +26,9 @@ Environment variables (see root `.env` template):
 | Variable                        | Default                              | Notes                                                                                           |
 | ------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------- |
 | `VIDEO_LLM_ENABLED`             | `true`                               | Set `false` to force deterministic hook/proof/offer/action and caption generation.              |
-| `VIDEO_RENDERING_ENABLED`       | `true`                               | Enables renderer factories (FFmpeg storyboard or Veo).                                          |
 | `VIDEO_RENDER_AUTOSTART`        | `true`                               | Automatically trigger render after every manifest generation/regeneration.                      |
-| `VIDEO_RENDERER`                | `ffmpeg`                             | Set to `veo` to use Gemini/Veo 3.                                                               |
 | `VIDEO_RENDER_OUTPUT_DIR`       | `./tmp/video-renders`                | Filesystem directory that stores finished assets. The API serves it via `/video-assets`.        |
 | `VIDEO_RENDER_PUBLIC_BASE_URL`  | `http://localhost:4000/video-assets` | Base URL returned to the frontend for video/caption/poster links.                               |
-| `FFMPEG_PATH`                   | `ffmpeg`                             | Override if ffmpeg isn’t on `$PATH`.                                                            |
-| `VIDEO_RENDER_FONT_PATH`        | _(unset)_                            | Optional font file (e.g., `/System/Library/Fonts/Supplemental/Arial.ttf`) for `drawtext`.       |
 | `GEMINI_API_KEY`                | _(required for Veo)_                 | API key with Veo access.                                                                        |
 | `VIDEO_MODEL`                   | `veo-3`                              | Standard quality model.                                                                         |
 | `VIDEO_FAST_MODEL`              | `veo-3-fast`                         | Draft tier model.                                                                               |
@@ -46,8 +42,13 @@ Environment variables (see root `.env` template):
 | `VEO_DOWNLOAD_TIMEOUT_MS`       | `45000`                              | Abort Veo asset downloads after this many ms.                                                   |
 | `VEO_DOWNLOAD_RETRIES`          | `3`                                  | Attempts per asset (video/poster) before surfacing an error.                                    |
 | `LLM_VIDEO_PROVIDER`            | inherits from asset provider         | Controls model/provider for storyboard/caption/compliance tasks; reuses OpenAI/Gemini adapters. |
+| `SORA_BASE_URL`                 | _(empty)_                            | Optional override for OpenAI Sora base URL used by `sora-client`.                               |
+| `SORA_API_TOKEN`                | _(empty)_                            | Bearer token for the Sora API when selecting the Sora renderer.                                 |
+| `SORA_TIMEOUT_MS`               | `45000`                              | Request timeout applied inside `sora-client`; mirrors server defaults.                          |
 
 All endpoints sit behind `/videos/*` and require the same bearer token as the rest of the dashboard.
+
+> **Sora routing:** switching an item’s `provider` to `sora` (or setting `provider` defaults inside `createVideoLibraryService`) makes `createRenderer` hand off to `SoraClient`, which pulls the Sora base URL/token/timeout values above. Items without explicit provider still default to Veo but can be rerendered through Sora at any time via `POST /videos/:id/render`.
 
 ## Lifecycle
 
@@ -61,6 +62,17 @@ All endpoints sit behind `/videos/*` and require the same bearer token as the re
 5. **Approve** – `POST /videos/:id/approve` toggles status and logs an audit entry.
 6. **Publish** – `POST /videos/:id/publish` hands manifest + renderTask to the adapter registry (`services/api-gateway/src/video/publishers.js`). Stubs log payloads and mark status `published` when a file exists, otherwise `ready` for manual upload.
 7. **Track** – Each manifest stores `tracking` (source/medium/campaign/content slug). Frontend surfaces a ready-to-copy `utm_source=…` string. Analytics placeholders (impressions/clicks/applies) live under `item.analytics` for future ingestion.
+
+## Video Generation Flow (Detailed)
+
+1. **Request intake** – The `/videos` router (`services/api-gateway/src/routes/videos.js`) authenticates the user, validates payloads with Zod, and loads the job document from Firestore. Every call funnels through `createVideoLibraryService`, so UI requests, scripts, or future queue triggers reuse the same guardrails.
+2. **Manifest assembly** – `buildVideoManifest` (`services/api-gateway/src/video/manifest-builder.js`) resolves the placement spec, derives the job snapshot, and drives the LLM tasks (`askVideoStoryboard`, `askVideoCaption`, `askVideoCompliance`). Failures automatically fall back to deterministic builders in `fallbacks.js`, ensuring Hook → Proof → Offer → Action beats, CTA copy, thumbnail hints, QA checklist entries, and compliance flags always exist. The manifest passes `VideoAssetManifestSchema` before persistence.
+3. **Persistence & audit** – `createItem` rolls the manifest, job snapshot, render/publish placeholders, analytics counters, and normalized provider state into `videoLibraryItems/<uuid>` via the Firestore adapter. Audit entries (`created`, `manifest_regenerated`, `render_completed`, etc.) keep the timeline capped at 50 entries for the UI.
+4. **Auto-render kickoff** – If `VIDEO_RENDER_AUTOSTART` is true, `triggerRender` fires immediately, updating status to `generating` and enqueuing a render task. Operators can call `/videos/:id/render` later to retry or to switch tiers.
+5. **Renderer orchestration** – `createRenderer` wraps `createVeoRenderer`, which selects Veo vs. Sora based on the stored provider, hashes the request to reuse finished renders, and either starts (`startPredict`) or resumes (`resumeOperation`) long-running operations. Missing credentials or provider outages lead to deterministic `dry_run` bundles so the dashboard still shows storyboard previews.
+6. **Asset materialization** – Successful clips run through `materializeClip`, which downloads video/poster/captions into `VIDEO_RENDER_OUTPUT_DIR`, rewrites paths using `VIDEO_RENDER_PUBLIC_BASE_URL`, and stores them on the `VideoRenderTaskSchema` payload alongside SynthID provenance, tier (`fast`/`standard`), and cost estimates (seconds × `VEO_*_PRICE_PER_SECOND`). QA notes/flags bubble into the response so reviewers see rate-limit hints or extend limitations.
+7. **Polling & retries** – When providers return 202, the renderer includes `pollDelayMs` and the service schedules `scheduleVeoPoll` to re-fetch once `canFetchNow` passes. Pollers survive API restarts because `item.veo` keeps the `operationName`, attempt count, and last fetch timestamps. Rate limit errors record `veo_rate_limited` hints and keep the item in `generating` until retries exhaust.
+8. **Status progression & publish** – Completed renders move the item to `ready`, manual approvals to `approved`, and publisher adapters (`services/api-gateway/src/video/publishers.js`) mark `published` once they emit channel payloads. The frontend consumes `/videos` and `/videos/:id` to show list cards, detail preview panes, caption editor, compliance flags, QA checklist, and tracking URLs even when rendering fell back to storyboards.
 
 ## API Quickstart
 
@@ -108,7 +120,7 @@ curl -X POST http://localhost:4000/videos/<itemId>/caption \
 | Scenario                   | What to check                                                                                                                                                                                                                            |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **LLM failures**           | Set `VIDEO_LLM_ENABLED=false` to force deterministic manifests. Logs include `video_storyboard` payload + preview; audit log lists fallback usage.                                                                                       |
-| **Rendering down**         | Leave `VIDEO_RENDERING_ENABLED=false` for dry-run bundles. Operators can download storyboard via API response and produce videos manually; publish task will stay `ready`.                                                               |
+| **Rendering down**         | When remote rendering is unavailable we fall back to storyboard dry-run bundles so operators can download the prompt pack and publish manually; publish task stays `ready`.                                                               |
 | **Publish blocked**        | `publishTask.status=ready` means adapters need a rendered file. Upload manually or rerun render once a backend is available.                                                                                                             |
 | **Gemini 429 or timeouts** | Logs will show `veo_rate_limited`/`veo_timeout`. Respect `VEO_POLL_*` settings, backoff automatically, and retry once the `retry-after` window expires. If failures persist we fall back to storyboards with `renderTask.status=failed`. |
 | **Compliance flags**       | Flags appear in API + UI. Severity `blocking` (e.g., missing pay/location) should be resolved before approve/publish.                                                                                                                    |
@@ -120,7 +132,7 @@ curl -X POST http://localhost:4000/videos/<itemId>/caption \
 - **Spec coverage** – Unit tests in `packages/core` asserting `resolveVideoSpec` returns channel requirements (aspect/duration/captions) for each supported placement.
 - **Manifest generation** – Service-level tests to ensure `buildVideoManifest` produces Hook→Proof→Offer→Action, CTA, QA checklist, and compliance flags even when job is missing pay/location (should emit blocking flag).
 - **LLM off switch** – Integration test toggling `VIDEO_LLM_ENABLED=false` to confirm deterministic storyboard/caption created and audits record fallback.
-- **Rendering paths** – Tests for both `VIDEO_RENDERING_ENABLED=false` (dry-run bundle stored, status `rendered`) and `true` (stub file URLs recorded, metrics incremented).
+- **Rendering paths** – Tests ensure storyboard dry-runs still succeed when the remote renderer is disabled and that hosted assets are recorded when Sora/Veo respond successfully.
 - **Veo client** – Unit tests that stub Gemini responses to ensure we poll operations, respect `retry-after`, time out at `VEO_POLL_TIMEOUT_MS`, and surface `veo_missing_video_url` errors when assets are absent.
 - **Veo renderer fallbacks** – Ensure missing credentials or download failures return deterministic storyboard bundles with `renderTask.status=failed` and error reason codes.
 - **API flows** – Endpoint tests covering create, regenerate, caption edit, render, approve, publish, and bulk approve/archive, including auth + job ownership checks.
