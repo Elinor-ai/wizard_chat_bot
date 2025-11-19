@@ -1237,6 +1237,17 @@ const generationMetricsSchema = z
   .nullable()
   .optional();
 
+const veoStateSchema = z
+  .object({
+    operationName: z.string().nullable().optional(),
+    status: z.string().default("none"),
+    attempts: z.number().nullable().optional(),
+    lastFetchAt: z.union([z.string(), z.date()]).nullable().optional(),
+    hash: z.string().nullable().optional()
+  })
+  .nullable()
+  .optional();
+
 const videoListItemSchema = z.object({
   id: z.string(),
   jobId: z.string(),
@@ -1262,6 +1273,7 @@ const videoDetailSchema = z.object({
   status: z.string(),
   manifestVersion: z.number(),
   manifest: videoManifestSchema,
+  veo: veoStateSchema,
   renderTask: z.record(z.string(), z.unknown()).nullable().optional(),
   publishTask: z.record(z.string(), z.unknown()).nullable().optional(),
   generationMetrics: generationMetricsSchema,

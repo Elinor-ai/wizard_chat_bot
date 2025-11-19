@@ -96,6 +96,7 @@ export function VideoLibrary() {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [isActionBusy, setIsActionBusy] = useState(false);
   const [formState, setFormState] = useState({ jobId: "", channelId: CHANNEL_OPTIONS[0].id });
   const [formError, setFormError] = useState(null);
   const [captionDraft, setCaptionDraft] = useState({ text: "", hashtags: "" });
@@ -225,7 +226,8 @@ export function VideoLibrary() {
   };
 
   const handleAction = async (type, payload = {}) => {
-    if (!authToken || !selectedItemId) return;
+    if (!authToken || !selectedItemId || isActionBusy) return;
+    setIsActionBusy(true);
     try {
       let updated;
       if (type === "regenerate") {
@@ -245,12 +247,18 @@ export function VideoLibrary() {
       }
     } catch (requestError) {
       setError(requestError.message);
+    } finally {
+      setIsActionBusy(false);
     }
   };
 
   const selectedItems = useMemo(() => new Set(bulkSelection), [bulkSelection]);
 
   const selectionEnabled = items.length > 0;
+  const isVeoGenerating = Boolean(
+    detail?.veo && ["predicting", "fetching"].includes(detail.veo.status)
+  );
+  const renderButtonLabel = isVeoGenerating ? "Refresh status" : "Re-render";
 
   return (
     <div className="space-y-6">
@@ -511,6 +519,15 @@ export function VideoLibrary() {
             </div>
 
             <div className="space-y-4">
+              {isVeoGenerating ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <p className="font-semibold">Generating preview…</p>
+                  <p className="mt-1">
+                    Vertex Veo is still rendering this clip. Use “Refresh status” to resume polling without
+                    restarting the request.
+                  </p>
+                </div>
+              ) : null}
               <div className="rounded-2xl border border-neutral-200 p-4">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Compliance & QA</h3>
                 <ul className="mt-3 space-y-2 text-sm">
@@ -549,17 +566,19 @@ export function VideoLibrary() {
                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
                   <button
                     type="button"
-                    className="rounded-full bg-neutral-900 px-4 py-2 font-semibold text-white"
+                    className="rounded-full bg-neutral-900 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => handleAction("regenerate", { jobId: detail.jobId })}
+                    disabled={isActionBusy || isVeoGenerating}
                   >
                     Regenerate script
                   </button>
                   <button
                     type="button"
-                    className="rounded-full border border-neutral-300 px-4 py-2 font-semibold text-neutral-700"
+                    className="rounded-full border border-neutral-300 px-4 py-2 font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => handleAction("render")}
+                    disabled={isActionBusy}
                   >
-                    Re-render
+                    {renderButtonLabel}
                   </button>
                   <button
                     type="button"

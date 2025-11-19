@@ -63,6 +63,7 @@ function mapListItem(item) {
     durationSeconds,
     updatedAt: item.updatedAt,
     thumbnail: item.activeManifest?.thumbnail ?? null,
+    veoStatus: item.veo?.status ?? "none",
     hasVideo:
       item.renderTask?.mode === "file" &&
       item.renderTask?.status === "completed" &&
@@ -115,6 +116,7 @@ function buildDetailResponse(item) {
     auditLog: item.auditLog,
     playback,
     trackingString: utmString,
+    veo: item.veo ?? null,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt
   };
@@ -227,10 +229,12 @@ export function videosRouter({ firestore, llmClient, logger }) {
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
       const item = await service.triggerRender({ ownerUserId: userId, itemId: req.params.id });
-      if (!item) {
+      if (!item?.item) {
         throw httpError(404, "Video item not found");
       }
-      res.json({ item: buildDetailResponse(item) });
+      res
+        .status(item.httpStatus ?? 200)
+        .json({ item: buildDetailResponse(item.item) });
     })
   );
 

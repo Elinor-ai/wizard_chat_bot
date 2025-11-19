@@ -3,7 +3,7 @@ import {
   CHANNEL_CATALOG_MAP,
   VideoLibraryItemSchema,
   VideoLibraryStatusEnum,
-  CaptionSchema
+  CaptionSchema,
 } from "@wizard/core";
 import { buildVideoManifest } from "./manifest-builder.js";
 import { incrementMetric } from "./metrics.js";
@@ -11,7 +11,16 @@ import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 
 const COLLECTION = "videoLibraryItems";
 const AUTO_RENDER = process.env.VIDEO_RENDER_AUTOSTART !== "false";
-const USE_FAST_TIER = process.env.VIDEO_USE_FAST_FOR_DRAFTS !== "false";
+const DEFAULT_RENDER_PROVIDER = (process.env.VIDEO_DEFAULT_PROVIDER ?? "sora")
+  .toString()
+  .toLowerCase();
+const INITIAL_RENDER_STATE = Object.freeze({
+  operationName: null,
+  status: "none",
+  attempts: 0,
+  lastFetchAt: null,
+  hash: null,
+});
 
 function deriveChannelName(channelId) {
   return CHANNEL_CATALOG_MAP[channelId]?.name ?? channelId;
@@ -20,7 +29,7 @@ function deriveChannelName(channelId) {
 const LEGACY_STATUS_MAP = {
   rendered: "ready",
   rendering: "generating",
-  draft: "planned"
+  draft: "planned",
 };
 
 function normaliseStatus(status) {
@@ -32,14 +41,19 @@ function normaliseStatus(status) {
 function normalizeItem(raw, logger) {
   const payload = {
     ...raw,
-    status: normaliseStatus(raw?.status)
+    status: normaliseStatus(raw?.status),
+    veo: normaliseVeoState(raw?.veo),
   };
   const parsed = VideoLibraryItemSchema.safeParse(payload);
   if (!parsed.success) {
     logger.warn({ err: parsed.error }, "Failed to parse video library item");
     return null;
   }
-  return parsed.data;
+  const provider = resolveStoredProvider(raw);
+  return {
+    ...parsed.data,
+    provider,
+  };
 }
 
 function createAuditEntry(type, message, metadata = {}) {
@@ -48,7 +62,7 @@ function createAuditEntry(type, message, metadata = {}) {
     type,
     message,
     metadata,
-    occurredAt: new Date().toISOString()
+    occurredAt: new Date().toISOString(),
   };
 }
 
@@ -60,6 +74,7 @@ function appendAuditLog(item, entry) {
   return nextLog;
 }
 
+<<<<<<< HEAD
 export function createVideoLibraryService({ firestore, llmClient, renderer, publisherRegistry, logger }) {
   const usageTracker = ({ result, usageContext }) =>
     recordLlmUsageFromResult({
@@ -69,20 +84,68 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       result
     });
 
+=======
+function normaliseVeoState(state) {
+  if (!state) return { ...INITIAL_RENDER_STATE };
+  return {
+    operationName: state.operationName ?? INITIAL_RENDER_STATE.operationName,
+    status: state.status ?? INITIAL_RENDER_STATE.status,
+    attempts: Number.isFinite(Number(state.attempts))
+      ? Number(state.attempts)
+      : INITIAL_RENDER_STATE.attempts,
+    lastFetchAt: state.lastFetchAt ?? INITIAL_RENDER_STATE.lastFetchAt,
+    hash: state.hash ?? INITIAL_RENDER_STATE.hash,
+  };
+}
+
+function normalizeProviderValue(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "sora") return "sora";
+  if (normalized === "veo") return "veo";
+  return null;
+}
+
+function resolveStoredProvider(raw) {
+  return (
+    normalizeProviderValue(raw?.provider) ??
+    normalizeProviderValue(raw?.picker?.provider) ??
+    normalizeProviderValue(raw?.channelPicker?.provider) ??
+    DEFAULT_RENDER_PROVIDER
+  );
+}
+
+function resolveRenderProvider(item) {
+  return normalizeProviderValue(item?.provider) ?? DEFAULT_RENDER_PROVIDER;
+}
+
+export function createVideoLibraryService({
+  firestore,
+  llmClient,
+  renderer,
+  publisherRegistry,
+  logger,
+}) {
+>>>>>>> Social-Image-Generator
   async function listItems({ ownerUserId, filters = {} }) {
     const docs = await firestore.listCollection(COLLECTION, [
-      { field: "ownerUserId", operator: "==", value: ownerUserId }
+      { field: "ownerUserId", operator: "==", value: ownerUserId },
     ]);
     return docs
       .map((doc) => normalizeItem(doc, logger))
       .filter(Boolean)
       .filter((item) => {
         if (filters.status && item.status !== filters.status) return false;
-        if (filters.channelId && item.channelId !== filters.channelId) return false;
+        if (filters.channelId && item.channelId !== filters.channelId)
+          return false;
         if (
           filters.geo &&
           item.jobSnapshot?.geo &&
-          !item.jobSnapshot.geo.toLowerCase().includes(filters.geo.toLowerCase())
+          !item.jobSnapshot.geo
+            .toLowerCase()
+            .includes(filters.geo.toLowerCase())
         )
           return false;
         if (
@@ -107,7 +170,12 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     return firestore.saveDocument(COLLECTION, itemId, payload);
   }
 
-  async function createItem({ job, channelId, recommendedMedium, ownerUserId }) {
+  async function createItem({
+    job,
+    channelId,
+    recommendedMedium,
+    ownerUserId,
+  }) {
     const itemId = uuid();
     const channelName = deriveChannelName(channelId);
     const manifest = await buildVideoManifest({
@@ -118,7 +186,10 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       llmClient,
       logger,
       version: 1,
+<<<<<<< HEAD
       usageTracker
+=======
+>>>>>>> Social-Image-Generator
     });
     const now = new Date().toISOString();
     const baseItem = {
@@ -133,6 +204,8 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       jobSnapshot: manifest.job,
       manifests: [manifest],
       activeManifest: manifest,
+      provider: DEFAULT_RENDER_PROVIDER,
+      veo: { ...INITIAL_RENDER_STATE },
       renderTask: null,
       publishTask: null,
       analytics: { impressions: 0, clicks: 0, applies: 0 },
@@ -140,28 +213,35 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
         { auditLog: [] },
         createAuditEntry("created", "Video manifest created", {
           channelId,
-          placement: manifest.placementName
+          placement: manifest.placementName,
         })
       ),
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
 
     await saveItem(itemId, baseItem);
     incrementMetric(logger, "video_manifests_created", 1, { ownerUserId });
 
     if (AUTO_RENDER) {
-      return triggerRender({ ownerUserId, itemId });
+      const outcome = await triggerRender({ ownerUserId, itemId });
+      return outcome?.item ?? null;
     }
 
     return getItem({ ownerUserId, itemId });
   }
 
   async function updateItem(item, updates, auditEntry) {
+    const provider =
+      normalizeProviderValue(updates.provider) ??
+      normalizeProviderValue(item.provider) ??
+      DEFAULT_RENDER_PROVIDER;
     const payload = {
       ...item,
       ...updates,
-      updatedAt: new Date().toISOString()
+      provider,
+      veo: normaliseVeoState(updates.veo ?? item.veo),
+      updatedAt: new Date().toISOString(),
     };
     if (auditEntry) {
       payload.auditLog = appendAuditLog(item, auditEntry);
@@ -170,7 +250,12 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     return getItem({ ownerUserId: item.ownerUserId, itemId: item.id });
   }
 
-  async function regenerateManifest({ ownerUserId, itemId, job, recommendedMedium }) {
+  async function regenerateManifest({
+    ownerUserId,
+    itemId,
+    job,
+    recommendedMedium,
+  }) {
     const existing = await getItem({ ownerUserId, itemId });
     if (!existing) {
       return null;
@@ -183,7 +268,10 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       llmClient,
       logger,
       version: existing.manifestVersion + 1,
+<<<<<<< HEAD
       usageTracker
+=======
+>>>>>>> Social-Image-Generator
     });
     const manifests = [...existing.manifests, manifest];
     const updates = {
@@ -193,25 +281,36 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
       jobSnapshot: manifest.job,
       renderTask: null,
       publishTask: null,
-      status: VideoLibraryStatusEnum.enum.planned
+      status: VideoLibraryStatusEnum.enum.planned,
+      veo: { ...INITIAL_RENDER_STATE },
     };
-    const auditEntry = createAuditEntry("manifest_regenerated", "Manifest regenerated", {
-      version: manifest.version
-    });
+    const auditEntry = createAuditEntry(
+      "manifest_regenerated",
+      "Manifest regenerated",
+      {
+        version: manifest.version,
+      }
+    );
     const updated = await updateItem(existing, updates, auditEntry);
     if (AUTO_RENDER) {
-      return triggerRender({ ownerUserId, itemId });
+      const outcome = await triggerRender({ ownerUserId, itemId });
+      return outcome?.item ?? null;
     }
     return updated;
   }
 
   async function triggerRender({ ownerUserId, itemId }) {
-    const existing = await getItem({ ownerUserId, itemId });
+    let existing = await getItem({ ownerUserId, itemId });
     if (!existing) {
       return null;
     }
-    const tier = resolveTier(existing);
-    const renderTask = await renderer.render({ manifest: existing.activeManifest, tier });
+    const provider = resolveRenderProvider(existing);
+
+    const renderTask = await renderer.render({
+      manifest: existing.activeManifest,
+      provider,
+    });
+    const veo = { ...INITIAL_RENDER_STATE, status: "ready" };
     let status = existing.status;
     if (renderTask.status === "completed") {
       status = VideoLibraryStatusEnum.enum.ready;
@@ -220,14 +319,20 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     } else {
       status = VideoLibraryStatusEnum.enum.generating;
     }
-    const auditEntry = createAuditEntry("render_completed", "Render task updated", {
-      status: renderTask.status
-    });
+    const auditEntry = createAuditEntry(
+      "render_completed",
+      "Render task updated",
+      {
+        status: renderTask.status,
+        veoStatus: veo.status,
+      }
+    );
     const updated = await updateItem(
       existing,
       {
         renderTask,
-        status
+        status,
+        veo,
       },
       auditEntry
     );
@@ -236,7 +341,7 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     } else if (renderTask.status === "failed") {
       incrementMetric(logger, "video_renders_failed", 1, { ownerUserId });
     }
-    return updated;
+    return { item: updated, httpStatus: 200 };
   }
 
   async function approveItem({ ownerUserId, itemId }) {
@@ -249,7 +354,7 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     const updated = await updateItem(
       existing,
       {
-        status: VideoLibraryStatusEnum.enum.approved
+        status: VideoLibraryStatusEnum.enum.approved,
       },
       auditEntry
     );
@@ -263,19 +368,24 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     const publishTask = await publisherRegistry.publish({
       manifest: existing.activeManifest,
       renderTask: existing.renderTask,
-      logger
+      logger,
     });
-    const status = publishTask.status === "published"
-      ? VideoLibraryStatusEnum.enum.published
-      : existing.status;
-    const auditEntry = createAuditEntry("publish", "Publish request processed", {
-      status: publishTask.status
-    });
+    const status =
+      publishTask.status === "published"
+        ? VideoLibraryStatusEnum.enum.published
+        : existing.status;
+    const auditEntry = createAuditEntry(
+      "publish",
+      "Publish request processed",
+      {
+        status: publishTask.status,
+      }
+    );
     const updated = await updateItem(
       existing,
       {
         publishTask,
-        status
+        status,
       },
       auditEntry
     );
@@ -318,13 +428,13 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
         : manifest
     );
     const auditEntry = createAuditEntry("caption_updated", "Caption edited", {
-      preview: parsedCaption.text.slice(0, 60)
+      preview: parsedCaption.text.slice(0, 60),
     });
     return updateItem(
       existing,
       {
         manifests,
-        activeManifest: { ...existing.activeManifest, caption: parsedCaption }
+        activeManifest: { ...existing.activeManifest, caption: parsedCaption },
       },
       auditEntry
     );
@@ -339,13 +449,6 @@ export function createVideoLibraryService({ firestore, llmClient, renderer, publ
     approveItem,
     publishItem,
     bulkUpdate,
-    updateCaption
+    updateCaption,
   };
-}
-
-function resolveTier(item) {
-  if (item?.status === VideoLibraryStatusEnum.enum.approved) {
-    return "standard";
-  }
-  return USE_FAST_TIER ? "fast" : "standard";
 }

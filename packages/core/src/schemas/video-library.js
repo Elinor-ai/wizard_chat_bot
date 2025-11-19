@@ -104,6 +104,16 @@ export const VideoGenerationMetricsSchema = z.object({
   synthIdWatermark: z.boolean().default(true)
 });
 
+export const VeoStateStatusEnum = z.enum(["none", "predicting", "fetching", "ready", "failed", "rate_limited"]);
+
+export const VeoStateSchema = z.object({
+  operationName: z.string().nullable().optional(),
+  status: VeoStateStatusEnum.default("none"),
+  attempts: z.number().int().nonnegative().default(0),
+  lastFetchAt: TimestampSchema.nullable().optional(),
+  hash: z.string().nullable().optional()
+});
+
 export const VideoRenderTaskSchema = z.object({
   id: z.string(),
   manifestVersion: z.number().int().min(1),
@@ -202,6 +212,7 @@ export const VideoLibraryItemSchema = z.object({
   jobSnapshot: VideoJobSnapshotSchema,
   manifests: z.array(VideoAssetManifestSchema).min(1),
   activeManifest: VideoAssetManifestSchema,
+  veo: VeoStateSchema.default({ status: "none", attempts: 0 }),
   renderTask: VideoRenderTaskSchema.nullable().optional(),
   publishTask: VideoPublishTaskSchema.nullable().optional(),
   analytics: z

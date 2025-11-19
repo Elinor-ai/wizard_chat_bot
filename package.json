@@ -23,5 +23,10 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "@google/genai": "^1.29.1",
+    "@huggingface/inference": "^4.13.2",
+    "sharp": "^0.34.5"
   }
 }
