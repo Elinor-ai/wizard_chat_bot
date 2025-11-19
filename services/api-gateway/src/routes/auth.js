@@ -70,8 +70,7 @@ function buildNewUser(payload, passwordHash = null) {
     credits: {
       balance: 100,
       reserved: 0,
-      lifetimeUsed: 0,
-      pricingVersion: "v1"
+      lifetimeUsed: 0
     },
     limits: {
       monthTokensCap: 2_000_000,

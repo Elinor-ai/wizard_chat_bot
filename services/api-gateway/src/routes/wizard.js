@@ -1297,12 +1297,14 @@ function valueProvidedAt(state, path) {
 }
 export function wizardRouter({ firestore, logger, llmClient }) {
   const router = Router();
-  const trackLlmUsage = (result, usageContext) =>
+  const trackLlmUsage = (result, usageContext, options = {}) =>
     recordLlmUsageFromResult({
       firestore,
       logger,
       usageContext,
-      result
+      result,
+      usageType: options.usageType,
+      usageMetrics: options.usageMetrics
     });
 
   router.post(
@@ -2164,11 +2166,20 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             negativePrompt: promptResult.negativePrompt ?? undefined,
             style: promptResult.style ?? undefined
           });
-          await trackLlmUsage(imageResult, {
-            userId,
-            jobId: payload.jobId,
-            taskType: "image_generation"
-          });
+          await trackLlmUsage(
+            imageResult,
+            {
+              userId,
+              jobId: payload.jobId,
+              taskType: "image_generation"
+            },
+            {
+              usageType: "image",
+              usageMetrics: {
+                units: 1
+              }
+            }
+          );
 
           if (imageResult.error) {
             await persistHeroImageFailure({

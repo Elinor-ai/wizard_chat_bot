@@ -1,4 +1,12 @@
-const TOKENS_PER_CREDIT = Number(process.env.LLM_TOKENS_PER_CREDIT ?? "1000");
+import {
+  resolveCreditConversion,
+  resolveImagePricing,
+  resolveTextPricing,
+  resolveVideoPricing,
+  resolveProviderPlanName
+} from "../config/pricing-rates.js";
+
+const MILLION = 1_000_000;
 
 function normalizeTokens(value) {
   if (value === undefined || value === null) {
@@ -65,7 +73,9 @@ export async function recordLlmUsage({
   model,
   metadata,
   status = "success",
-  errorReason
+  errorReason,
+  usageType = "text",
+  usageMetrics = {}
 }) {
   if (!firestore?.recordLlmUsage) {
     logger?.debug?.("llm.usage.ledger_not_configured");
@@ -76,11 +86,72 @@ export async function recordLlmUsage({
   const outputTokens = normalizeTokens(metadata?.responseTokens);
   const derivedTotal = inputTokens + outputTokens;
   const totalTokens = normalizeTokens(metadata?.totalTokens ?? derivedTotal);
+  const cachedTokens = normalizeTokens(
+    usageMetrics.cachedTokens ?? metadata?.cachedTokens ?? metadata?.cachedPromptTokens
+  );
   const timestamp = new Date();
+  const resolvedUsageType = usageType ?? usageContext.usageType ?? "text";
+
+  let estimatedCostUsd = 0;
+  let inputCostPerMillionUsd;
+  let outputCostPerMillionUsd;
+  let cachedInputCostPerMillionUsd;
+  let imageCostPerUnitUsd;
+  let videoCostPerSecondUsd;
+
+  const usdPerCredit = resolveCreditConversion(provider);
+  const pricingPlan = resolveProviderPlanName(provider);
+
+  if (resolvedUsageType === "image") {
+    const imagePricing = resolveImagePricing(provider, model);
+    imageCostPerUnitUsd = imagePricing.costPerUnitUsd ?? 0;
+    const units =
+      typeof usageMetrics.units === "number" && usageMetrics.units > 0
+        ? usageMetrics.units
+        : 1;
+    estimatedCostUsd = imageCostPerUnitUsd * units;
+  } else if (resolvedUsageType === "video") {
+    const videoPricing = resolveVideoPricing(provider, model);
+    videoCostPerSecondUsd = videoPricing.costPerSecondUsd ?? 0;
+    const seconds =
+      typeof usageMetrics.seconds === "number" && usageMetrics.seconds > 0
+        ? usageMetrics.seconds
+        : 0;
+    const perUnit =
+      typeof usageMetrics.units === "number" && usageMetrics.units > 0
+        ? usageMetrics.units
+        : 0;
+    if (videoCostPerSecondUsd > 0 && seconds > 0) {
+      estimatedCostUsd += videoCostPerSecondUsd * seconds;
+    }
+    if (videoPricing.costPerUnitUsd && perUnit > 0) {
+      estimatedCostUsd += videoPricing.costPerUnitUsd * perUnit;
+    }
+  } else {
+    const textPricing = resolveTextPricing(provider, model);
+    inputCostPerMillionUsd = textPricing.inputUsdPerMillionTokens ?? 0;
+    outputCostPerMillionUsd = textPricing.outputUsdPerMillionTokens ?? 0;
+    cachedInputCostPerMillionUsd =
+      textPricing.cachedUsdPerMillionTokens ?? inputCostPerMillionUsd ?? 0;
+
+    const inputCost =
+      (inputCostPerMillionUsd * inputTokens) / MILLION;
+    const outputCost =
+      (outputCostPerMillionUsd * outputTokens) / MILLION;
+    const cachedCost =
+      (cachedInputCostPerMillionUsd * cachedTokens) / MILLION;
+    estimatedCostUsd = inputCost + outputCost + cachedCost;
+  }
+
+  if (!Number.isFinite(estimatedCostUsd) || estimatedCostUsd < 0) {
+    estimatedCostUsd = 0;
+  }
   const creditsUsed =
-    totalTokens > 0 && TOKENS_PER_CREDIT > 0
-      ? Number((totalTokens / TOKENS_PER_CREDIT).toFixed(6))
-      : 0;
+    usdPerCredit > 0 ? Number((estimatedCostUsd / usdPerCredit).toFixed(6)) : 0;
+  const tokenCreditRatio =
+    creditsUsed > 0 && totalTokens > 0
+      ? Number((totalTokens / creditsUsed).toFixed(4))
+      : null;
 
   const entryPayload = {
     userId: usageContext.userId ?? null,
@@ -91,7 +162,17 @@ export async function recordLlmUsage({
     inputTokens,
     outputTokens,
     totalTokens,
+    cachedTokens,
+    inputCostPerMillionUsd,
+    outputCostPerMillionUsd,
+    cachedInputCostPerMillionUsd,
+    imageCostPerUnitUsd,
+    videoCostPerSecondUsd,
+    estimatedCostUsd: Number(estimatedCostUsd.toFixed(6)),
     creditsUsed,
+    pricingPlan,
+    usdPerCredit,
+    tokenCreditRatio,
     status,
     errorReason,
     timestamp,
@@ -118,7 +199,9 @@ export async function recordLlmUsageFromResult({
   firestore,
   logger,
   usageContext = {},
-  result
+  result,
+  usageType,
+  usageMetrics
 }) {
   if (!result) {
     return;
@@ -137,6 +220,8 @@ export async function recordLlmUsageFromResult({
     model,
     metadata,
     status,
-    errorReason
+    errorReason,
+    usageType: usageType ?? usageContext.usageType ?? "text",
+    usageMetrics: usageMetrics ?? usageContext.usageMetrics ?? {}
   });
 }

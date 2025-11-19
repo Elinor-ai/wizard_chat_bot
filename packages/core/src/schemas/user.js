@@ -46,8 +46,7 @@ export const UserSchema = z.object({
   credits: z.object({
     balance: NonNegativeNumber,
     reserved: NonNegativeNumber,
-    lifetimeUsed: NonNegativeNumber,
-    pricingVersion: z.string()
+    lifetimeUsed: NonNegativeNumber
   }),
   limits: z.record(z.string(), z.union([z.number(), z.boolean(), z.string()])),
   preferences: z.object({

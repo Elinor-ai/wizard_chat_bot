@@ -1,4 +1,5 @@
 import { CreditLedger } from "../../../components/credits/credit-ledger";
+import { CreditBalanceCard } from "../../../components/credits/credit-balance-card";
 
 export default function CreditsPage() {
   return (
@@ -14,6 +15,7 @@ export default function CreditsPage() {
         </p>
       </header>
 
+      <CreditBalanceCard />
       <CreditLedger />
     </div>
   );

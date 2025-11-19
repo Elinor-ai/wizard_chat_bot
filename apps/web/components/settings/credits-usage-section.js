@@ -180,13 +180,11 @@ export default function CreditsUsageSection({ user }) {
               <p className="text-xs text-neutral-500">LLM Tokens (Month)</p>
               <p className="text-2xl font-bold text-neutral-900">{formatNumber(usage.tokensMonth || 0)}</p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-neutral-500">Pricing</p>
-              <p className="text-sm font-semibold text-neutral-700">
-                v{credits.pricingVersion || '1.0'}
-              </p>
-            </div>
+          <div className="text-right">
+            <p className="text-xs text-neutral-500">Pricing</p>
+            <p className="text-sm font-semibold text-neutral-700">—</p>
           </div>
+        </div>
 
           {/* Last Active */}
           <div className="flex items-center gap-4 rounded-xl border border-neutral-200 bg-white p-4">
