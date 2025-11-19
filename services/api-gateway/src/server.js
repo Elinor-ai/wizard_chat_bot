@@ -20,7 +20,7 @@ import { startCompanyIntelWorker } from "./services/company-intel.js";
 const corsConfig = {
   origin: "http://localhost:3000",
   methods: ["GET", "POST", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization"],
 };
 
 export function createApp({ logger, firestore, llmClient }) {
@@ -34,24 +34,45 @@ export function createApp({ logger, firestore, llmClient }) {
   app.use(
     morgan("tiny", {
       stream: {
-        write: (message) => logger.info(message.trim())
-      }
+        write: (message) => logger.info(message.trim()),
+      },
     })
   );
 
-  const videoAssetDir = path.resolve(process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders");
+  const videoAssetDir = path.resolve(
+    process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders"
+  );
   fs.mkdirSync(videoAssetDir, { recursive: true });
-  app.use("/video-assets", express.static(videoAssetDir, { fallthrough: true, maxAge: "5m" }));
+  app.use(
+    "/video-assets",
+    express.static(videoAssetDir, { fallthrough: true, maxAge: "5m" })
+  );
 
   const authMiddleware = requireAuth({ logger });
 
   app.use("/auth", authRouter({ firestore, logger }));
   app.use("/contact", contactRouter({ logger }));
-  app.use("/wizard/copilot", authMiddleware, copilotRouter({ firestore, llmClient, logger }));
-  app.use("/wizard", authMiddleware, wizardRouter({ firestore, logger, llmClient }));
-  app.use("/chat", authMiddleware, chatRouter({ firestore, llmClient, logger }));
+  app.use(
+    "/wizard/copilot",
+    authMiddleware,
+    copilotRouter({ firestore, llmClient, logger })
+  );
+  app.use(
+    "/wizard",
+    authMiddleware,
+    wizardRouter({ firestore, logger, llmClient })
+  );
+  app.use(
+    "/chat",
+    authMiddleware,
+    chatRouter({ firestore, llmClient, logger })
+  );
   app.use("/assets", authMiddleware, assetsRouter({ firestore, logger }));
-  app.use("/videos", authMiddleware, videosRouter({ firestore, llmClient, logger }));
+  app.use(
+    "/videos",
+    authMiddleware,
+    videosRouter({ firestore, llmClient, logger })
+  );
   app.use("/dashboard", authMiddleware, dashboardRouter({ firestore, logger }));
   app.use("/users", authMiddleware, usersRouter({ firestore, logger }));
   app.use("/companies", authMiddleware, companiesRouter({ firestore, logger }));

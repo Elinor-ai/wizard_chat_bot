@@ -34,6 +34,8 @@ export class UnifiedVideoRenderer {
 
   async renderVideo(provider, request) {
     const { client, key } = this.selectClient(provider);
+    console.log(`[Renderer] Starting generation with ${key}...`); // LOG
+
     const start = await client.startGeneration(request);
     if (!start?.id) {
       throw new VideoRendererError("Provider did not return an operation id", {
@@ -42,29 +44,57 @@ export class UnifiedVideoRenderer {
       });
     }
 
+    console.log(`[Renderer] Job started. ID: ${start.id}`); // LOG
+
     const deadline = Date.now() + this.pollTimeoutMs;
     let status = start;
 
     while (Date.now() < deadline) {
       await sleep(this.pollIntervalMs);
-      status = await client.checkStatus(status.id ?? start.id);
 
-      if (status.status === "completed") {
-        if (!status.videoUrl) {
-          throw new VideoRendererError(
-            "Provider completed without a video URL",
-            {
-              code: "PROVIDER_ERROR",
-              context: { provider: key },
-            }
+      try {
+        // בדיקת סטטוס
+        status = await client.checkStatus(status.id ?? start.id);
+
+        // לוג קריטי - בוא נראה מה חוזר מהקלאיינט
+        if (status.status === "completed" || status.status === "failed") {
+          console.log(
+            `[Renderer] Status update from ${key}:`,
+            JSON.stringify(status)
           );
         }
-        return status.videoUrl;
-      }
 
-      if (status.status === "failed") {
-        const errorMessage = status.error?.message ?? "Video generation failed";
-        throw new VideoRendererError(errorMessage, {
+        if (status.status === "completed") {
+          if (!status.videoUrl) {
+            // אם זה הושלם אבל אין URL, זו שגיאה
+            throw new VideoRendererError(
+              "Provider completed without a video URL",
+              {
+                code: "PROVIDER_ERROR",
+                context: { provider: key, rawStatus: status },
+              }
+            );
+          }
+          console.log(`[Renderer] Success! Video URL: ${status.videoUrl}`);
+          return status.videoUrl;
+        }
+
+        if (status.status === "failed") {
+          const errorMessage =
+            status.error?.message ?? "Video generation failed";
+          console.error(`[Renderer] Failed: ${errorMessage}`);
+          throw new VideoRendererError(errorMessage, {
+            code: "PROVIDER_ERROR",
+            context: { provider: key, details: status.error },
+          });
+        }
+      } catch (err) {
+        // תופס שגיאות שקרו תוך כדי הבדיקה כדי לא להקריס את הכל
+        // אם השגיאה היא כבר מסוג VideoRendererError, זרוק אותה הלאה
+        if (err instanceof VideoRendererError) throw err;
+
+        console.error(`[Renderer] Error during polling:`, err);
+        throw new VideoRendererError(err.message || "Polling failed", {
           code: "PROVIDER_ERROR",
           context: { provider: key },
         });

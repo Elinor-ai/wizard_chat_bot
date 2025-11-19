@@ -1,12 +1,52 @@
 import axios from "axios";
 import { GoogleAuth } from "google-auth-library";
 import { IVideoClient, VideoRendererError } from "../contracts.js";
+import fs from "fs";
+import path from "path";
+
+function findVideoDataRecursive(obj) {
+  try {
+    if (!obj) return null;
+    if (typeof obj === "string") {
+      if (
+        obj.startsWith("gs://") ||
+        (obj.startsWith("http") && obj.includes("video"))
+      )
+        return { type: "url", value: obj };
+    }
+    if (typeof obj === "object" && !Array.isArray(obj)) {
+      if (obj.video && typeof obj.video === "string" && obj.video.length > 100)
+        return { type: "base64", value: obj.video };
+      if (obj.videoBytes && typeof obj.videoBytes === "string")
+        return { type: "base64", value: obj.videoBytes };
+      if (obj.mimeType === "video/mp4" && obj.bytesBase64Encoded)
+        return { type: "base64", value: obj.bytesBase64Encoded };
+    }
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const found = findVideoDataRecursive(item);
+        if (found) return found;
+      }
+    }
+    if (typeof obj === "object") {
+      for (const key in obj) {
+        if (key !== "context") {
+          const found = findVideoDataRecursive(obj[key]);
+          if (found) return found;
+        }
+      }
+    }
+  } catch (e) {
+    return null;
+  }
+  return null;
+}
 
 export class VeoClient extends IVideoClient {
   constructor({
     location = process.env.GOOGLE_CLOUD_LOCATION ?? "us-central1",
     projectId = process.env.FIRESTORE_PROJECT_ID,
-    modelId = process.env.VIDEO_MODEL ?? "veo-001-mp4",
+    modelId = process.env.VIDEO_MODEL ?? "veo-3.1-generate-preview",
   } = {}) {
     super();
     this.auth = new GoogleAuth({
@@ -21,15 +61,6 @@ export class VeoClient extends IVideoClient {
   async _getAuthHeaders() {
     const client = await this.auth.getClient();
     const accessToken = await client.getAccessToken();
-    if (!accessToken?.token) {
-      throw new VideoRendererError(
-        "Missing access token for Google Vertex AI",
-        {
-          code: "AUTH_ERROR",
-          context: { provider: "veo" },
-        }
-      );
-    }
     return {
       Authorization: `Bearer ${accessToken.token}`,
       "Content-Type": "application/json",
@@ -37,79 +68,109 @@ export class VeoClient extends IVideoClient {
   }
 
   buildPredictUrl() {
-    if (!this.projectId) {
-      throw new VideoRendererError("GOOGLE_CLOUD_PROJECT_ID is required", {
-        code: "CONFIGURATION_ERROR",
-        context: { provider: "veo" },
-      });
-    }
-    return `${this.baseUrl}/projects/${this.projectId}/locations/${this.location}/publishers/google/models/${this.modelId}:predict`;
+    return `${this.baseUrl}/projects/${this.projectId}/locations/${this.location}/publishers/google/models/${this.modelId}:predictLongRunning`;
   }
 
   async startGeneration(request) {
     try {
+      console.log("🚀 Starting Veo generation...");
       const headers = await this._getAuthHeaders();
       const payload = {
-        instances: [
-          {
-            prompt: request.prompt,
-          },
-        ],
-        parameters: {},
+        instances: [{ prompt: request.prompt }],
+        parameters: { sampleCount: 1 },
       };
-      if (request.aspectRatio) {
+      if (request.aspectRatio)
         payload.parameters.aspectRatio = request.aspectRatio;
-      }
+      if (request.duration)
+        payload.parameters.durationSeconds = request.duration.toString();
 
       const response = await axios.post(this.buildPredictUrl(), payload, {
         headers,
       });
-
-      return {
-        id: response.data?.name,
-        status: "pending",
-      };
+      console.log("⏳ Generation started. Op ID:", response.data?.name);
+      return { id: response.data?.name, status: "pending" };
     } catch (error) {
       this._handleError(error);
     }
   }
 
   async checkStatus(operationName) {
-    if (!operationName) {
-      throw new VideoRendererError("Operation name is required", {
+    if (!operationName)
+      throw new VideoRendererError("Op ID required", {
         code: "INVALID_REQUEST",
-        context: { provider: "veo" },
       });
-    }
+
     try {
       const headers = await this._getAuthHeaders();
-      const url = operationName.startsWith("projects/")
-        ? `${this.baseUrl}/${operationName}`
-        : `${this.baseUrl}/${operationName.replace(/^\/+/, "")}`;
-      const response = await axios.get(url, { headers });
+      const fetchUrl = `${this.baseUrl}/projects/${this.projectId}/locations/${this.location}/publishers/google/models/${this.modelId}:fetchPredictOperation`;
+
+      const response = await axios.post(
+        fetchUrl,
+        { operationName },
+        { headers }
+      );
       const data = response.data ?? {};
-      if (!data.done) {
+
+      if (!data.done) return { id: operationName, status: "pending" };
+      if (data.error) throw new Error(data.error.message || "Vertex AI Error");
+
+      const videoData = findVideoDataRecursive(data.response);
+
+      // === הצלחה: שמירה לתיקייה הנכונה ===
+      if (videoData && videoData.type === "base64") {
+        try {
+          // 1. שימוש בנתיב המוגדר בשרת (tmp/video-renders)
+          const outputDir =
+            process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders";
+          const absOutputDir = path.resolve(outputDir);
+
+          if (!fs.existsSync(absOutputDir)) {
+            fs.mkdirSync(absOutputDir, { recursive: true });
+          }
+
+          const fileName = `veo_${Date.now()}.mp4`;
+          const filePath = path.join(absOutputDir, fileName);
+
+          let base64String = videoData.value;
+          if (base64String.includes(","))
+            base64String = base64String.split(",")[1];
+
+          fs.writeFileSync(filePath, Buffer.from(base64String, "base64"));
+
+          // 2. החזרת URL שתואם את הגדרת ה-static בשרת (/video-assets)
+          const finalUrl = `/video-assets/${fileName}`;
+
+          console.log(`✅ SUCCESS! Saved to: ${filePath}`);
+          console.log(`🔗 Routing URL: ${finalUrl}`);
+
+          return {
+            id: operationName,
+            status: "completed",
+            videoUrl: finalUrl,
+          };
+        } catch (writeErr) {
+          console.error("❌ FS Error:", writeErr);
+          return {
+            id: operationName,
+            status: "failed",
+            error: new Error("Disk write failed"),
+          };
+        }
+      }
+
+      if (videoData && videoData.type === "url") {
         return {
           id: operationName,
-          status: "pending",
+          status: "completed",
+          videoUrl: videoData.value,
         };
       }
 
-      const videoUrl =
-        data.response?.videoUri ??
-        data.metadata?.outputUri ??
-        data.response?.generatedVideo?.uri ??
-        null;
-
-      const status = videoUrl ? "completed" : "failed";
       return {
         id: operationName,
-        status,
-        videoUrl,
-        error:
-          status === "failed"
-            ? new Error("Vertex AI response missing video URL")
-            : null,
+        status: "failed",
+        videoUrl: null,
+        error: new Error("No video data found"),
       };
     } catch (error) {
       this._handleError(error);
@@ -117,38 +178,12 @@ export class VeoClient extends IVideoClient {
   }
 
   _handleError(error) {
-    const responseData = error?.response?.data;
-    const statusCode = error?.response?.status ?? null;
-
-    if (responseData !== undefined) {
-      const serialized =
-        typeof responseData === "string"
-          ? responseData
-          : JSON.stringify(responseData, null, 2);
-      // eslint-disable-next-line no-console
-      console.error("Veo API error response:", serialized);
-    }
-
-    let message;
-    if (typeof responseData === "string" && responseData.trim().length > 0) {
-      message = responseData.trim();
-    } else if (responseData?.error?.message) {
-      message = responseData.error.message;
-    } else if (responseData && typeof responseData === "object") {
-      message = JSON.stringify(responseData);
-    } else if (error?.message) {
-      message = error.message;
-    } else {
-      message = "Veo request failed";
-    }
-
-    throw new VideoRendererError(message, {
+    const msg =
+      error?.response?.data?.error?.message || error?.message || "Veo Error";
+    console.error("💥 VEO ERROR:", msg);
+    throw new VideoRendererError(msg, {
       code: "PROVIDER_ERROR",
-      context: {
-        provider: "veo",
-        statusCode,
-        details: message,
-      },
+      context: { provider: "veo" },
     });
   }
 }
