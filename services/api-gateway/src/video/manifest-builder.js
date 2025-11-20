@@ -21,6 +21,7 @@ const LLM_ENABLED = process.env.VIDEO_LLM_ENABLED !== "false";
 
 export async function buildVideoManifest({
   job,
+  company,
   channelId,
   channelName,
   recommendedMedium,
@@ -55,6 +56,22 @@ export async function buildVideoManifest({
   let llmProvider = null;
   let llmModel = null;
   let generatorMode = "fallback";
+  const branding = {
+    colors: company?.brand?.colors ?? {},
+    fonts: company?.brand?.fonts ?? {},
+    tone:
+      company?.toneOfVoice ??
+      company?.brand?.toneOfVoiceHint ??
+      "professional and energetic",
+    logoUrl: company?.logoUrl ?? company?.brand?.logoUrl
+  };
+  console.log("[video-manifest-builder] Branding context", {
+    companyId: company?.id ?? company?._id ?? null,
+    colors: branding.colors,
+    hasFonts: Boolean(branding.fonts && Object.keys(branding.fonts).length),
+    tone: branding.tone,
+    hasLogo: Boolean(branding.logoUrl)
+  });
 
   if (LLM_ENABLED && llmClient?.askVideoStoryboard) {
     try {
@@ -63,7 +80,8 @@ export async function buildVideoManifest({
         spec,
         channelId,
         channelName,
-        recommendedMedium: recommendedMedium ?? spec.medium
+        recommendedMedium: recommendedMedium ?? spec.medium,
+        branding
       });
       await trackUsage(storyboardResult, "video_storyboard");
       if (!storyboardResult.error && Array.isArray(storyboardResult.shots) && storyboardResult.shots.length >= 4) {
