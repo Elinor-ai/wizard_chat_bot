@@ -125,6 +125,26 @@ export function createVideoLibraryService({
       result,
     });
 
+  const loadCompanyForJob = async (job) => {
+    if (!job?.companyId) {
+      return null;
+    }
+    try {
+      const companyDoc = await firestore.getDocument("companies", job.companyId);
+      console.log("[video-service] Loaded company branding", {
+        companyId: job.companyId,
+        hasBrand: Boolean(companyDoc?.brand),
+      });
+      return companyDoc;
+    } catch (error) {
+      logger.warn(
+        { err: error, companyId: job.companyId },
+        "Failed to load company for video manifest"
+      );
+      return null;
+    }
+  };
+
   async function listItems({ ownerUserId, filters = {} }) {
     const docs = await firestore.listCollection(COLLECTION, [
       { field: "ownerUserId", operator: "==", value: ownerUserId },
@@ -174,8 +194,10 @@ export function createVideoLibraryService({
   }) {
     const itemId = uuid();
     const channelName = deriveChannelName(channelId);
+    const company = await loadCompanyForJob(job);
     const manifest = await buildVideoManifest({
       job,
+      company,
       channelId,
       channelName,
       recommendedMedium,
@@ -253,8 +275,10 @@ export function createVideoLibraryService({
     if (!existing) {
       return null;
     }
+    const company = await loadCompanyForJob(job);
     const manifest = await buildVideoManifest({
       job,
+      company,
       channelId: existing.channelId,
       channelName: existing.channelName,
       recommendedMedium,
