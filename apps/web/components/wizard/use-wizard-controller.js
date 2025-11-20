@@ -261,13 +261,16 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
   const suggestionsAbortRef = useRef(null);
   const stateRef = useRef(wizardState.state);
   const conversationRef = useRef(wizardState.copilotConversation);
+  const unsavedChangesRef = useRef(wizardState.unsavedChanges);
   const previousFieldValuesRef = useRef({});
   const lastSuggestionSnapshotRef = useRef({});
   const toastTimeoutRef = useRef(null);
   const draftPersistTimeoutRef = useRef(null);
   const hydrationKey = `${user?.id ?? "anon"}:${initialJobId ?? "new"}`;
+  const lastHydrationKeyRef = useRef(hydrationKey);
   const migratedJobIdRef = useRef(initialJobId ?? null);
   const hasNavigatedToJobRef = useRef(false);
+  const isHydratedRef = useRef(isHydrated);
   const debugEnabled = process.env.NODE_ENV !== "production";
   const debug = useCallback(
     (...messages) => {
@@ -286,6 +289,14 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
   useEffect(() => {
     stateRef.current = wizardState.state;
   }, [wizardState.state]);
+
+  useEffect(() => {
+    unsavedChangesRef.current = wizardState.unsavedChanges;
+  }, [wizardState.unsavedChanges]);
+
+  useEffect(() => {
+    isHydratedRef.current = isHydrated;
+  }, [isHydrated]);
 
   useEffect(() => {
     conversationRef.current = wizardState.copilotConversation;
@@ -554,6 +565,18 @@ useEffect(() => {
       return;
     }
     if (initialJobId && !user?.authToken) {
+      return;
+    }
+
+    const previousKey = lastHydrationKeyRef.current;
+    const hydrationKeyChanged = previousKey !== hydrationKey;
+    lastHydrationKeyRef.current = hydrationKey;
+
+    if (!hydrationKeyChanged && isHydratedRef.current && unsavedChangesRef.current) {
+      debug("hydrate:skip-dirty", {
+        userId: user.id,
+        initialJobId,
+      });
       return;
     }
 
