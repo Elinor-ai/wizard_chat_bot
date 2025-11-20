@@ -454,6 +454,30 @@ const dashboardActivityResponseSchema = z.object({
   events: z.array(dashboardActivityEventSchema)
 });
 
+const jobImportContextSchema = z
+  .object({
+    source: z.string().optional(),
+    externalSource: z.string().optional(),
+    externalUrl: z.string().optional(),
+    companyJobId: z.string().optional(),
+    importedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional()
+  })
+  .partial()
+  .nullable()
+  .transform((data) => {
+    if (!data) {
+      return null;
+    }
+    return {
+      ...data,
+      importedAt: data.importedAt
+        ? data.importedAt instanceof Date
+          ? data.importedAt
+          : new Date(data.importedAt)
+        : null
+    };
+  });
+
 const wizardJobResponseSchema = z
   .object({
     jobId: z.string(),
@@ -461,7 +485,8 @@ const wizardJobResponseSchema = z
     includeOptional: z.boolean().optional(),
     updatedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional(),
     status: z.string().nullable().optional(),
-    companyId: z.string().nullable().optional()
+    companyId: z.string().nullable().optional(),
+    importContext: jobImportContextSchema.optional()
   })
   .transform((data) => ({
       jobId: data.jobId,
@@ -473,7 +498,8 @@ const wizardJobResponseSchema = z
           : new Date(data.updatedAt)
         : null,
       status: data.status ?? null,
-      companyId: data.companyId ?? null
+      companyId: data.companyId ?? null,
+      importContext: data.importContext ?? null
     }));
 
 const heroImageSchema = z
@@ -542,6 +568,36 @@ export const WizardApi = {
         const errorData = await response.json();
         if (typeof errorData?.error === "string") {
           message = errorData.error;
+        }
+      } catch (_error) {
+        const text = await response.text();
+        if (text) {
+          message = text;
+        }
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return wizardJobResponseSchema.parse(data);
+  },
+
+  async importCompanyJob(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/wizard/import-company-job`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      let message = "Unable to import company job";
+      try {
+        const body = await response.json();
+        if (typeof body?.error === "string") {
+          message = body.error;
         }
       } catch (_error) {
         const text = await response.text();
@@ -918,6 +974,25 @@ export const WizardApi = {
 
     if (!response.ok) {
       throw new Error("Failed to load discovered jobs");
+    }
+
+    const data = await response.json();
+    return companyJobsResponseSchema.parse(data);
+  },
+
+  async fetchCompanyJobsByCompany(companyId, options = {}) {
+    if (!companyId) {
+      throw new Error("companyId is required");
+    }
+    const response = await fetch(`${API_BASE_URL}/companies/my-companies/${companyId}/jobs`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load discovered jobs for company");
     }
 
     const data = await response.json();

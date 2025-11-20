@@ -50,6 +50,23 @@ const ENRICHMENT_LOCK_TTL_MS = 5 * 60 * 1000;
 const BRANDFETCH_API_URL = "https://api.brandfetch.io/v2/brands";
 const BRANDFETCH_API_TOKEN = "mrzkuqeDHxVfPF2xEOGgtPCPRP6jpIyCpMd0XJ1Gvf4=";
 const BRAND_SOURCE = "brandfetch";
+const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID ?? null;
+const GOOGLE_CSE_KEY = process.env.GOOGLE_CSE_KEY ?? null;
+const SERP_API_KEY = process.env.SERP_API_KEY ?? null;
+const SERP_API_ENGINE = process.env.SERP_API_ENGINE ?? "google";
+const MAX_LINKEDIN_JOBS = 8;
+const LINKEDIN_JOB_HINTS = [/\/jobs\//i, /currentjob/i, /viewjob/i, /apply/i];
+const LINKEDIN_HIRING_PHRASES = [
+  "we're hiring",
+  "we\u2019re hiring",
+  "hiring",
+  "join our team",
+  "open role",
+  "open roles",
+  "looking for",
+  "apply now"
+];
+const LINKEDIN_HIRING_REGEX = new RegExp(LINKEDIN_HIRING_PHRASES.join("|"), "gi");
 
 function toTitleCase(value) {
   if (!value) return "";
@@ -421,6 +438,87 @@ function applyBrandfetchToCompany(company, brandData) {
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
+export function computeCompanyGaps(company = {}) {
+  const gaps = {
+    core: [],
+    segmentation: [],
+    location: [],
+    branding: [],
+    voice: [],
+    socials: [],
+    jobs: []
+  };
+  const brand = ensureBrandShape(company?.brand ?? {});
+  const pushGap = (section, field) => {
+    if (!section || !field) return;
+    if (!Array.isArray(gaps[section])) {
+      gaps[section] = [];
+    }
+    if (!gaps[section].includes(field)) {
+      gaps[section].push(field);
+    }
+  };
+  const normalizedWebsite = normalizeUrl(company?.website);
+  if (!hasValue(company?.name) && !hasValue(brand?.name)) {
+    pushGap("core", "name");
+  }
+  if (!normalizedWebsite) {
+    pushGap("core", "website");
+  }
+  if (!hasValue(company?.companyType)) {
+    pushGap("segmentation", "companyType");
+  }
+  if (!hasValue(company?.industry)) {
+    pushGap("segmentation", "industry");
+  }
+  if (!company?.employeeCountBucket || company.employeeCountBucket === "unknown") {
+    pushGap("segmentation", "employeeCountBucket");
+  }
+  if (!hasValue(company?.hqCountry)) {
+    pushGap("location", "hqCountry");
+  }
+  if (!hasValue(company?.hqCity)) {
+    pushGap("location", "hqCity");
+  }
+  if (!hasValue(company?.logoUrl) && !hasValue(brand?.logoUrl)) {
+    pushGap("branding", "logoUrl");
+  }
+  const brandPrimaryColor = brand?.colors?.primary ?? null;
+  if (!hasValue(company?.primaryColor) && !hasValue(brandPrimaryColor)) {
+    pushGap("branding", "primaryColor");
+  }
+  const brandPrimaryFont = brand?.fonts?.primary ?? null;
+  if (!hasValue(company?.fontFamilyPrimary) && !hasValue(brandPrimaryFont)) {
+    pushGap("branding", "fontFamilyPrimary");
+  }
+  if (!hasValue(company?.toneOfVoice) && !hasValue(brand?.toneOfVoiceHint)) {
+    pushGap("voice", "toneOfVoice");
+  }
+  const hasStory = hasValue(company?.tagline) || hasValue(company?.description);
+  if (!hasStory) {
+    pushGap("voice", "tagline");
+  }
+  const normalizedSocials = normalizeSocials(company?.socials ?? {});
+  if (!hasValue(normalizedSocials?.linkedin)) {
+    pushGap("socials", "linkedin");
+  }
+  if (!Array.isArray(gaps.jobs)) {
+    gaps.jobs = [];
+  }
+  if (!gaps.jobs.includes("discoveredJobs")) {
+    gaps.jobs.push("discoveredJobs");
+  }
+  return gaps;
+}
+
+function buildGapLookup(gaps = {}) {
+  const lookup = {};
+  Object.entries(gaps ?? {}).forEach(([section, fields]) => {
+    lookup[section] = new Set(Array.isArray(fields) ? fields : []);
+  });
+  return lookup;
+}
+
 export async function searchCompanyOnWeb({ domain, name, location, logger, limit = 8 } = {}) {
   const query = [name, domain, location].filter(Boolean).join(" ").trim();
   if (!query) {
@@ -431,9 +529,100 @@ export async function searchCompanyOnWeb({ domain, name, location, logger, limit
     return [];
   }
 
-  // TODO: integrate SerpAPI/programmable search and return structured results.
-  logger?.info?.({ domain, query, limit }, "Company web search requested");
-  return [];
+  try {
+    let results = [];
+    if (GOOGLE_CSE_ID && GOOGLE_CSE_KEY) {
+      results = await fetchGoogleSearchResults({ query, limit });
+    } else if (SERP_API_KEY) {
+      results = await fetchSerpApiResults({ query, limit });
+    } else {
+      logger?.debug?.(
+        { domain, query },
+        "No search provider configured for company intel"
+      );
+      return [];
+    }
+    logger?.info?.(
+      { domain, query, hits: results.length },
+      "company.intel.web_search"
+    );
+    return results.slice(0, limit);
+  } catch (error) {
+    logger?.warn?.({ domain, query, err: error }, "Company web search failed");
+    return [];
+  }
+}
+
+async function fetchGoogleSearchResults({ query, limit }) {
+  if (!GOOGLE_CSE_ID || !GOOGLE_CSE_KEY) {
+    return [];
+  }
+  const params = new URLSearchParams({
+    key: GOOGLE_CSE_KEY,
+    cx: GOOGLE_CSE_ID,
+    q: query,
+    num: String(Math.min(limit, 10))
+  });
+  const response = await fetch(
+    `https://www.googleapis.com/customsearch/v1?${params.toString()}`,
+    { method: "GET" }
+  );
+  if (!response.ok) {
+    throw new Error(`Google CSE search failed with status ${response.status}`);
+  }
+  const data = await response.json();
+  const items = Array.isArray(data?.items) ? data.items : [];
+  return items
+    .map((item) => {
+      const url = normalizeUrl(item?.link ?? item?.formattedUrl ?? "");
+      if (!url) {
+        return null;
+      }
+      return {
+        title: sanitizeString(item?.title ?? item?.htmlTitle ?? ""),
+        url,
+        snippet: sanitizeString(item?.snippet ?? item?.htmlSnippet ?? "")
+      };
+    })
+    .filter(Boolean);
+}
+
+async function fetchSerpApiResults({ query, limit }) {
+  if (!SERP_API_KEY) {
+    return [];
+  }
+  const params = new URLSearchParams({
+    engine: SERP_API_ENGINE,
+    q: query,
+    num: String(Math.min(limit, 10)),
+    api_key: SERP_API_KEY
+  });
+  const response = await fetch(
+    `https://serpapi.com/search.json?${params.toString()}`,
+    { method: "GET" }
+  );
+  if (!response.ok) {
+    throw new Error(`SerpAPI search failed with status ${response.status}`);
+  }
+  const data = await response.json();
+  const organicResults = Array.isArray(data?.organic_results) ? data.organic_results : [];
+  return organicResults
+    .map((entry) => {
+      const url = normalizeUrl(entry?.link ?? entry?.url ?? "");
+      if (!url) {
+        return null;
+      }
+      const snippetArray = Array.isArray(entry?.snippet_highlighted_words)
+        ? entry.snippet_highlighted_words
+        : [];
+      const snippet = sanitizeString(entry?.snippet ?? snippetArray.join(" "));
+      return {
+        title: sanitizeString(entry?.title ?? ""),
+        url,
+        snippet
+      };
+    })
+    .filter(Boolean);
 }
 
 export function extractSocialLinksFromResults(results = [], hints = {}) {
@@ -630,18 +819,183 @@ async function discoverJobsFromCareerPage({ careerPageUrl, company, logger }) {
 }
 
 async function discoverJobsFromLinkedInFeed({ company, linkedinUrl, logger }) {
-  if (!linkedinUrl) {
+  if (!linkedinUrl || !ALLOW_WEB_FETCH) {
     return [];
   }
+  try {
+    const response = await fetch(linkedinUrl, { method: "GET" });
+    if (!response.ok) {
+      logger?.debug?.(
+        { companyId: company.id, linkedinUrl, status: response.status },
+        "LinkedIn feed fetch skipped"
+      );
+      return [];
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/html")) {
+      return [];
+    }
+    const html = await response.text();
+    const results = [];
+    const seen = new Set();
+    const pushJob = (job) => {
+      if (!job) return;
+      const key = job.url ?? `${job.title}|${job.source}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      results.push(job);
+    };
+    extractLinkedInJobAnchors({ html, baseUrl: linkedinUrl, company }).forEach(pushJob);
+    extractLinkedInPostJobs({ html, baseUrl: linkedinUrl, company }).forEach(pushJob);
+    logger?.info?.(
+      { companyId: company.id, linkedinUrl, jobs: results.length },
+      "company.intel.linkedin_jobs"
+    );
+    return results.slice(0, MAX_LINKEDIN_JOBS);
+  } catch (error) {
+    logger?.debug?.(
+      { companyId: company.id, linkedinUrl, err: error },
+      "Failed to inspect LinkedIn feed"
+    );
+    return [];
+  }
+}
 
-  logger?.debug?.(
-    { companyId: company.id, linkedinUrl },
-    "LinkedIn feed job discovery placeholder"
-  );
+function extractLinkedInJobAnchors({ html, baseUrl, company }) {
+  if (!html) return [];
+  const jobs = [];
+  const anchorRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gis;
+  let match;
+  while ((match = anchorRegex.exec(html))) {
+    const href = match[1];
+    const text = stripHtml(match[2]);
+    if (!looksLikeLinkedInJobAnchor(href, text)) {
+      continue;
+    }
+    const job = buildLinkedInJobFromAnchor({
+      anchorMarkup: match[0],
+      href,
+      text,
+      baseUrl,
+      company,
+      source: "linkedin"
+    });
+    if (job) {
+      jobs.push(job);
+    }
+    if (jobs.length >= MAX_LINKEDIN_JOBS) {
+      break;
+    }
+  }
+  return jobs;
+}
 
-  // TODO: Integrate LinkedIn feed crawling or LLM summarization to extract hiring signals.
-  // This should analyze recent posts for phrases like “We’re hiring” and resolve real apply links.
-  return [];
+function extractLinkedInPostJobs({ html, baseUrl, company }) {
+  if (!html) return [];
+  const jobs = [];
+  const regex = LINKEDIN_HIRING_REGEX;
+  let match;
+  while ((match = regex.exec(html))) {
+    const snippetStart = Math.max(0, match.index - 400);
+    const snippetEnd = Math.min(html.length, match.index + 600);
+    const snippet = html.slice(snippetStart, snippetEnd);
+    const anchorMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/i.exec(snippet);
+    if (!anchorMatch) {
+      continue;
+    }
+    const job = buildLinkedInJobFromAnchor({
+      anchorMarkup: anchorMatch[0],
+      href: anchorMatch[1],
+      text: stripHtml(anchorMatch[2]),
+      baseUrl,
+      company,
+      source: "linkedin-post"
+    });
+    if (job) {
+      jobs.push(job);
+    }
+    if (jobs.length >= MAX_LINKEDIN_JOBS) {
+      break;
+    }
+  }
+  regex.lastIndex = 0;
+  return jobs;
+}
+
+function looksLikeLinkedInJobAnchor(href = "", text = "") {
+  if (!href) return false;
+  const normalizedHref = href.toLowerCase();
+  const normalizedText = text.toLowerCase();
+  const hasHint = LINKEDIN_JOB_HINTS.some((hint) => hint.test(normalizedHref));
+  const hasKeyword = /job|role|opening|position|apply|careers?/i.test(normalizedText);
+  return hasHint || hasKeyword;
+}
+
+function buildLinkedInJobFromAnchor({ anchorMarkup, href, text, baseUrl, company, source }) {
+  const url = resolveRelativeUrl(baseUrl, href);
+  if (!url) {
+    return null;
+  }
+  const isLinkedInHost = /linkedin\.com|lnkd\.in/i.test(url);
+  if (!isLinkedInHost && !isLikelyRealJobUrl(url, company)) {
+    return null;
+  }
+  let title = sanitizeJobTitle(text);
+  if (!title || /apply|view job|learn more/i.test(title)) {
+    const ariaMatch = /aria-label=["']([^"']+)["']/i.exec(anchorMarkup);
+    if (ariaMatch) {
+      const ariaTitle = sanitizeJobTitle(ariaMatch[1]);
+      if (ariaTitle && !/apply|view job/i.test(ariaTitle)) {
+        title = ariaTitle;
+      }
+    }
+  }
+  if (!title || /apply|view job/i.test(title)) {
+    const titleAttr = /title=["']([^"']+)["']/i.exec(anchorMarkup);
+    if (titleAttr) {
+      const attrTitle = sanitizeJobTitle(titleAttr[1]);
+      if (attrTitle && !/apply|view job/i.test(attrTitle)) {
+        title = attrTitle;
+      }
+    }
+  }
+  if (!title || title.length < 3) {
+    title = inferTitleFromUrl(url);
+  }
+  if (!title || title.length < 3) {
+    return null;
+  }
+  const jobSource =
+    source === "linkedin-post"
+      ? "linkedin-post"
+      : determineJobSource(url, company) || "linkedin";
+  return {
+    title,
+    location: "",
+    description: "",
+    url,
+    source: jobSource,
+    discoveredAt: new Date(),
+    isActive: true
+  };
+}
+
+function inferTitleFromUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const slug = segments.pop() ?? "";
+    const cleaned = slug.replace(/\d+/g, "").replace(/[-_]+/g, " ");
+    const title = sanitizeJobTitle(cleaned);
+    if (title && title.length > 3) {
+      return title;
+    }
+    return "";
+  } catch {
+    return "";
+  }
 }
 
 export function extractEmailDomain(email) {
@@ -956,6 +1310,9 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
     }
   }
 
+  const gaps = computeCompanyGaps(company);
+  logger?.info?.({ companyId: company.id, gaps }, "company.intel.gaps");
+
   const searchResults = await searchCompanyOnWeb({
     domain: company.primaryDomain,
     name: company.name,
@@ -965,7 +1322,8 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
 
   const intelResult = await llmClient.askCompanyIntel({
     domain: company.primaryDomain,
-    company
+    companySnapshot: company,
+    gaps
   });
   await recordLlmUsageFromResult({
     firestore,
@@ -985,10 +1343,22 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
   const profile = intelResult?.profile ?? {};
   const branding = intelResult?.branding ?? {};
   const llmSocials = intelResult?.socials ?? {};
+  const intelEvidence = normalizeIntelEvidence(intelResult?.evidence ?? {});
+  const gapLookup = buildGapLookup(gaps);
+  const hasGap = (section, field) => {
+    if (!section || !field) return false;
+    return gapLookup?.[section]?.has(field) ?? false;
+  };
+  const gatherSources = (section, field, fallback = ["gemini-intel"]) => {
+    const intelSources =
+      section && field ? intelEvidence?.[section]?.[field] ?? [] : [];
+    const merged = new Set([...(fallback ?? []), ...intelSources]);
+    return Array.from(merged).filter(Boolean);
+  };
   const normalizedWebsite =
     normalizeUrl(profile.website) ??
     normalizeUrl(company.website) ??
-    `https://${company.primaryDomain}`;
+    (company.primaryDomain ? `https://${company.primaryDomain}` : null);
   const careerPageUrl =
     (await discoverCareerPage({
       domain: company.primaryDomain,
@@ -1002,15 +1372,39 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
     sourcesUsed.add("web-search");
   }
   const fieldEvidence = { ...(company.fieldSources ?? {}) };
-  const applyField = (field, value, sources = []) => {
-    if (value === undefined || value === null) return;
+  const applyField = (
+    field,
+    value,
+    {
+      section = null,
+      evidenceSection = section,
+      requireGap = true,
+      requireEmpty = false,
+      sources = null
+    } = {}
+  ) => {
+    if (value === undefined || value === null) {
+      return;
+    }
+    if (typeof value === "string" && !value.trim()) {
+      return;
+    }
+    if (requireGap && section && !hasGap(section, field)) {
+      return;
+    }
+    if (requireEmpty && hasValue(company[field])) {
+      return;
+    }
+    if (company[field] === value) {
+      return;
+    }
     patch[field] = value;
     updateFieldEvidence({
       company,
       evidence: fieldEvidence,
       field,
       value,
-      sources
+      sources: sources ?? gatherSources(evidenceSection, field)
     });
   };
 
@@ -1025,28 +1419,117 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
     updatedAt: now
   };
 
-  const websiteSources = [];
-  if (profile.website) {
-    websiteSources.push("gemini-intel");
-  } else if (!company.website) {
-    websiteSources.push("domain-default");
+  const websiteFromProfile = normalizeUrl(profile.website);
+  if (normalizedWebsite && hasGap("core", "website")) {
+    const websiteSources =
+      websiteFromProfile && normalizedWebsite === websiteFromProfile
+        ? gatherSources("profile", "website")
+        : ["domain-default"];
+    applyField("website", normalizedWebsite, {
+      section: "core",
+      evidenceSection: websiteFromProfile ? "profile" : null,
+      sources: websiteSources
+    });
   }
-  applyField("website", normalizedWebsite, websiteSources);
-  applyField("careerPageUrl", careerPageUrl, ["career-page-discovery"]);
-  applyField("intelSummary", profile.summary, ["gemini-intel"]);
+  if (careerPageUrl && careerPageUrl !== company.careerPageUrl) {
+    applyField("careerPageUrl", careerPageUrl, {
+      section: null,
+      evidenceSection: null,
+      requireGap: false,
+      sources: ["career-page-discovery"]
+    });
+  }
+  if (profile.summary && !hasValue(company.intelSummary)) {
+    applyField("intelSummary", profile.summary, {
+      section: "voice",
+      evidenceSection: "profile",
+      requireGap: false,
+      requireEmpty: true,
+      sources: gatherSources("profile", "summary")
+    });
+  }
 
-  applyField("name", profile.officialName, ["gemini-intel"]);
-  applyField("tagline", profile.tagline, ["gemini-intel"]);
-  applyField("industry", profile.industry, ["gemini-intel"]);
-  applyField("companyType", profile.companyType, ["gemini-intel"]);
-  applyField("employeeCountBucket", profile.employeeCountBucket, ["gemini-intel"]);
-  applyField("hqCountry", profile.hqCountry, ["gemini-intel"]);
-  applyField("hqCity", profile.hqCity, ["gemini-intel"]);
-  applyField("toneOfVoice", profile.toneOfVoice, ["gemini-intel"]);
-
-  applyField("primaryColor", branding.primaryColor, ["gemini-intel"]);
-  applyField("secondaryColor", branding.secondaryColor, ["gemini-intel"]);
-  applyField("fontFamilyPrimary", branding.fontFamilyPrimary, ["gemini-intel"]);
+  if (hasGap("core", "name") && hasValue(profile.officialName)) {
+    applyField("name", profile.officialName, {
+      section: "core",
+      evidenceSection: "profile",
+      sources: gatherSources("profile", "officialName")
+    });
+  }
+  if (hasGap("voice", "tagline") && hasValue(profile.tagline)) {
+    applyField("tagline", profile.tagline, {
+      section: "voice",
+      evidenceSection: "profile",
+      sources: gatherSources("profile", "tagline")
+    });
+  }
+  if (hasGap("segmentation", "industry") && hasValue(profile.industry)) {
+    applyField("industry", profile.industry, {
+      section: "segmentation",
+      evidenceSection: "profile",
+      sources: gatherSources("profile", "industry")
+    });
+  }
+  const normalizedCompanyType = hasValue(profile.companyType)
+    ? profile.companyType.toLowerCase()
+    : null;
+  if (
+    normalizedCompanyType &&
+    CompanyTypeEnum.options.includes(normalizedCompanyType) &&
+    hasGap("segmentation", "companyType")
+  ) {
+    applyField("companyType", normalizedCompanyType, {
+      section: "segmentation",
+      evidenceSection: "profile",
+      sources: gatherSources("profile", "companyType")
+    });
+  }
+  const normalizedEmployeeBucket =
+    profile.employeeCountBucket && profile.employeeCountBucket !== "unknown"
+      ? profile.employeeCountBucket
+      : null;
+  if (normalizedEmployeeBucket && hasGap("segmentation", "employeeCountBucket")) {
+    applyField("employeeCountBucket", normalizedEmployeeBucket, {
+      section: "segmentation",
+      evidenceSection: "profile",
+      sources: gatherSources("profile", "employeeCountBucket")
+    });
+  }
+  if (hasGap("location", "hqCountry") && hasValue(profile.hqCountry)) {
+    applyField("hqCountry", profile.hqCountry, {
+      section: "location",
+      evidenceSection: "profile",
+      sources: gatherSources("profile", "hqCountry")
+    });
+  }
+  if (hasGap("location", "hqCity") && hasValue(profile.hqCity)) {
+    applyField("hqCity", profile.hqCity, {
+      section: "location",
+      evidenceSection: "profile",
+      sources: gatherSources("profile", "hqCity")
+    });
+  }
+  if (hasGap("voice", "toneOfVoice") && hasValue(profile.toneOfVoice)) {
+    applyField("toneOfVoice", profile.toneOfVoice, {
+      section: "voice",
+      evidenceSection: "profile",
+      sources: gatherSources("profile", "toneOfVoice")
+    });
+  }
+  if (hasGap("branding", "primaryColor") && hasValue(branding.primaryColor)) {
+    applyField("primaryColor", branding.primaryColor, {
+      section: "branding",
+      evidenceSection: "branding",
+      sources: gatherSources("branding", "primaryColor")
+    });
+  }
+  if (hasGap("branding", "fontFamilyPrimary") && hasValue(branding.fontFamilyPrimary)) {
+    applyField("fontFamilyPrimary", branding.fontFamilyPrimary, {
+      section: "branding",
+      evidenceSection: "branding",
+      sources: gatherSources("branding", "fontFamilyPrimary")
+    });
+  }
 
   const normalizedExistingSocials = normalizeSocials(company.socials ?? {});
   const mergedSocials = { ...normalizedExistingSocials };
@@ -1070,13 +1553,23 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
 
   const normalizedLlmSocials = normalizeSocials(llmSocials);
   Object.entries(normalizedLlmSocials).forEach(([key, value]) => {
+    if (!hasGap("socials", key)) {
+      return;
+    }
     if (!mergedSocials[key]) {
       mergedSocials[key] = value;
     }
-    socialSourceMap[key] = Array.from(new Set([...(socialSourceMap[key] ?? []), "gemini-intel"]));
+    const intelSources = gatherSources("socials", key);
+    socialSourceMap[key] = Array.from(
+      new Set([...(socialSourceMap[key] ?? []), ...intelSources])
+    );
   });
 
-  patch.socials = mergedSocials;
+  if (
+    JSON.stringify(mergedSocials) !== JSON.stringify(normalizedExistingSocials)
+  ) {
+    patch.socials = mergedSocials;
+  }
   Object.entries(socialSourceMap).forEach(([key, sources]) => {
     if (!mergedSocials[key]) {
       return;
@@ -1221,6 +1714,18 @@ function normalizeUrl(value) {
   }
 }
 
+function coerceDate(value) {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed;
+}
+
 function normalizeIntelJob(job, company) {
   if (!job || typeof job !== "object") {
     return null;
@@ -1234,6 +1739,8 @@ function normalizeIntelJob(job, company) {
     return null;
   }
 
+  const postedAt = coerceDate(job.postedAt);
+  const discoveredAt = coerceDate(job.discoveredAt) ?? new Date();
   return {
     title,
     location: typeof job.location === "string" ? job.location.trim() : "",
@@ -1241,9 +1748,39 @@ function normalizeIntelJob(job, company) {
     url,
     source: job.source ?? determineJobSource(url, company),
     externalId: job.externalId ?? null,
-    postedAt: job.postedAt ?? null,
-    discoveredAt: job.discoveredAt ?? new Date(),
+    postedAt,
+    discoveredAt,
     isActive: job.isActive ?? true
+  };
+}
+
+function normalizeIntelEvidence(evidence = {}) {
+  const normalizeSection = (section = {}) => {
+    const normalized = {};
+    Object.entries(section ?? {}).forEach(([field, entry]) => {
+      const sources = Array.isArray(entry?.sources)
+        ? entry.sources.map((src) => sanitizeString(src)).filter(Boolean)
+        : [];
+      normalized[field] = sources;
+    });
+    return normalized;
+  };
+  const normalizeJobEvidence = Array.isArray(evidence?.jobs)
+    ? evidence.jobs
+        .map((entry) => ({
+          title: sanitizeString(entry?.title ?? ""),
+          url: normalizeUrl(entry?.url ?? ""),
+          sources: Array.isArray(entry?.sources)
+            ? entry.sources.map((src) => sanitizeString(src)).filter(Boolean)
+            : []
+        }))
+        .filter((record) => record.title || record.url)
+    : [];
+  return {
+    profile: normalizeSection(evidence?.profile),
+    branding: normalizeSection(evidence?.branding),
+    socials: normalizeSection(evidence?.socials),
+    jobs: normalizeJobEvidence
   };
 }
 

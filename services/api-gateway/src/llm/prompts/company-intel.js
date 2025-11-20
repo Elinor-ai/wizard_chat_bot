@@ -1,96 +1,128 @@
 import { llmLogger } from "../logger.js";
 
 function sanitizeCompanySnapshot(company = {}) {
-  const snapshot = {
+  return {
+    id: company.id ?? "",
     name: company.name ?? "",
     primaryDomain: company.primaryDomain ?? "",
+    website: company.website ?? "",
+    companyType: company.companyType ?? "",
     industry: company.industry ?? "",
     employeeCountBucket: company.employeeCountBucket ?? "",
-    website: company.website ?? "",
     hqCountry: company.hqCountry ?? "",
     hqCity: company.hqCity ?? "",
     tagline: company.tagline ?? "",
+    description: company.description ?? "",
     toneOfVoice: company.toneOfVoice ?? "",
     socials: company.socials ?? {},
-    intelSummary: company.intelSummary ?? ""
+    brand: {
+      logoUrl: company.brand?.logoUrl ?? company.logoUrl ?? "",
+      primaryColor: company.brand?.colors?.primary ?? company.primaryColor ?? "",
+      fontFamilyPrimary: company.brand?.fonts?.primary ?? company.fontFamilyPrimary ?? ""
+    },
+    intelSummary: company.intelSummary ?? "",
+    fieldSources: company.fieldSources ?? {},
+    enrichmentStatus: company.enrichmentStatus ?? "",
+    jobDiscoveryStatus: company.jobDiscoveryStatus ?? ""
   };
-  return snapshot;
+}
+
+function normalizeGaps(gaps = {}) {
+  const defaultShape = {
+    core: [],
+    segmentation: [],
+    location: [],
+    branding: [],
+    voice: [],
+    socials: [],
+    jobs: []
+  };
+  const normalized = { ...defaultShape };
+  Object.entries(gaps ?? {}).forEach(([section, fields]) => {
+    normalized[section] = Array.isArray(fields) ? fields : [];
+  });
+  return normalized;
 }
 
 export function buildCompanyIntelPrompt(context = {}) {
-  const domain = context.domain ?? context.company?.primaryDomain ?? "";
-  const snapshot = sanitizeCompanySnapshot(context.company ?? {});
+  const snapshotSource = context.companySnapshot ?? context.company ?? {};
+  const domain = context.domain ?? snapshotSource?.primaryDomain ?? "";
+  const snapshot = sanitizeCompanySnapshot(snapshotSource);
+  const gaps = normalizeGaps(context.gaps);
 
   const payload = {
-    role: "You are a set of autonomous Gemini agents with access to public knowledge, reasoning tools, and marketing expertise.",
+    role:
+      "You are Wizard's company intelligence collective. You triangulate Brandfetch results, LinkedIn data, and public web sources to fill only the requested gaps.",
     mission:
-      "Collect the most current public-facing intelligence about the organization associated with the provided domain. Summaries must be concise, verifiable, and recruitment-friendly.",
+      "Confirm or fill the missing fields for the company tied to this domain. Treat existing values as ground truth unless you have strong contradictory evidence and can cite the new source.",
     domain,
-    previouslyStoredProfile: snapshot,
-    tasks: [
-      {
-        id: "profile",
-        description:
-          "Infer or confirm the official company name, succinct tagline, value proposition summary (2 sentences), industry, headcount bucket, headquarters city/country, and website URL."
-      },
-      {
-        id: "brand",
-        description:
-          "Capture brand guardrails such as primary/secondary colors (hex or CSS names), primary font family, tone of voice keywords, and any notable marketing slogans."
-      },
-      {
-        id: "socials",
-        description:
-          "List the best-known social handles or URLs for LinkedIn, Facebook, Instagram, TikTok, Twitter/X if confidently known."
-      },
-      {
-        id: "jobs",
-        description:
-          "List recently advertised roles or evergreen hiring areas with title, location, URL when available, and short description. If nothing is confirmed, return an empty list."
-      }
+    companySnapshot: snapshot,
+    missingTargets: gaps,
+    guidance: [
+      "Only output values for fields listed in missingTargets.* unless you have definitive proof that an existing value is wrong. Call out corrections via evidence.sources.",
+      "Always attempt job discovery; return an empty array when nothing reliable is found.",
+      "Favor primary sources (official website, press releases, LinkedIn company page, trusted news) over scraped directories.",
+      "Provide concise descriptions (summary max 2 sentences) suitable for recruiters.",
+      "Every field you populate must have an evidence entry listing the sources that justify it.",
+      "Do not hallucinate social URLs or job postings. Return null/omit if uncertain."
     ],
     responseContract: {
-      companyProfile: {
+      profile: {
         officialName: "string",
-        tagline: "string",
-        summary: "string",
+        website: "absolute URL",
+        companyType: "company | agency | freelancer",
         industry: "string",
-        companyType: "company | agency | freelancer | marketplace | staffing",
-        employeeCountBucket: "one of: 1-10, 11-50, 51-200, 201-500, 501-1000, 1000+",
-        website: "string (absolute URL)",
+        employeeCountBucket: "1-10 | 11-50 | 51-200 | 201-500 | 501-1000 | 1000+",
         hqCountry: "string",
         hqCity: "string",
-        toneOfVoice: "string"
+        tagline: "string",
+        summary: "<=2 sentences overview",
+        toneOfVoice: "keywords describing writing voice"
       },
       branding: {
-        primaryColor: "string hex or CSS color",
-        secondaryColor: "string",
-        fontFamilyPrimary: "string"
+        primaryColor: "hex or CSS color keyword",
+        secondaryColor: "hex or CSS color keyword",
+        fontFamilyPrimary: "string",
+        additionalBrandNotes: "optional short notes about slogans or design patterns"
       },
-      socialProfiles: {
+      socials: {
         linkedin: "url",
         facebook: "url",
         instagram: "url",
         tiktok: "url",
-        twitter: "url"
+        twitter: "url",
+        youtube: "url"
       },
       jobs: [
         {
           title: "string",
-          location: "string",
-          description: "string",
-          url: "string",
-          source: "string label describing where it was seen"
+          url: "absolute URL to the job or application",
+          location: "city/state or remote",
+          description: "one-sentence summary",
+          source: "careers-site | linkedin | linkedin-post | other",
+          externalId: "string or null",
+          postedAt: "ISO-8601 timestamp or null"
         }
-      ]
+      ],
+      evidence: {
+        profile: {
+          field: { value: "string", sources: ["list of evidence labels or URLs"] }
+        },
+        branding: {
+          field: { value: "string", sources: ["..."] }
+        },
+        socials: {
+          field: { value: "string", sources: ["..."] }
+        },
+        jobs: [
+          {
+            title: "string",
+            url: "string",
+            sources: ["linkedin-jobs-tab", "careers-page", "news-article"]
+          }
+        ]
+      }
     },
-    guardrails: [
-      "Respond with a single JSON object matching the responseContract. Never wrap it in backticks or commentary.",
-      "If a field is unknown, omit it or use null; do not invent data.",
-      "Favor authoritative sources such as the company's own site or well-known press coverage.",
-      "Highlight if the domain appears to redirect to another brand name in the summary.",
-      "Limit summaries to 2 sentences."
-    ],
     attempt: context.attempt ?? 0,
     strictMode: context.strictMode ?? false
   };

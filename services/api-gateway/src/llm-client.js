@@ -390,6 +390,7 @@ async function askCompanyIntel(context) {
       branding: result.branding ?? {},
       socials: result.socials ?? {},
       jobs: result.jobs ?? [],
+      evidence: result.evidence ?? {},
       metadata: result.metadata ?? null
     };
   } catch (error) {

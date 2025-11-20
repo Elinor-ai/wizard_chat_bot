@@ -98,12 +98,19 @@ function InlineSuggestionList({ suggestions = [], onApply }) {
   );
 }
 
-export function WizardShell({ jobId = null, initialCompanyId = null }) {
+export function WizardShell({ jobId = null, initialCompanyId = null, mode = "create" }) {
   const { user } = useUser();
-  const controller = useWizardController({ user, initialJobId: jobId, initialCompanyId });
+  const controller = useWizardController({
+    user,
+    initialJobId: jobId,
+    initialCompanyId,
+    mode,
+  });
   const [logoErrors, setLogoErrors] = useState({});
 
   const {
+    importContext,
+    isImportExperience,
     steps,
     currentStep,
     currentStepIndex,
@@ -194,6 +201,28 @@ export function WizardShell({ jobId = null, initialCompanyId = null }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
       <div className="space-y-6 rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100">
+        {isImportExperience ? (
+          <div className="rounded-2xl border border-primary-100 bg-primary-50 p-4 text-sm text-primary-700">
+            <p className="font-semibold text-primary-900">
+              Imported job ready for review
+            </p>
+            <p className="mt-1">
+              We populated this draft from{" "}
+              {importContext?.externalSource || "a discovered job posting"}. Give it a quick
+              polish and continue to channel recommendations.
+            </p>
+            {importContext?.externalUrl ? (
+              <a
+                href={importContext.externalUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex text-xs font-semibold uppercase tracking-wide text-primary-600 underline-offset-4 hover:underline"
+              >
+                View original posting
+              </a>
+            ) : null}
+          </div>
+        ) : null}
         <nav className="flex flex-wrap items-center gap-3 text-xs font-medium uppercase tracking-wide text-neutral-500">
           {steps.map((step, index) => {
             const isActive = index === currentStepIndex;

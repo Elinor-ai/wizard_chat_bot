@@ -119,7 +119,7 @@ function normalizeCompanyJobs(jobs = []) {
     });
 }
 
-async function listCompaniesForUser({ firestore, user, logger }) {
+export async function listCompaniesForUser({ firestore, user, logger }) {
   const userDoc = await firestore.getDocument("users", user.id);
   if (!userDoc) {
     throw httpError(404, "User context not found");
@@ -532,6 +532,32 @@ export function companiesRouter({ firestore, logger }) {
       }
       const companies = await listCompaniesForUser({ firestore, user, logger });
       res.json({ companies });
+    })
+  );
+
+  router.get(
+    "/my-companies/:companyId/jobs",
+    wrapAsync(async (req, res) => {
+      const user = req.user;
+      if (!user) {
+        throw httpError(401, "Unauthorized");
+      }
+      const { companyId } = req.params;
+      if (!companyId) {
+        throw httpError(400, "Company identifier required");
+      }
+      const companies = await listCompaniesForUser({ firestore, user, logger });
+      const targetCompany = companies.find((company) => company.id === companyId);
+      if (!targetCompany) {
+        throw httpError(404, "Company not found");
+      }
+      const rawJobs = await firestore.listCompanyJobs(companyId);
+      const jobs = normalizeCompanyJobs(rawJobs);
+      logger?.info?.(
+        { userId: user.id, companyId, jobCount: jobs.length },
+        "Fetched jobs for selected company"
+      );
+      res.json({ companyId, jobs });
     })
   );
 

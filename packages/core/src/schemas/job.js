@@ -110,6 +110,16 @@ const StateMachineSchema = z.object({
   lockedByRequestId: z.string().nullable().optional()
 });
 
+export const JobImportContextSchema = z
+  .object({
+    source: z.string().optional(),
+    externalSource: z.string().optional(),
+    externalUrl: z.string().optional(),
+    companyJobId: z.string().optional(),
+    importedAt: TimestampSchema.optional()
+  })
+  .partial();
+
 export const JobSchema = z.object({
   id: z.string(),
   ownerUserId: z.string(),
@@ -134,6 +144,7 @@ export const JobSchema = z.object({
   salaryPeriod: z.string().optional(),
   currency: z.string().optional(),
   confirmed: ConfirmedJobDetailsSchema,
+  importContext: JobImportContextSchema.optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
   archivedAt: TimestampSchema.nullable().optional()
