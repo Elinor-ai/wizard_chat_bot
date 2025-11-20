@@ -271,10 +271,10 @@ export function dashboardRouter({ firestore, logger }) {
         firestore.getDocument("users", userId)
       ]);
       const summary = computeSummary(jobs, assets);
+      const usage = userDoc?.usage ?? {};
+      const remainingCredits = Number(usage.remainingCredits ?? summary.usage.remainingCredits ?? 0);
+      summary.usage.remainingCredits = remainingCredits;
       if (userDoc?.credits) {
-        summary.credits.balance = Number(
-          userDoc.credits.balance ?? summary.credits.balance
-        );
         summary.credits.reserved = Number(
           userDoc.credits.reserved ?? summary.credits.reserved
         );
@@ -282,6 +282,7 @@ export function dashboardRouter({ firestore, logger }) {
           userDoc.credits.lifetimeUsed ?? summary.credits.lifetimeUsed
         );
       }
+      summary.credits.balance = remainingCredits;
       logger.info(
         { userId, jobCount: jobs.length, assetCount: assets.length },
         "Loaded dashboard summary"

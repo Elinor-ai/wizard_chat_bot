@@ -5,10 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { DashboardApi } from "../../../lib/api-client";
 import { useUser } from "../../../components/user-context";
 
-function formatNumber(value, { currency = false } = {}) {
-  if (currency) {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
-  }
+function formatNumber(value) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
 }
 
@@ -53,8 +50,8 @@ export default function DashboardOverviewPage() {
       },
       {
         label: "Credits",
-        value: formatNumber(summary.credits.balance, { currency: true }),
-        detail: `${formatNumber(summary.credits.reserved, { currency: true })} reserved`
+        value: formatNumber(summary.usage?.remainingCredits ?? 0),
+        detail: `${formatNumber(summary.credits.reserved ?? 0)} reserved`
       }
     ];
   }, [summaryQuery.data]);

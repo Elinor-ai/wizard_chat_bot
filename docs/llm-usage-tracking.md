@@ -20,10 +20,9 @@ Entries are appended via `firestore.recordLlmUsage`, which normalises timestamps
 `UserSchema.usage` now tracks:
 
 - `totalTokensUsed`
-- `remainingTokens`
 - `remainingCredits`
 
-`remainingTokens`/`remainingCredits` can go negative—we are not enforcing pre-flight checks yet. Every time we log a ledger entry, `services/api-gateway/src/services/llm-usage-ledger.js` also increments the user counters (and refreshes `lastActiveAt`).
+`remainingCredits` can go negative—we are not enforcing pre-flight checks yet. Every time we log a ledger entry, `services/api-gateway/src/services/llm-usage-ledger.js` also increments the user counters (and refreshes `lastActiveAt`).
 
 ## Pricing Rate Card
 

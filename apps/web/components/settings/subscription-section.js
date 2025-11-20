@@ -43,7 +43,9 @@ export default function SubscriptionSection({ user }) {
   const [payment, setPayment] = useState(initialPayment);
 
   const authToken = user?.authToken;
-  const creditsSnapshot = user?.credits ?? { balance: 0, reserved: 0, lifetimeUsed: 0 };
+  const usageSnapshot = user?.usage ?? {};
+  const reservedCredits = user?.credits?.reserved ?? 0;
+  const availableCredits = usageSnapshot.remainingCredits ?? 0;
 
   useEffect(() => {
     if (!authToken) {
@@ -161,10 +163,13 @@ export default function SubscriptionSection({ user }) {
       const response = await SubscriptionApi.purchasePlan(payload, { authToken });
       if (response.user) {
         setUser({ ...response.user, authToken });
-      } else if (response.credits && user) {
+      } else if ((response.credits || response.usage) && user) {
         const mergedUser = {
           ...user,
-          credits: response.credits,
+          credits: {
+            ...(user.credits ?? {}),
+            ...(response.credits ?? {})
+          },
           usage: {
             ...(user.usage ?? {}),
             ...(response.usage ?? {})
@@ -211,8 +216,8 @@ export default function SubscriptionSection({ user }) {
           </div>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2 text-sm text-neutral-700">
-          Balance: {formatCredits(creditsSnapshot.balance - creditsSnapshot.reserved)} available ·{' '}
-          {formatCredits(creditsSnapshot.reserved)} reserved
+          Balance: {formatCredits(availableCredits)} available ·{' '}
+          {formatCredits(reservedCredits)} reserved
         </div>
       </div>
 

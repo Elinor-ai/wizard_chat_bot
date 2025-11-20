@@ -52,12 +52,24 @@ async function updateUserUsageCounters({
         ? { ...userDoc.usage }
         : {};
     usageSnapshot.totalTokensUsed = normalizeTokens(usageSnapshot.totalTokensUsed) + tokensUsed;
-    usageSnapshot.remainingTokens = (usageSnapshot.remainingTokens ?? 0) - tokensUsed;
     usageSnapshot.remainingCredits = (usageSnapshot.remainingCredits ?? 0) - creditsUsed;
     usageSnapshot.lastActiveAt = timestamp;
 
+    const creditsSnapshot =
+      typeof userDoc.credits === "object" && userDoc.credits !== null
+        ? { ...userDoc.credits }
+        : {};
+    creditsSnapshot.balance = usageSnapshot.remainingCredits;
+    if (typeof creditsSnapshot.reserved !== "number") {
+      creditsSnapshot.reserved = 0;
+    }
+    if (typeof creditsSnapshot.lifetimeUsed !== "number") {
+      creditsSnapshot.lifetimeUsed = 0;
+    }
+
     await firestore.saveDocument("users", userId, {
       usage: usageSnapshot,
+      credits: creditsSnapshot,
       updatedAt: new Date()
     });
   } catch (error) {

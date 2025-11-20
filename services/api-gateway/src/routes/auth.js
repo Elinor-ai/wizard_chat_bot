@@ -93,7 +93,6 @@ function buildNewUser(payload, passwordHash = null) {
       tokensMonth: 0,
       lastActiveAt: now,
       totalTokensUsed: 0,
-      remainingTokens: 0,
       remainingCredits: 0
     },
     createdAt: now,

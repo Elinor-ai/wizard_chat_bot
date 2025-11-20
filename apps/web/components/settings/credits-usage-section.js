@@ -6,9 +6,10 @@ export default function CreditsUsageSection({ user }) {
   const credits = user?.credits || {};
   const usage = user?.usage || {};
 
-  const availableCredits = (credits.balance || 0) - (credits.reserved || 0);
-  const usagePercentage = credits.balance > 0
-    ? ((credits.reserved / credits.balance) * 100).toFixed(1)
+  const availableCredits = usage.remainingCredits ?? 0;
+  const totalBalance = availableCredits + (credits.reserved || 0);
+  const usagePercentage = totalBalance > 0
+    ? (((credits.reserved || 0) / totalBalance) * 100).toFixed(1)
     : 0;
 
   const formatNumber = (num) => {
@@ -60,7 +61,7 @@ export default function CreditsUsageSection({ user }) {
           </div>
           <p className="text-3xl font-bold text-emerald-700">{formatNumber(availableCredits)}</p>
           <p className="mt-1 text-xs text-neutral-600">
-            {formatNumber(credits.balance)} total balance
+            {formatNumber(totalBalance)} total balance
           </p>
         </div>
 
@@ -94,7 +95,7 @@ export default function CreditsUsageSection({ user }) {
             Credit Allocation
           </p>
           <p className="text-xs text-neutral-600">
-            {formatNumber(credits.balance)} total
+            {formatNumber(totalBalance)} total
           </p>
         </div>
 
@@ -104,12 +105,12 @@ export default function CreditsUsageSection({ user }) {
             {/* Available (green) */}
             <div
               className="bg-gradient-to-r from-emerald-500 to-emerald-600 transition-all duration-500"
-              style={{ width: `${((availableCredits / credits.balance) * 100) || 0}%` }}
+              style={{ width: `${((availableCredits / totalBalance) * 100) || 0}%` }}
             ></div>
             {/* Reserved (amber) */}
             <div
               className="bg-gradient-to-r from-amber-500 to-amber-600 transition-all duration-500"
-              style={{ width: `${((credits.reserved / credits.balance) * 100) || 0}%` }}
+              style={{ width: `${(((credits.reserved || 0) / totalBalance) * 100) || 0}%` }}
             ></div>
           </div>
         </div>
@@ -121,7 +122,7 @@ export default function CreditsUsageSection({ user }) {
           </div>
           <div className="flex items-center gap-2">
             <div className="h-3 w-3 rounded-full bg-amber-600"></div>
-            <span className="text-neutral-600">Reserved: {formatNumber(credits.reserved)}</span>
+            <span className="text-neutral-600">Reserved: {formatNumber(credits.reserved || 0)}</span>
           </div>
         </div>
       </div>

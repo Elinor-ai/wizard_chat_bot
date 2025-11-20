@@ -90,7 +90,7 @@ export function subscriptionsRouter({ firestore, logger }) {
       }
 
       const creditsSnapshot = {
-        balance: Number(userDoc.credits?.balance ?? 0) + plan.totalCredits,
+        balance: Number(userDoc.usage?.remainingCredits ?? userDoc.credits?.balance ?? 0) + plan.totalCredits,
         reserved: Number(userDoc.credits?.reserved ?? 0),
         lifetimeUsed: Number(userDoc.credits?.lifetimeUsed ?? 0)
       };
@@ -100,6 +100,7 @@ export function subscriptionsRouter({ firestore, logger }) {
         remainingCredits:
           Number(userDoc.usage?.remainingCredits ?? 0) + plan.totalCredits
       };
+      creditsSnapshot.balance = usageSnapshot.remainingCredits + creditsSnapshot.reserved;
 
       const sanitizedPayment = {
         cardholder: payload.payment.cardholder || "Sandbox User",

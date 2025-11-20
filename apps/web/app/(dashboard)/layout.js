@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   PanelLeftClose,
   PanelRightOpen,
+  Settings,
 } from "lucide-react";
 import { GiBearFace } from "react-icons/gi";
 import { clsx } from "../../lib/cn";
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/videos", label: "Videos", Icon: Clapperboard },
   { href: "/campaigns", label: "Campaigns", Icon: Target },
   { href: "/credits", label: "Credits", Icon: Coins },
+  { href: "/settings/Profile", label: "Settings", Icon: Settings },
 ];
 
 const SIDEBAR_STORAGE_KEY = "ui.sidebar.open";

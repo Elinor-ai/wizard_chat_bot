@@ -477,7 +477,8 @@ const dashboardSummarySchema = z.object({
     tokens: z.number(),
     applies: z.number(),
     interviews: z.number(),
-    hires: z.number()
+    hires: z.number(),
+    remainingCredits: z.number().optional().default(0)
   }),
   updatedAt: z.string()
 });

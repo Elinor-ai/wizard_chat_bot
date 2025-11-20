@@ -6,14 +6,7 @@ import { Coins } from "lucide-react";
 import { DashboardApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
 
-function formatNumber(value = 0, { currency = false } = {}) {
-  if (currency) {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0
-    }).format(value);
-  }
+function formatNumber(value = 0) {
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: value >= 1000 ? 1 : 0
   }).format(value);
@@ -39,9 +32,10 @@ export function CreditBalanceCard() {
     if (!data) {
       return null;
     }
-    const balance = data.credits.balance ?? 0;
+    const remaining = data.usage?.remainingCredits ?? data.credits.balance ?? 0;
     const reserved = data.credits.reserved ?? 0;
-    const available = Math.max(balance - reserved, 0);
+    const balance = remaining + reserved;
+    const available = Math.max(remaining, 0);
     return {
       available,
       balance,
@@ -102,11 +96,11 @@ export function CreditBalanceCard() {
             </div>
             <div>
               <p className="text-3xl font-semibold text-neutral-900">
-                {formatNumber(credits.available, { currency: true })}
+                {formatNumber(credits.available)}
               </p>
               <p className="text-xs text-neutral-500">
-                {formatNumber(credits.reserved, { currency: true })} reserved ·{" "}
-                {formatNumber(credits.balance, { currency: true })} total
+                {formatNumber(credits.reserved)} reserved ·{" "}
+                {formatNumber(credits.balance)} total
               </p>
             </div>
           </div>
@@ -119,7 +113,7 @@ export function CreditBalanceCard() {
             Lifetime used
           </p>
           <p className="mt-2 text-xl font-semibold text-neutral-900">
-            {formatNumber(credits.lifetimeUsed, { currency: true })}
+            {formatNumber(credits.lifetimeUsed)}
           </p>
           <p className="mt-1 text-[11px] uppercase tracking-wide text-neutral-400">
             Since workspace creation
