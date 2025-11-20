@@ -430,6 +430,7 @@ export function WizardSuggestionPanel({
   }, [chatTabActive, conversationMessages.length, isSending]);
 
   const handleSubmit = () => {
+    if (isSending) return;
     if (!draftMessage.trim()) return;
     const trimmed = draftMessage.trim();
     onSendMessage(trimmed, { stage });
@@ -583,7 +584,9 @@ export function WizardSuggestionPanel({
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
-                      handleSubmit();
+                      if (!isSending) {
+                        handleSubmit();
+                      }
                     }
                   }}
                   rows={2}

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CompanySchema, CompanyDiscoveredJobSchema } from "@wizard/core";
+import { CompanySchema, CompanyDiscoveredJobSchema, UserSchema } from "@wizard/core";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
@@ -199,6 +199,86 @@ const companyJobsResponseSchema = z.object({
 const companyListResponseSchema = z.object({
   companies: z.array(CompanySchema).default([])
 });
+
+const userResponseSchema = UserSchema;
+
+const subscriptionPlanSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  headline: z.string().optional().default(""),
+  description: z.string().optional().default(""),
+  credits: z.number(),
+  bonusCredits: z.number().optional().default(0),
+  totalCredits: z.number(),
+  priceUsd: z.number(),
+  currency: z.string().default("USD"),
+  bestFor: z.string().optional().default(""),
+  perks: z.array(z.string()).default([]),
+  badge: z.string().optional().nullable(),
+  effectiveUsdPerCredit: z.number().optional().nullable(),
+  markupMultiplier: z.number().optional().nullable()
+});
+
+const subscriptionPlanListResponseSchema = z.object({
+  plans: z.array(subscriptionPlanSchema).default([]),
+  currency: z.string().default("USD"),
+  usdPerCredit: z.number().optional().nullable()
+});
+
+const subscriptionPurchaseResponseSchema = z
+  .object({
+    purchase: z
+      .object({
+        id: z.string(),
+        planId: z.string(),
+        planName: z.string(),
+        credits: z.number(),
+        bonusCredits: z.number(),
+        totalCredits: z.number(),
+        priceUsd: z.number(),
+        currency: z.string(),
+        processedAt: z.union([z.string(), z.date()]).optional().nullable(),
+        paymentMethod: z
+          .object({
+            brand: z.string().optional().nullable(),
+            last4: z.string().optional().nullable()
+          })
+          .optional()
+      })
+      .nullable(),
+    credits: z
+      .object({
+        balance: z.number(),
+        reserved: z.number(),
+        lifetimeUsed: z.number()
+      })
+      .optional(),
+    usage: z
+      .object({
+        remainingCredits: z.number().optional()
+      })
+      .passthrough()
+      .optional(),
+    user: z
+      .object({
+        id: z.string()
+      })
+      .passthrough()
+      .optional()
+  })
+  .transform((data) => ({
+    ...data,
+    purchase: data.purchase
+      ? {
+          ...data.purchase,
+          processedAt: data.purchase.processedAt
+            ? data.purchase.processedAt instanceof Date
+              ? data.purchase.processedAt
+              : new Date(data.purchase.processedAt)
+            : null
+        }
+      : null
+  }));
 
 const companyUpdateResponseSchema = z.object({
   company: CompanySchema
@@ -1144,6 +1224,61 @@ export const DashboardApi = {
 
     const data = await response.json();
     return dashboardActivityResponseSchema.parse(data).events;
+  }
+};
+
+export const UsersApi = {
+  async fetchCurrentUser(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/users/me`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load user profile");
+    }
+
+    const data = await response.json();
+    return userResponseSchema.parse(data);
+  }
+};
+
+export const SubscriptionApi = {
+  async listPlans(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/subscriptions/plans`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load subscription plans");
+    }
+
+    const data = await response.json();
+    return subscriptionPlanListResponseSchema.parse(data);
+  },
+
+  async purchasePlan(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/subscriptions/purchase`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken)
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || "Failed to process payment");
+    }
+
+    const data = await response.json();
+    return subscriptionPurchaseResponseSchema.parse(data);
   }
 };
 

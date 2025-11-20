@@ -262,6 +262,10 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
   const stateRef = useRef(wizardState.state);
   const conversationRef = useRef(wizardState.copilotConversation);
   const unsavedChangesRef = useRef(wizardState.unsavedChanges);
+  const includeOptionalRef = useRef(wizardState.includeOptional);
+  const currentStepIndexRef = useRef(wizardState.currentStepIndex);
+  const maxVisitedIndexRef = useRef(wizardState.maxVisitedIndex);
+  const companyIdRef = useRef(wizardState.companyId);
   const previousFieldValuesRef = useRef({});
   const lastSuggestionSnapshotRef = useRef({});
   const toastTimeoutRef = useRef(null);
@@ -293,6 +297,22 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
   useEffect(() => {
     unsavedChangesRef.current = wizardState.unsavedChanges;
   }, [wizardState.unsavedChanges]);
+
+  useEffect(() => {
+    includeOptionalRef.current = wizardState.includeOptional;
+  }, [wizardState.includeOptional]);
+
+  useEffect(() => {
+    currentStepIndexRef.current = wizardState.currentStepIndex;
+  }, [wizardState.currentStepIndex]);
+
+  useEffect(() => {
+    maxVisitedIndexRef.current = wizardState.maxVisitedIndex;
+  }, [wizardState.maxVisitedIndex]);
+
+  useEffect(() => {
+    companyIdRef.current = wizardState.companyId;
+  }, [wizardState.companyId]);
 
   useEffect(() => {
     isHydratedRef.current = isHydrated;
@@ -656,62 +676,81 @@ useEffect(() => {
           companyId: serverJob.companyId ?? resolvedDefaultCompanyId ?? null,
         };
 
-        let mergedPayload = basePayload;
-        if (localDraft) {
-          const mergedIncludeOptional =
-            typeof localDraft.includeOptional === "boolean"
-              ? localDraft.includeOptional
-              : basePayload.includeOptional;
-          const mergedState = mergeStateSnapshots(
-            serverState,
-            localDraft.state ?? {}
-          );
-          const totalSteps = mergedIncludeOptional
-            ? REQUIRED_STEPS.length + OPTIONAL_STEPS.length
-            : REQUIRED_STEPS.length;
-          const clampIndex = (value, fallback) => {
-            const fallbackValue =
-              Number.isFinite(fallback) && fallback >= 0
-                ? fallback
-                : 0;
-            const upperBound = Math.max(totalSteps - 1, 0);
-            if (!Number.isFinite(value)) {
-              return Math.min(Math.max(fallbackValue, 0), upperBound);
-            }
-            return Math.min(Math.max(value, 0), upperBound);
-          };
-          const mergedCurrentIndex = clampIndex(
-            localDraft.currentStepIndex,
-            basePayload.currentStepIndex
-          );
-          const mergedVisitedIndex = Math.max(
-            mergedCurrentIndex,
-            clampIndex(
-              localDraft.maxVisitedIndex,
-              basePayload.maxVisitedIndex
-            )
-          );
+        const allowLiveOverlay = !hydrationKeyChanged;
+        const hasLiveOverlay =
+          allowLiveOverlay && unsavedChangesRef.current && stateRef.current;
+        const liveStateOverride = hasLiveOverlay
+          ? deepClone(stateRef.current ?? {})
+          : null;
+        const localStateOverride = !liveStateOverride && localDraft?.state
+          ? deepClone(localDraft.state)
+          : null;
+        const overrideState = liveStateOverride ?? localStateOverride;
+        const overrideIncludeOptional = hasLiveOverlay
+          ? includeOptionalRef.current
+          : localDraft?.includeOptional;
+        const overrideCurrentIndex = hasLiveOverlay
+          ? currentStepIndexRef.current
+          : localDraft?.currentStepIndex;
+        const overrideMaxVisited = hasLiveOverlay
+          ? maxVisitedIndexRef.current
+          : localDraft?.maxVisitedIndex;
+        const overrideCompanyId = hasLiveOverlay
+          ? companyIdRef.current
+          : localDraft?.companyId;
 
-          mergedPayload = {
-            ...basePayload,
-            state: mergedState,
-            committedState: mergedState,
-            includeOptional: mergedIncludeOptional,
-            currentStepIndex: mergedCurrentIndex,
-            maxVisitedIndex: mergedVisitedIndex,
-            companyId:
-              localDraft.companyId ??
-              basePayload.companyId ??
-              resolvedDefaultCompanyId ??
-              null,
-          };
-        }
+        const mergedIncludeOptional =
+          typeof overrideIncludeOptional === "boolean"
+            ? overrideIncludeOptional
+            : basePayload.includeOptional;
+        const totalSteps = mergedIncludeOptional
+          ? REQUIRED_STEPS.length + OPTIONAL_STEPS.length
+          : REQUIRED_STEPS.length;
+        const clampIndex = (value, fallback) => {
+          const fallbackValue =
+            Number.isFinite(fallback) && fallback >= 0 ? fallback : 0;
+          const upperBound = Math.max(totalSteps - 1, 0);
+          if (!Number.isFinite(value)) {
+            return Math.min(Math.max(fallbackValue, 0), upperBound);
+          }
+          return Math.min(Math.max(value, 0), upperBound);
+        };
+        const mergedCurrentIndex = clampIndex(
+          overrideCurrentIndex,
+          basePayload.currentStepIndex
+        );
+        const mergedVisitedIndex = Math.max(
+          mergedCurrentIndex,
+          clampIndex(overrideMaxVisited, basePayload.maxVisitedIndex)
+        );
+
+        const mergedState = overrideState
+          ? mergeStateSnapshots(serverState, overrideState)
+          : serverState;
+
+        const mergedPayload = {
+          ...basePayload,
+          state: mergedState,
+          committedState: basePayload.committedState,
+          includeOptional: mergedIncludeOptional,
+          currentStepIndex: mergedCurrentIndex,
+          maxVisitedIndex: mergedVisitedIndex,
+          companyId:
+            overrideCompanyId ??
+            basePayload.companyId ??
+            resolvedDefaultCompanyId ??
+            null,
+        };
 
         dispatch({
           type: "PATCH_STATE",
           payload: mergedPayload,
         });
-        debug("hydrate:server-loaded", { mergedPayload });
+        debug("hydrate:server-loaded", {
+          mergedPayload,
+          usedLocalDraft: Boolean(localDraft && !liveStateOverride),
+          usedLiveOverlay: Boolean(liveStateOverride),
+        });
       } catch (error) {
         if (!cancelled) {
           dispatch({

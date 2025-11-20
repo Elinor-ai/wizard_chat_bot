@@ -16,6 +16,7 @@ import { requireAuth } from "./middleware/require-auth.js";
 import { videosRouter } from "./routes/videos.js";
 import { companiesRouter } from "./routes/companies.js";
 import { startCompanyIntelWorker } from "./services/company-intel.js";
+import { subscriptionsRouter } from "./routes/subscriptions.js";
 
 const corsConfig = {
   origin: "http://localhost:3000",
@@ -76,6 +77,7 @@ export function createApp({ logger, firestore, llmClient }) {
   app.use("/dashboard", authMiddleware, dashboardRouter({ firestore, logger }));
   app.use("/users", authMiddleware, usersRouter({ firestore, logger }));
   app.use("/companies", authMiddleware, companiesRouter({ firestore, logger }));
+  app.use("/subscriptions", authMiddleware, subscriptionsRouter({ firestore, logger }));
 
   app.use(notFound);
   app.use(errorHandler(logger));

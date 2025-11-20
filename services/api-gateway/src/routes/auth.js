@@ -68,7 +68,7 @@ function buildNewUser(payload, passwordHash = null) {
       billingCycleAnchor: now
     },
     credits: {
-      balance: 100,
+      balance: 0,
       reserved: 0,
       lifetimeUsed: 0
     },
@@ -91,7 +91,10 @@ function buildNewUser(payload, passwordHash = null) {
       jobsCreated: 0,
       assetsGenerated: 0,
       tokensMonth: 0,
-      lastActiveAt: now
+      lastActiveAt: now,
+      totalTokensUsed: 0,
+      remainingTokens: 0,
+      remainingCredits: 0
     },
     createdAt: now,
     updatedAt: now

@@ -31,6 +31,13 @@ async function loadAssetsForUser(firestore, userId) {
     .filter(Boolean);
 }
 
+async function loadCreditPurchases(firestore, userId) {
+  if (!firestore?.queryDocuments) {
+    return [];
+  }
+  return firestore.queryDocuments("creditPurchases", "userId", "==", userId);
+}
+
 function deriveJobTitle(job) {
   if (!job) return "Untitled role";
   if (typeof job.roleTitle === "string" && job.roleTitle.trim().length > 0) {
@@ -152,7 +159,7 @@ function extractCampaigns(jobs = []) {
   );
 }
 
-function extractLedger(jobs = []) {
+function extractLedger(jobs = [], purchases = []) {
   const entries = [];
 
   jobs.forEach((job) => {
@@ -180,6 +187,18 @@ function extractLedger(jobs = []) {
         status: "settled",
         occurredAt: charge.at ?? job.updatedAt ?? job.createdAt
       });
+    });
+  });
+
+  purchases.forEach((purchase) => {
+    entries.push({
+      id: purchase.id,
+      jobId: purchase.planId ?? "subscription",
+      type: "PURCHASE",
+      workflow: purchase.planName ?? "Subscription top-up",
+      amount: Number(purchase.totalCredits ?? 0),
+      status: "settled",
+      occurredAt: purchase.createdAt ?? purchase.updatedAt ?? new Date()
     });
   });
 
@@ -246,15 +265,28 @@ export function dashboardRouter({ firestore, logger }) {
     "/summary",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const [jobs, assets] = await Promise.all([
+      const [jobs, assets, userDoc] = await Promise.all([
         loadJobsForUser(firestore, userId),
-        loadAssetsForUser(firestore, userId)
+        loadAssetsForUser(firestore, userId),
+        firestore.getDocument("users", userId)
       ]);
+      const summary = computeSummary(jobs, assets);
+      if (userDoc?.credits) {
+        summary.credits.balance = Number(
+          userDoc.credits.balance ?? summary.credits.balance
+        );
+        summary.credits.reserved = Number(
+          userDoc.credits.reserved ?? summary.credits.reserved
+        );
+        summary.credits.lifetimeUsed = Number(
+          userDoc.credits.lifetimeUsed ?? summary.credits.lifetimeUsed
+        );
+      }
       logger.info(
         { userId, jobCount: jobs.length, assetCount: assets.length },
         "Loaded dashboard summary"
       );
-      res.json({ summary: computeSummary(jobs, assets) });
+      res.json({ summary });
     })
   );
 
@@ -273,8 +305,11 @@ export function dashboardRouter({ firestore, logger }) {
     "/ledger",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const jobs = await loadJobsForUser(firestore, userId);
-      const entries = extractLedger(jobs);
+      const [jobs, purchases] = await Promise.all([
+        loadJobsForUser(firestore, userId),
+        loadCreditPurchases(firestore, userId)
+      ]);
+      const entries = extractLedger(jobs, purchases);
       logger.info({ userId, entryCount: entries.length }, "Fetched credit ledger entries");
       res.json({ entries });
     })
