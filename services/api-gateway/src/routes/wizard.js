@@ -18,6 +18,8 @@ import {
   JobAssetStatusEnum,
   JobAssetRunStatusEnum,
   JobHeroImageSchema,
+  CompanyDiscoveredJobSchema,
+  CompanySchema,
 } from "@wizard/core";
 import { createAssetPlan } from "../llm/domain/asset-plan.js";
 import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
@@ -26,6 +28,7 @@ import {
   buildTailoredCompanyContext,
   loadCompanyContext,
 } from "../services/company-context.js";
+import { listCompaniesForUser } from "./companies.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
@@ -155,6 +158,11 @@ const heroImageRequestSchema = z.object({
   forceRefresh: z.boolean().optional(),
 });
 
+const importCompanyJobRequestSchema = z.object({
+  companyJobId: z.string().min(1, "companyJobId is required"),
+  companyId: z.string().optional()
+});
+
 function getAuthenticatedUserId(req) {
   const userId = req.user?.id;
   if (!userId) {
@@ -243,6 +251,81 @@ function setDeep(target, path, value) {
   }
 }
 
+function sanitizeImportValue(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim();
+}
+
+function sanitizeMultilineValue(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function deriveCompanyDisplayName(company) {
+  return (
+    sanitizeImportValue(company?.name) ||
+    sanitizeImportValue(company?.brand?.name) ||
+    sanitizeImportValue(company?.primaryDomain) ||
+    "Your company"
+  );
+}
+
+function deriveCompanyLocation(company) {
+  const city = sanitizeImportValue(company?.hqCity);
+  const country = sanitizeImportValue(company?.hqCountry);
+  const parts = [city, country].filter(Boolean);
+  return parts.join(", ");
+}
+
+function buildImportedJobState({ company, companyJob }) {
+  const state = {};
+  const fallbackTitle = sanitizeImportValue(companyJob?.title) || "Imported role";
+  state.roleTitle = fallbackTitle;
+  state.companyName = deriveCompanyDisplayName(company);
+  state.location =
+    sanitizeImportValue(companyJob?.location) ||
+    deriveCompanyLocation(company) ||
+    "Remote";
+
+  const normalizedDescription = sanitizeMultilineValue(companyJob?.description);
+  const descriptionBlocks = [];
+  if (normalizedDescription) {
+    descriptionBlocks.push(normalizedDescription);
+  } else {
+    descriptionBlocks.push(
+      `This role was imported from ${companyJob?.source ?? "an external job posting"} to speed up your workflow.`
+    );
+  }
+  const normalizedUrl = sanitizeImportValue(companyJob?.url);
+  if (normalizedUrl) {
+    descriptionBlocks.push(`Original posting: ${normalizedUrl}`);
+  }
+  state.jobDescription = descriptionBlocks.join("\n\n").trim();
+
+  const logoUrl =
+    sanitizeImportValue(company?.logoUrl) ||
+    sanitizeImportValue(company?.brand?.logoUrl) ||
+    sanitizeImportValue(company?.brand?.iconUrl);
+  if (logoUrl) {
+    state.logoUrl = logoUrl;
+  }
+  const industry = sanitizeImportValue(company?.industry);
+  if (industry) {
+    state.industry = industry;
+  }
+
+  return state;
+}
+
 function createBaseJob({
   jobId,
   userId,
@@ -250,7 +333,7 @@ function createBaseJob({
   companyProfile = null,
   now,
 }) {
-  const job = {
+  const job = JobSchema.parse({
     id: jobId,
     ownerUserId: userId,
     orgId: null,
@@ -281,7 +364,7 @@ function createBaseJob({
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
-  };
+  });
   return applyCompanyDefaults(job, companyProfile);
 }
 
@@ -1435,6 +1518,7 @@ function applyCompanyDefaults(job, companyProfile) {
   ) {
     next.confirmed.industry = companyProfile.industry;
   }
+  return next;
 }
 
 export function wizardRouter({ firestore, logger, llmClient }) {
@@ -1448,6 +1532,124 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       usageType: options.usageType,
       usageMetrics: options.usageMetrics,
     });
+
+  router.post(
+    "/import-company-job",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const payload = importCompanyJobRequestSchema.parse(req.body ?? {});
+      const userProfile = req.user?.profile ?? {};
+      const allowedCompanyIds = new Set(
+        Array.isArray(userProfile.companyIds)
+          ? userProfile.companyIds.filter(
+              (value) => typeof value === "string" && value.trim().length > 0
+            )
+          : []
+      );
+      const normalizedMainCompanyId =
+        typeof userProfile.mainCompanyId === "string" && userProfile.mainCompanyId.trim().length > 0
+          ? userProfile.mainCompanyId.trim()
+          : null;
+      if (normalizedMainCompanyId) {
+        allowedCompanyIds.add(normalizedMainCompanyId);
+      }
+      const requestedCompanyId =
+        typeof payload.companyId === "string" && payload.companyId.trim().length > 0
+          ? payload.companyId.trim()
+          : null;
+      const resolvedCompanyId = requestedCompanyId ?? normalizedMainCompanyId ?? null;
+      if (!resolvedCompanyId) {
+        throw httpError(400, "Company identifier required to import a job");
+      }
+      let hasCompanyAccess = allowedCompanyIds.has(resolvedCompanyId);
+      if (!hasCompanyAccess) {
+        try {
+          const accessibleCompanies = await listCompaniesForUser({
+            firestore,
+            user: req.user,
+            logger
+          });
+          hasCompanyAccess = accessibleCompanies.some(
+            (company) => company.id === resolvedCompanyId
+          );
+        } catch (error) {
+          logger?.warn?.(
+            { userId, companyId: resolvedCompanyId, err: error },
+            "Failed to cross-check company access; defaulting to denial"
+          );
+          hasCompanyAccess = false;
+        }
+      }
+      if (!hasCompanyAccess) {
+        throw httpError(403, "You do not have access to this company");
+      }
+
+      const companyRecord = await firestore.getDocument("companies", resolvedCompanyId);
+      if (!companyRecord) {
+        throw httpError(404, "Company not found");
+      }
+      const company = CompanySchema.parse(companyRecord);
+
+      const companyJobRecord = await firestore.getDocument("companyJobs", payload.companyJobId);
+      if (!companyJobRecord) {
+        throw httpError(404, "Discovered job not found");
+      }
+      const companyJob = CompanyDiscoveredJobSchema.parse(companyJobRecord);
+      if (companyJob.companyId !== company.id) {
+        throw httpError(403, "Job does not belong to the selected company");
+      }
+      if (companyJob.isActive === false) {
+        throw httpError(409, "This job is no longer marked as active");
+      }
+
+      const now = new Date();
+      const jobId = `job_${uuid()}`;
+      const baseJob = createBaseJob({
+        jobId,
+        userId,
+        companyId: company.id,
+        now
+      });
+
+      const importedState = buildImportedJobState({
+        company,
+        companyJob
+      });
+      const mergedJob = mergeIntakeIntoJob(baseJob, importedState, { userId, now });
+      const progress = computeRequiredProgress(mergedJob);
+      const jobWithProgress = applyRequiredProgress(mergedJob, progress, now);
+      jobWithProgress.companyId = company.id;
+      jobWithProgress.importContext = {
+        source: "external_import",
+        externalSource: companyJob.source ?? null,
+        externalUrl: companyJob.url ?? null,
+        companyJobId: companyJob.id,
+        importedAt: now
+      };
+      const validatedJob = JobSchema.parse(jobWithProgress);
+      const savedJob = await firestore.saveDocument(JOB_COLLECTION, jobId, validatedJob);
+
+      const responseState = ALLOWED_INTAKE_KEYS.reduce((acc, key) => {
+        acc[key] = savedJob[key];
+        return acc;
+      }, {});
+
+      logger.info(
+        { jobId, companyId: company.id, companyJobId: companyJob.id },
+        "Imported discovered job into wizard draft"
+      );
+
+      res.status(201).json({
+        jobId,
+        state: responseState,
+        includeOptional: Boolean(savedJob.stateMachine?.optionalComplete),
+        updatedAt: savedJob.updatedAt ?? savedJob.createdAt ?? now,
+        status: savedJob.status ?? null,
+        companyId: savedJob.companyId ?? null,
+        importContext: savedJob.importContext ?? null
+      });
+    })
+  );
 
   router.post(
     "/draft",
@@ -2580,6 +2782,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         updatedAt: parsedJob.updatedAt ?? parsedJob.createdAt ?? null,
         status: parsedJob.status ?? null,
         companyId: parsedJob.companyId ?? null,
+        importContext: parsedJob.importContext ?? null
       });
     })
   );

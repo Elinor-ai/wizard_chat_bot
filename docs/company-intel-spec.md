@@ -72,7 +72,7 @@ The **company-intel** layer lives mostly in:
   - Company approval modals
   - Company intel modal
   - Settings → Companies
-  - Launch Wizard → company selection
+ - Launch Wizard → company selection
 
 ---
 
@@ -1255,6 +1255,18 @@ Auto-open once right after creating a new company, or
 Let the user inspect via Settings → Companies and CompanyIntelModal on demand.
 
 The main requirement: every job created by the wizard must be linked to a specific companyId.
+
+### 7.8 Job import & skip wizard flow
+
+When a recruiter clicks “Launch Wizard” and their selected company already has verified discovered jobs, we offer a fast path:
+
+- Eligibility: `company.profileConfirmed === true`, `company.jobDiscoveryStatus === "FOUND_JOBS"`, and at least one “usable” companyJob (has title, real URL, isActive !== false, and was discovered/posted within ~90 days).
+- Instead of jumping straight into the full wizard, surface an ExistingJobsModal that lists the usable companyJobs with source, location, and recency. Two options are available:
+  1. “Use this job” → calls `POST /wizard/import-company-job` with `{ companyJobId, companyId }`. The endpoint creates a wizard-ready job record, copies over the high-signal fields, marks `importContext.source = "external_import"` (with `externalSource`, `externalUrl`, `companyJobId`), and returns a wizard draft payload.
+  2. “Start from scratch” → open the normal wizard flow (same behavior as before).
+- After a successful import we route to `/wizard/:jobId?mode=import`, automatically jump to the review step, and show a banner explaining that the job was imported (with a link back to the original posting). The rest of the pipeline (channel recommendations, asset generation) is unchanged.
+
+The helper `canSkipWizardForCompany(company, jobs)` encapsulates the eligibility check. The frontend uses `/companies/my-companies/:companyId/jobs` to fetch the jobs for the selected company, filters them down via `isUsableCompanyJob`, and only shows the import modal if `canSkipWizardForCompany` returns true. Existing flows (no jobs or user explicitly choosing “Start from scratch”) continue to run the wizard exactly as before.
 
 8. Rules for AI Assistants (Codex, etc.)
 If you’re an AI model modifying this repo:

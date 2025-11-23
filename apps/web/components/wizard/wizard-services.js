@@ -173,3 +173,17 @@ export async function requestHeroImage({
     { authToken }
   );
 }
+
+export async function importCompanyJob({
+  authToken,
+  companyJobId,
+  companyId,
+}) {
+  return WizardApi.importCompanyJob(
+    {
+      companyJobId,
+      companyId,
+    },
+    { authToken }
+  );
+}

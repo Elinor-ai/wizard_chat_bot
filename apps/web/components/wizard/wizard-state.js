@@ -35,6 +35,7 @@ export function createInitialWizardState() {
     committedState: {},
     jobId: null,
     companyId: null,
+    importContext: null,
     includeOptional: false,
     currentStepIndex: 0,
     maxVisitedIndex: 0,

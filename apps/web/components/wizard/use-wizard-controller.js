@@ -226,7 +226,12 @@ function hasMeaningfulWizardState(state) {
   );
 }
 
-export function useWizardController({ user, initialJobId = null, initialCompanyId = null }) {
+export function useWizardController({
+  user,
+  initialJobId = null,
+  initialCompanyId = null,
+  mode = "create",
+}) {
   const router = useRouter();
   const [wizardState, dispatch] = useReducer(
     wizardReducer,
@@ -278,6 +283,7 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
     }
   );
   const [isHydrated, setIsHydrated] = useState(false);
+  const importModeRef = useRef(mode === "import");
 
   const suggestionsAbortRef = useRef(null);
   const stateRef = useRef(wizardState.state);
@@ -309,6 +315,9 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
     },
     [debugEnabled]
   );
+  const hasImportedContext =
+    wizardState.importContext?.source === "external_import";
+  const isImportExperience = mode === "import" || hasImportedContext;
   const resolvedDefaultCompanyId = useMemo(
     () => initialCompanyId ?? user?.profile?.mainCompanyId ?? null,
     [initialCompanyId, user?.profile?.mainCompanyId]
@@ -675,6 +684,7 @@ useEffect(() => {
                 localDraft.companyId ??
                 resolvedDefaultCompanyId ??
                 null,
+              importContext: null,
             },
           });
         } else {
@@ -689,6 +699,7 @@ useEffect(() => {
               currentStepIndex: 0,
               maxVisitedIndex: 0,
               companyId: resolvedDefaultCompanyId ?? null,
+              importContext: null,
             },
           });
         }
@@ -724,6 +735,7 @@ useEffect(() => {
           currentStepIndex: baseIndex,
           maxVisitedIndex: baseVisited,
           companyId: serverJob.companyId ?? resolvedDefaultCompanyId ?? null,
+          importContext: serverJob.importContext ?? null,
         };
 
         const allowLiveOverlay = !hydrationKeyChanged;
@@ -796,6 +808,7 @@ useEffect(() => {
             basePayload.companyId ??
             resolvedDefaultCompanyId ??
             null,
+          importContext: basePayload.importContext ?? null,
         };
 
         dispatch({
@@ -860,6 +873,24 @@ useEffect(() => {
     wizardState.currentStepIndex,
     wizardState.maxVisitedIndex,
   ]);
+
+  useEffect(() => {
+    if (!importModeRef.current) {
+      return;
+    }
+    if (!wizardState.jobId) {
+      return;
+    }
+    const reviewIndex = Math.max(REQUIRED_STEPS.length - 1, 0);
+    dispatch({
+      type: "PATCH_STATE",
+      payload: {
+        currentStepIndex: reviewIndex,
+        maxVisitedIndex: Math.max(wizardState.maxVisitedIndex, reviewIndex),
+      },
+    });
+    importModeRef.current = false;
+  }, [dispatch, wizardState.jobId, wizardState.maxVisitedIndex]);
 
   useEffect(() => {
     if (steps.length === 0) return;
@@ -2294,6 +2325,8 @@ useEffect(() => {
     state: wizardState.state,
     committedState: wizardState.committedState,
     jobId: wizardState.jobId,
+    importContext: wizardState.importContext,
+    isImportExperience,
     includeOptional: wizardState.includeOptional,
     steps,
     currentStep,
