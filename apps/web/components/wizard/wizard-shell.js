@@ -248,9 +248,7 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
                     ? "border-primary-400 bg-primary-50 text-primary-600"
                     : isDisabled
                       ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-300"
-                      : metrics.stepComplete
-                        ? "border-emerald-400 bg-emerald-50 text-emerald-700"
-                        : "border-neutral-200 bg-neutral-50 text-neutral-500 hover:border-primary-300 hover:text-primary-600"
+                      : "border-neutral-200 bg-neutral-50 text-neutral-500 hover:border-primary-300 hover:text-primary-600"
                 )}
                 aria-current={isActive ? "step" : undefined}
               >

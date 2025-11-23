@@ -283,7 +283,6 @@ export function useWizardController({
     }
   );
   const [isHydrated, setIsHydrated] = useState(false);
-  const importModeRef = useRef(mode === "import");
 
   const suggestionsAbortRef = useRef(null);
   const stateRef = useRef(wizardState.state);
@@ -722,11 +721,13 @@ useEffect(() => {
         const includeOptionalFromServer = Boolean(serverJob.includeOptional);
         const serverState = deepClone(serverJob.state ?? {});
         const localDraft = loadDraft({ userId: user.id, jobId: initialJobId });
-        const baseIndex = determineStepIndex(
+        const importedJob = serverJob.importContext?.source === "external_import";
+        const resolvedBaseIndex = determineStepIndex(
           serverState,
           includeOptionalFromServer
         );
-        const baseVisited = Math.max(baseIndex, wizardState.maxVisitedIndex);
+        const baseIndex = 0;
+        const baseVisited = importedJob ? 0 : Math.max(resolvedBaseIndex, wizardState.maxVisitedIndex);
         const basePayload = {
           jobId: serverJob.jobId,
           state: serverState,
@@ -873,24 +874,6 @@ useEffect(() => {
     wizardState.currentStepIndex,
     wizardState.maxVisitedIndex,
   ]);
-
-  useEffect(() => {
-    if (!importModeRef.current) {
-      return;
-    }
-    if (!wizardState.jobId) {
-      return;
-    }
-    const reviewIndex = Math.max(REQUIRED_STEPS.length - 1, 0);
-    dispatch({
-      type: "PATCH_STATE",
-      payload: {
-        currentStepIndex: reviewIndex,
-        maxVisitedIndex: Math.max(wizardState.maxVisitedIndex, reviewIndex),
-      },
-    });
-    importModeRef.current = false;
-  }, [dispatch, wizardState.jobId, wizardState.maxVisitedIndex]);
 
   useEffect(() => {
     if (steps.length === 0) return;
