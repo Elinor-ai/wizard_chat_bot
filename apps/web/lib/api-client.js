@@ -1177,6 +1177,28 @@ export const WizardApi = {
     return companyJobsResponseSchema.parse(data);
   },
 
+  async fetchCompanyById(companyId, options = {}) {
+    if (!companyId) {
+      throw new Error("companyId is required");
+    }
+    const response = await fetch(
+      `${API_BASE_URL}/companies/my-companies/${companyId}`,
+      {
+        method: "GET",
+        headers: {
+          ...authHeaders(options.authToken),
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to load company");
+    }
+
+    const data = await response.json();
+    return companyUpdateResponseSchema.parse(data);
+  },
+
   async confirmCompanyName(payload, options = {}) {
     const response = await fetch(`${API_BASE_URL}/companies/me/confirm-name`, {
       method: "POST",

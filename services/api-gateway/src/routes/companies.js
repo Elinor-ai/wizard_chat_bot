@@ -105,6 +105,18 @@ async function resolveCompanyContext({ firestore, user, logger }) {
   return parsed.data;
 }
 
+async function resolveCompanyContextForUser({ firestore, user, logger, companyId }) {
+  if (!companyId) {
+    return resolveCompanyContext({ firestore, user, logger });
+  }
+  const companies = await listCompaniesForUser({ firestore, user, logger });
+  const targetCompany = companies.find((company) => company.id === companyId);
+  if (!targetCompany) {
+    throw httpError(404, "Company not found");
+  }
+  return targetCompany;
+}
+
 function normalizeCompanyJobs(jobs = []) {
   return jobs
     .map((job) => {
@@ -267,7 +279,8 @@ const confirmProfileSchema = z.object({
   hqCountry: z.string().optional(),
   hqCity: z.string().optional(),
   country: z.string().optional(),
-  city: z.string().optional()
+  city: z.string().optional(),
+  companyId: z.string().optional()
 });
 
 const socialUpdateSchema = z
@@ -452,7 +465,16 @@ export function companiesRouter({ firestore, logger }) {
         throw httpError(401, "Unauthorized");
       }
       const payload = confirmProfileSchema.parse(req.body ?? {});
-      const company = await resolveCompanyContext({ firestore, user, logger });
+      const requestedCompanyId =
+        typeof payload.companyId === "string" && payload.companyId.trim().length > 0
+          ? payload.companyId.trim()
+          : null;
+      const company = await resolveCompanyContextForUser({
+        firestore,
+        user,
+        logger,
+        companyId: requestedCompanyId
+      });
       const countryInput =
         typeof (payload.hqCountry ?? payload.country) === "string"
           ? payload.hqCountry ?? payload.country
@@ -584,6 +606,26 @@ export function companiesRouter({ firestore, logger }) {
       }
       const companies = await listCompaniesForUser({ firestore, user, logger });
       res.json({ companies });
+    })
+  );
+
+  router.get(
+    "/my-companies/:companyId",
+    wrapAsync(async (req, res) => {
+      const user = req.user;
+      if (!user) {
+        throw httpError(401, "Unauthorized");
+      }
+      const { companyId } = req.params;
+      if (!companyId) {
+        throw httpError(400, "Company identifier required");
+      }
+      const companies = await listCompaniesForUser({ firestore, user, logger });
+      const targetCompany = companies.find((company) => company.id === companyId);
+      if (!targetCompany) {
+        throw httpError(404, "Company not found");
+      }
+      res.json({ company: targetCompany });
     })
   );
 
