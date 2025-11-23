@@ -119,6 +119,50 @@ function normalizeCompanyJobs(jobs = []) {
     });
 }
 
+function mapDiscoveredJobForResponse(job) {
+  if (!job) return null;
+  const context = job.importContext ?? {};
+  return {
+    id: job.id,
+    roleTitle: job.roleTitle ?? "",
+    companyName: job.companyName ?? "",
+    location: job.location ?? "",
+    status: job.status ?? "draft",
+    source: context.source ?? context.externalSource ?? null,
+    externalUrl: context.sourceUrl ?? context.externalUrl ?? null,
+    importContext: {
+      ...context,
+      discoveredAt: context.discoveredAt ?? null,
+      originalPostedAt: context.originalPostedAt ?? null,
+      overallConfidence: context.overallConfidence ?? null
+    },
+    createdAt: job.createdAt ?? null,
+    updatedAt: job.updatedAt ?? null
+  };
+}
+
+function mapLegacyJobForResponse(job) {
+  if (!job) return null;
+  return {
+    id: job.id,
+    roleTitle: job.title ?? "",
+    companyName: job.companyName ?? "",
+    location: job.location ?? "",
+    status: "draft",
+    source: job.source ?? "other",
+    externalUrl: job.url ?? null,
+    importContext: {
+      source: job.source ?? "other",
+      sourceUrl: job.url ?? null,
+      discoveredAt: job.discoveredAt ?? null,
+      originalPostedAt: job.postedAt ?? null,
+      companyJobId: job.id
+    },
+    createdAt: job.discoveredAt ?? null,
+    updatedAt: job.discoveredAt ?? null
+  };
+}
+
 export async function listCompaniesForUser({ firestore, user, logger }) {
   const userDoc = await firestore.getDocument("users", user.id);
   if (!userDoc) {
@@ -290,8 +334,16 @@ export function companiesRouter({ firestore, logger }) {
         throw httpError(401, "Unauthorized");
       }
       const company = await resolveCompanyContext({ firestore, user, logger });
-      const rawJobs = await firestore.listCompanyJobs(company.id);
-      const jobs = normalizeCompanyJobs(rawJobs);
+      const discoveredJobs = await firestore.listDiscoveredJobs(company.id);
+      let jobs;
+      if (discoveredJobs.length > 0) {
+        jobs = discoveredJobs
+          .map(mapDiscoveredJobForResponse)
+          .filter(Boolean);
+      } else {
+        const legacy = normalizeCompanyJobs(await firestore.listCompanyJobs(company.id));
+        jobs = legacy.map(mapLegacyJobForResponse).filter(Boolean);
+      }
       logger?.info?.(
         { userId: user.id, companyId: company.id, jobCount: jobs.length },
         "Fetched discovered company jobs"
@@ -551,8 +603,13 @@ export function companiesRouter({ firestore, logger }) {
       if (!targetCompany) {
         throw httpError(404, "Company not found");
       }
-      const rawJobs = await firestore.listCompanyJobs(companyId);
-      const jobs = normalizeCompanyJobs(rawJobs);
+      const discoveredJobs = await firestore.listDiscoveredJobs(companyId);
+      const jobs =
+        discoveredJobs.length > 0
+          ? discoveredJobs.map(mapDiscoveredJobForResponse).filter(Boolean)
+          : normalizeCompanyJobs(await firestore.listCompanyJobs(companyId))
+              .map(mapLegacyJobForResponse)
+              .filter(Boolean);
       logger?.info?.(
         { userId: user.id, companyId, jobCount: jobs.length },
         "Fetched jobs for selected company"

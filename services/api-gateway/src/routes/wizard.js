@@ -1590,18 +1590,44 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       }
       const company = CompanySchema.parse(companyRecord);
 
-      const companyJobRecord = await firestore.getDocument("companyJobs", payload.companyJobId);
-      if (!companyJobRecord) {
-        throw httpError(404, "Discovered job not found");
+      const discoveredJobRecord = await firestore.getDocument(
+        "discoveredJobs",
+        payload.companyJobId
+      );
+      let importedState = null;
+      let importMetadata = null;
+      if (discoveredJobRecord) {
+        const discoveredJob = JobSchema.parse(discoveredJobRecord);
+        if (discoveredJob.companyId !== company.id) {
+          throw httpError(403, "Job does not belong to the selected company");
+        }
+        importedState = ALLOWED_INTAKE_KEYS.reduce((acc, key) => {
+          acc[key] = discoveredJob[key];
+          return acc;
+        }, {});
+        importMetadata = discoveredJob.importContext ?? null;
+      } else {
+        const companyJobRecord = await firestore.getDocument("companyJobs", payload.companyJobId);
+        if (!companyJobRecord) {
+          throw httpError(404, "Discovered job not found");
+        }
+        const companyJob = CompanyDiscoveredJobSchema.parse(companyJobRecord);
+        if (companyJob.companyId !== company.id) {
+          throw httpError(403, "Job does not belong to the selected company");
+        }
+        if (companyJob.isActive === false) {
+          throw httpError(409, "This job is no longer marked as active");
+        }
+        importedState = buildImportedJobState({
+          company,
+          companyJob
+        });
+        importMetadata = {
+          source: companyJob.source ?? "external_import",
+          externalUrl: companyJob.url ?? null,
+          companyJobId: companyJob.id
+        };
       }
-      const companyJob = CompanyDiscoveredJobSchema.parse(companyJobRecord);
-      if (companyJob.companyId !== company.id) {
-        throw httpError(403, "Job does not belong to the selected company");
-      }
-      if (companyJob.isActive === false) {
-        throw httpError(409, "This job is no longer marked as active");
-      }
-
       const now = new Date();
       const jobId = `job_${uuid()}`;
       const baseJob = createBaseJob({
@@ -1611,19 +1637,15 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         now
       });
 
-      const importedState = buildImportedJobState({
-        company,
-        companyJob
-      });
       const mergedJob = mergeIntakeIntoJob(baseJob, importedState, { userId, now });
       const progress = computeRequiredProgress(mergedJob);
       const jobWithProgress = applyRequiredProgress(mergedJob, progress, now);
       jobWithProgress.companyId = company.id;
       jobWithProgress.importContext = {
-        source: "external_import",
-        externalSource: companyJob.source ?? null,
-        externalUrl: companyJob.url ?? null,
-        companyJobId: companyJob.id,
+        source: importMetadata?.source ?? "external_import",
+        externalSource: importMetadata?.externalSource ?? importMetadata?.source ?? null,
+        externalUrl: importMetadata?.externalUrl ?? importMetadata?.sourceUrl ?? null,
+        companyJobId: payload.companyJobId,
         importedAt: now
       };
       const validatedJob = JobSchema.parse(jobWithProgress);
@@ -1635,7 +1657,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       }, {});
 
       logger.info(
-        { jobId, companyId: company.id, companyJobId: companyJob.id },
+        { jobId, companyId: company.id, companyJobId: payload.companyJobId },
         "Imported discovered job into wizard draft"
       );
 

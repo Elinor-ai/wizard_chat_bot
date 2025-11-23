@@ -1,10 +1,10 @@
 import { v4 as uuid } from "uuid";
 import {
   CompanySchema,
-  CompanyDiscoveredJobSchema,
   CompanyEnrichmentStatusEnum,
   CompanyJobDiscoveryStatusEnum,
-  CompanyTypeEnum
+  CompanyTypeEnum,
+  JobSchema
 } from "@wizard/core";
 import { recordLlmUsageFromResult } from "./llm-usage-ledger.js";
 const GENERIC_EMAIL_DOMAINS = new Set([
@@ -67,6 +67,7 @@ const LINKEDIN_HIRING_PHRASES = [
   "apply now"
 ];
 const LINKEDIN_HIRING_REGEX = new RegExp(LINKEDIN_HIRING_PHRASES.join("|"), "gi");
+const DISCOVERED_JOB_OWNER_FALLBACK = "system_company_intel";
 
 function toTitleCase(value) {
   if (!value) return "";
@@ -756,15 +757,243 @@ function determineJobSource(url, company) {
 }
 
 function dedupeJobs(jobs = []) {
-  const seen = new Set();
-  return jobs.filter((job) => {
-    const key = job.url ?? `${job.title}|${job.location ?? ""}`.toLowerCase();
-    if (seen.has(key)) {
-      return false;
+  const merged = new Map();
+  let anonymousCounter = 0;
+  const getKey = (job) => {
+    if (!job) return `anon:${anonymousCounter++}`;
+    if (typeof job.url === "string" && job.url.trim()) {
+      return `url:${job.url.trim().toLowerCase()}`;
     }
-    seen.add(key);
-    return true;
+    const title = typeof job.title === "string" ? job.title.trim().toLowerCase() : "";
+    const location = typeof job.location === "string" ? job.location.trim().toLowerCase() : "";
+    if (title || location) {
+      return `title:${title}|${location}`;
+    }
+    return `anon:${anonymousCounter++}`;
+  };
+  for (const job of jobs) {
+    if (!job) continue;
+    const key = getKey(job);
+    if (!merged.has(key)) {
+      merged.set(key, cloneCandidateJob(job));
+    } else {
+      const existing = merged.get(key);
+      merged.set(key, mergeCandidateJobs(existing, job));
+    }
+  }
+  return Array.from(merged.values());
+}
+
+function cloneCandidateJob(job = {}) {
+  if (!job) {
+    return null;
+  }
+  return {
+    ...job,
+    coreDuties: Array.isArray(job.coreDuties) ? [...job.coreDuties] : [],
+    mustHaves: Array.isArray(job.mustHaves) ? [...job.mustHaves] : [],
+    benefits: Array.isArray(job.benefits) ? [...job.benefits] : [],
+    evidenceSources: Array.isArray(job.evidenceSources)
+      ? Array.from(new Set(job.evidenceSources.filter(Boolean)))
+      : [],
+    fieldConfidence:
+      job.fieldConfidence && typeof job.fieldConfidence === "object"
+        ? { ...job.fieldConfidence }
+        : null
+  };
+}
+
+function scoreCandidateJob(job = {}) {
+  let score = 0;
+  if (hasValue(job.description)) score += 5;
+  if (hasValue(job.location)) score += 2;
+  if (Array.isArray(job.coreDuties) && job.coreDuties.length > 0) score += 2;
+  if (Array.isArray(job.mustHaves) && job.mustHaves.length > 0) score += 1;
+  if (Array.isArray(job.benefits) && job.benefits.length > 0) score += 1;
+  if (hasValue(job.industry)) score += 1;
+  if (hasValue(job.seniorityLevel)) score += 1;
+  if (hasValue(job.employmentType)) score += 1;
+  if (hasValue(job.workModel)) score += 1;
+  if (Array.isArray(job.evidenceSources) && job.evidenceSources.length > 0) score += 1;
+  if (job.source && job.source !== "other") score += 1;
+  return score;
+}
+
+const JOB_SOURCE_PRIORITY = {
+  "careers-site": 3,
+  linkedin: 2,
+  "linkedin-post": 1,
+  other: 0,
+  "intel-agent": 0
+};
+
+function mergeStringArrays(a = [], b = []) {
+  const values = [];
+  const add = (list) => {
+    list.forEach((item) => {
+      if (typeof item !== "string") return;
+      const trimmed = item.trim();
+      if (!trimmed) return;
+      if (!values.includes(trimmed)) {
+        values.push(trimmed);
+      }
+    });
+  };
+  add(Array.isArray(a) ? a : []);
+  add(Array.isArray(b) ? b : []);
+  return values;
+}
+
+function mergeFieldConfidenceMaps(base = null, incoming = null) {
+  const merged = { ...(base ?? {}) };
+  Object.entries(incoming ?? {}).forEach(([field, value]) => {
+    if (typeof value !== "number") {
+      return;
+    }
+    const normalized = Math.min(Math.max(value, 0), 1);
+    merged[field] = Math.max(merged[field] ?? 0, normalized);
   });
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
+function pickPreferredSource(current, incoming) {
+  if (!incoming) {
+    return current ?? null;
+  }
+  if (!current) {
+    return incoming;
+  }
+  const currentScore = JOB_SOURCE_PRIORITY[current] ?? 0;
+  const incomingScore = JOB_SOURCE_PRIORITY[incoming] ?? 0;
+  return incomingScore > currentScore ? incoming : current;
+}
+
+function mergeCandidateJobs(existing, incoming) {
+  if (!existing) {
+    return cloneCandidateJob(incoming);
+  }
+  if (!incoming) {
+    return cloneCandidateJob(existing);
+  }
+  const existingScore = scoreCandidateJob(existing);
+  const incomingScore = scoreCandidateJob(incoming);
+  const primary = incomingScore > existingScore ? cloneCandidateJob(incoming) : cloneCandidateJob(existing);
+  const secondary = incomingScore > existingScore ? existing : incoming;
+
+  const preferString = (field) => {
+    if (!hasValue(primary[field]) && hasValue(secondary[field])) {
+      primary[field] = secondary[field];
+    }
+  };
+  const preferLongest = (field) => {
+    const current = hasValue(primary[field]) ? primary[field] : "";
+    const next = hasValue(secondary[field]) ? secondary[field] : "";
+    if (!next) return;
+    if (!current || next.length > current.length) {
+      primary[field] = next;
+    }
+  };
+  const mergeDates = (field, preferEarliest = false) => {
+    const currentDate = coerceDate(primary[field]);
+    const nextDate = coerceDate(secondary[field]);
+    if (!nextDate) {
+      primary[field] = currentDate;
+      return;
+    }
+    if (!currentDate) {
+      primary[field] = nextDate;
+      return;
+    }
+    const shouldSwap = preferEarliest ? nextDate < currentDate : nextDate > currentDate;
+    primary[field] = shouldSwap ? nextDate : currentDate;
+  };
+
+  preferLongest("description");
+  preferString("location");
+  preferString("industry");
+  preferString("seniorityLevel");
+  preferString("employmentType");
+  preferString("workModel");
+  preferString("salary");
+  preferString("salaryPeriod");
+  preferString("currency");
+  preferString("externalId");
+  primary.source = pickPreferredSource(primary.source, secondary.source);
+  primary.evidenceSources = mergeStringArrays(primary.evidenceSources, secondary.evidenceSources);
+  primary.coreDuties = mergeStringArrays(primary.coreDuties, secondary.coreDuties);
+  primary.mustHaves = mergeStringArrays(primary.mustHaves, secondary.mustHaves);
+  primary.benefits = mergeStringArrays(primary.benefits, secondary.benefits);
+  mergeDates("postedAt", true);
+  mergeDates("discoveredAt", true);
+  primary.fieldConfidence = mergeFieldConfidenceMaps(primary.fieldConfidence, secondary.fieldConfidence);
+  const normalizedSecondaryConfidence =
+    typeof secondary.overallConfidence === "number"
+      ? Math.min(Math.max(secondary.overallConfidence, 0), 1)
+      : null;
+  if (normalizedSecondaryConfidence !== null) {
+    primary.overallConfidence =
+      typeof primary.overallConfidence === "number"
+        ? Math.max(primary.overallConfidence, normalizedSecondaryConfidence)
+        : normalizedSecondaryConfidence;
+  }
+  return primary;
+}
+
+function extractSnippet(html, startIndex, endIndex, radius = 400) {
+  const from = Math.max(0, startIndex - radius);
+  const to = Math.min(html.length, endIndex + radius);
+  return html.slice(from, to);
+}
+
+function extractLocationFromSnippet(snippet) {
+  if (!snippet) return "";
+  const locationAttr = snippet.match(/data-location=["']([^"']+)["']/i);
+  if (locationAttr?.[1]) {
+    return stripHtml(locationAttr[1]);
+  }
+  const ariaLocation = snippet.match(/aria-label=["'][^"']*Location[:\s-]+([^"']+)["']/i);
+  if (ariaLocation?.[1]) {
+    return stripHtml(ariaLocation[1]);
+  }
+  const locationMatch = stripHtml(snippet)
+    .split(/[\n\r]+/)
+    .map((line) => line.trim())
+    .find((line) => /^location\b/i.test(line));
+  if (locationMatch) {
+    return locationMatch.replace(/^location[:\s-]*/i, "").trim();
+  }
+  const inlineMatch = snippet.match(/location[:\s-]+([^<]{2,120})/i);
+  if (inlineMatch?.[1]) {
+    return inlineMatch[1].trim();
+  }
+  return "";
+}
+
+function extractDescriptionFromSnippet(snippet, fallback = "") {
+  if (!snippet) return fallback;
+  const text = stripHtml(snippet).replace(/\s+/g, " ").trim();
+  if (!text) {
+    return fallback;
+  }
+  if (text.length > 600) {
+    return `${text.slice(0, 600).trim()}…`;
+  }
+  return text;
+}
+
+function extractPostedAtFromSnippet(snippet) {
+  if (!snippet) return null;
+  const datetimeAttr = snippet.match(/datetime=["']([^"']+)["']/i);
+  if (datetimeAttr?.[1]) {
+    const parsed = coerceDate(datetimeAttr[1]);
+    if (parsed) return parsed;
+  }
+  const postedMatch = stripHtml(snippet).match(/posted(?:\s+on|\s*[:\-])\s*([A-Za-z0-9,\s-]+)/i);
+  if (postedMatch?.[1]) {
+    const parsed = coerceDate(postedMatch[1]);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 function extractJobAnchorsFromHtml({ html, baseUrl, company }) {
@@ -776,21 +1005,27 @@ function extractJobAnchorsFromHtml({ html, baseUrl, company }) {
     const href = match[1];
     const text = stripHtml(match[2]);
     if (!href || !text) continue;
-    if (!/career|job|role|opening|position/i.test(text)) continue;
+    if (!/career|job|role|opening|position|opportunity/i.test(text)) continue;
     const url = resolveRelativeUrl(baseUrl, href);
-    if (!url || !isLikelyRealJobUrl(url, company)) continue;
-
-    matches.push({
-      title: sanitizeJobTitle(text),
-      location: "",
-      description: "",
+    if (!url) continue;
+    const snippet = extractSnippet(html, match.index, anchorRegex.lastIndex);
+    const location = extractLocationFromSnippet(snippet);
+    const description = extractDescriptionFromSnippet(snippet, text);
+    const postedAt = extractPostedAtFromSnippet(snippet);
+    const job = buildCandidateJobPayload({
+      company,
+      title: text,
       url,
       source: determineJobSource(url, company),
-      discoveredAt: new Date(),
-      isActive: true
+      location,
+      description,
+      postedAt,
+      evidenceSources: ["career-page-crawler"]
     });
-
-    if (matches.length >= 10) {
+    if (job) {
+      matches.push(job);
+    }
+    if (matches.length >= 20) {
       break;
     }
   }
@@ -874,13 +1109,15 @@ function extractLinkedInJobAnchors({ html, baseUrl, company }) {
     if (!looksLikeLinkedInJobAnchor(href, text)) {
       continue;
     }
+    const snippet = extractSnippet(html, match.index, anchorRegex.lastIndex);
     const job = buildLinkedInJobFromAnchor({
       anchorMarkup: match[0],
       href,
       text,
       baseUrl,
       company,
-      source: "linkedin"
+      source: "linkedin",
+      snippet
     });
     if (job) {
       jobs.push(job);
@@ -901,17 +1138,30 @@ function extractLinkedInPostJobs({ html, baseUrl, company }) {
     const snippetStart = Math.max(0, match.index - 400);
     const snippetEnd = Math.min(html.length, match.index + 600);
     const snippet = html.slice(snippetStart, snippetEnd);
-    const anchorMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/i.exec(snippet);
-    if (!anchorMatch) {
-      continue;
+    let anchorMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/i.exec(snippet);
+    let href;
+    let text;
+    if (anchorMatch) {
+      href = anchorMatch[1];
+      text = stripHtml(anchorMatch[2]);
+    } else {
+      const urlMatch = snippet.match(/https?:\/\/[^\s"'<)]+/i);
+      if (!urlMatch) {
+        continue;
+      }
+      href = urlMatch[0];
+      const plain = stripHtml(snippet);
+      const titleMatch = plain.match(/hiring\s+(?:for|a|an)?\s+([^.!?]{3,120})/i);
+      text = titleMatch?.[1] ?? plain.slice(0, 140);
     }
     const job = buildLinkedInJobFromAnchor({
-      anchorMarkup: anchorMatch[0],
-      href: anchorMatch[1],
-      text: stripHtml(anchorMatch[2]),
+      anchorMarkup: anchorMatch ? anchorMatch[0] : "",
+      href,
+      text,
       baseUrl,
       company,
-      source: "linkedin-post"
+      source: "linkedin-post",
+      snippet
     });
     if (job) {
       jobs.push(job);
@@ -933,7 +1183,7 @@ function looksLikeLinkedInJobAnchor(href = "", text = "") {
   return hasHint || hasKeyword;
 }
 
-function buildLinkedInJobFromAnchor({ anchorMarkup, href, text, baseUrl, company, source }) {
+function buildLinkedInJobFromAnchor({ anchorMarkup, href, text, baseUrl, company, source, snippet }) {
   const url = resolveRelativeUrl(baseUrl, href);
   if (!url) {
     return null;
@@ -971,15 +1221,19 @@ function buildLinkedInJobFromAnchor({ anchorMarkup, href, text, baseUrl, company
     source === "linkedin-post"
       ? "linkedin-post"
       : determineJobSource(url, company) || "linkedin";
-  return {
+  const location = extractLocationFromSnippet(snippet ?? anchorMarkup ?? "");
+  const description = extractDescriptionFromSnippet(snippet ?? anchorMarkup ?? "", text);
+  const postedAt = extractPostedAtFromSnippet(snippet ?? anchorMarkup ?? "");
+  return buildCandidateJobPayload({
+    company,
     title,
-    location: "",
-    description: "",
     url,
     source: jobSource,
-    discoveredAt: new Date(),
-    isActive: true
-  };
+    location,
+    description,
+    postedAt,
+    evidenceSources: [source === "linkedin-post" ? "linkedin-post" : "linkedin-jobs-tab"]
+  });
 }
 
 function inferTitleFromUrl(url) {
@@ -1663,23 +1917,76 @@ export async function saveDiscoveredJobs({ firestore, logger, company, jobs }) {
   if (!Array.isArray(jobs) || jobs.length === 0) {
     return;
   }
+  const ownerUserId = company.createdByUserId ?? DISCOVERED_JOB_OWNER_FALLBACK;
+  if (!company.createdByUserId) {
+    logger?.debug?.(
+      { companyId: company.id },
+      "Using fallback owner for discovered jobs"
+    );
+  }
+  const companyName =
+    company.name && company.name.trim().length > 0
+      ? company.name
+      : deriveCompanyNameFromDomain(company.primaryDomain);
+  const companyLogo =
+    company.logoUrl ??
+    company.brand?.logoUrl ??
+    company.brand?.iconUrl ??
+    "";
   for (const job of jobs) {
-    const jobId = `companyJob_${uuid()}`;
-    const payload = CompanyDiscoveredJobSchema.parse({
+    const now = job.discoveredAt ?? new Date();
+    const jobId = job.id ?? `discoveredJob_${uuid()}`;
+    const payload = JobSchema.parse({
       id: jobId,
+      ownerUserId,
+      orgId: null,
       companyId: company.id,
-      companyDomain: company.primaryDomain,
-      source: job.source ?? "other",
-      externalId: job.externalId ?? null,
-      title: job.title ?? "Untitled role",
+      status: "draft",
+      stateMachine: {
+        currentState: "DRAFT",
+        previousState: null,
+        history: [],
+        requiredComplete: false,
+        optionalComplete: false,
+        lastTransitionAt: now,
+        lockedByRequestId: null
+      },
+      roleTitle: job.title ?? "",
+      companyName,
+      logoUrl: companyLogo,
       location: job.location ?? "",
-      description: job.description ?? "",
-      url: job.url ?? null,
-      postedAt: job.postedAt ?? null,
-      discoveredAt: job.discoveredAt ?? new Date(),
-      isActive: job.isActive ?? true
+      zipCode: "",
+      industry: job.industry ?? company.industry ?? undefined,
+      seniorityLevel: job.seniorityLevel ?? undefined,
+      employmentType: job.employmentType ?? undefined,
+      workModel: job.workModel ?? undefined,
+      jobDescription: job.description ?? "",
+      coreDuties: Array.isArray(job.coreDuties) ? job.coreDuties : [],
+      mustHaves: Array.isArray(job.mustHaves) ? job.mustHaves : [],
+      benefits: Array.isArray(job.benefits) ? job.benefits : [],
+      salary: job.salary ?? undefined,
+      salaryPeriod: job.salaryPeriod ?? undefined,
+      currency: job.currency ?? undefined,
+      confirmed: {},
+      importContext: {
+        source: job.source ?? determineJobSource(job.url, company),
+        externalSource: job.source ?? null,
+        externalUrl: job.url ?? null,
+        sourceUrl: job.url ?? null,
+        companyJobId: job.externalId ?? null,
+        discoveredAt: job.discoveredAt ?? now,
+        originalPostedAt: job.postedAt ?? null,
+        importedAt: now,
+        companyIntelSource: "company-intel-worker",
+        overallConfidence: job.overallConfidence ?? null,
+        fieldConfidence: job.fieldConfidence ?? null,
+        evidenceSources: job.evidenceSources ?? []
+      },
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null
     });
-    await firestore.saveCompanyJob(jobId, payload);
+    await firestore.saveDiscoveredJob(jobId, payload);
     logger?.info?.(
       { companyId: company.id, jobId },
       "Saved discovered company job"
@@ -1730,28 +2037,38 @@ function normalizeIntelJob(job, company) {
   if (!job || typeof job !== "object") {
     return null;
   }
-  const title = sanitizeJobTitle(job.title);
-  const url = normalizeUrl(job.url);
-  if (!title || !url) {
+  const candidate = buildCandidateJobPayload({
+    company,
+    title: job.title,
+    url: job.url,
+    source: job.source ?? "intel-agent",
+    location: sanitizeString(job.location) ?? "",
+    description: sanitizeString(job.description) ?? "",
+    postedAt: job.postedAt ?? null,
+    discoveredAt: job.discoveredAt ?? new Date(),
+    externalId: sanitizeString(job.externalId) || null,
+    evidenceSources: Array.isArray(job.sourceEvidence) ? job.sourceEvidence : [],
+    industry: sanitizeString(job.industry),
+    seniorityLevel: sanitizeString(job.seniorityLevel),
+    employmentType: sanitizeString(job.employmentType),
+    workModel: sanitizeString(job.workModel),
+    salary: sanitizeString(job.salary),
+    salaryPeriod: sanitizeString(job.salaryPeriod),
+    currency: sanitizeString(job.currency),
+    coreDuties: Array.isArray(job.coreDuties) ? job.coreDuties : [],
+    mustHaves: Array.isArray(job.mustHaves) ? job.mustHaves : [],
+    benefits: Array.isArray(job.benefits) ? job.benefits : [],
+    overallConfidence: typeof job.confidence === "number" ? job.confidence : null,
+    fieldConfidence:
+      job.fieldConfidence && typeof job.fieldConfidence === "object"
+        ? job.fieldConfidence
+        : null
+  });
+  if (!candidate) {
     return null;
   }
-  if (!isLikelyRealJobUrl(url, company)) {
-    return null;
-  }
-
-  const postedAt = coerceDate(job.postedAt);
-  const discoveredAt = coerceDate(job.discoveredAt) ?? new Date();
-  return {
-    title,
-    location: typeof job.location === "string" ? job.location.trim() : "",
-    description: typeof job.description === "string" ? job.description.trim() : "",
-    url,
-    source: job.source ?? determineJobSource(url, company),
-    externalId: job.externalId ?? null,
-    postedAt,
-    discoveredAt,
-    isActive: job.isActive ?? true
-  };
+  candidate.source = job.source ?? determineJobSource(candidate.url, company);
+  return candidate;
 }
 
 function normalizeIntelEvidence(evidence = {}) {
@@ -1801,5 +2118,70 @@ function updateFieldEvidence({ company, evidence, field, value, sources = [] }) 
   evidence[field] = {
     value,
     sources: mergedSources
+  };
+}
+function buildCandidateJobPayload({
+  company,
+  title,
+  url,
+  source = "other",
+  location = "",
+  description = "",
+  postedAt = null,
+  discoveredAt = new Date(),
+  externalId = null,
+  evidenceSources = [],
+  industry = null,
+  seniorityLevel = null,
+  employmentType = null,
+  workModel = null,
+  salary = null,
+  salaryPeriod = null,
+  currency = null,
+  coreDuties = [],
+  mustHaves = [],
+  benefits = [],
+  overallConfidence = null,
+  fieldConfidence = null
+}) {
+  const normalizedTitle = sanitizeJobTitle(title);
+  const normalizedUrl = normalizeUrl(url);
+  if (!normalizedTitle || !normalizedUrl) {
+    return null;
+  }
+  if (!isLikelyRealJobUrl(normalizedUrl, company)) {
+    return null;
+  }
+  return {
+    title: normalizedTitle,
+    url: normalizedUrl,
+    location: location?.trim() ?? "",
+    description: description?.trim() ?? "",
+    source,
+    externalId,
+    postedAt: coerceDate(postedAt),
+    discoveredAt: coerceDate(discoveredAt) ?? new Date(),
+    isActive: true,
+    evidenceSources: Array.from(
+      new Set((Array.isArray(evidenceSources) ? evidenceSources : []).filter(Boolean))
+    ),
+    industry: industry ?? null,
+    seniorityLevel: seniorityLevel ?? null,
+    employmentType: employmentType ?? null,
+    workModel: workModel ?? null,
+    salary: salary ?? null,
+    salaryPeriod: salaryPeriod ?? null,
+    currency: currency ?? null,
+    coreDuties: Array.isArray(coreDuties) ? coreDuties.filter(Boolean) : [],
+    mustHaves: Array.isArray(mustHaves) ? mustHaves.filter(Boolean) : [],
+    benefits: Array.isArray(benefits) ? benefits.filter(Boolean) : [],
+    overallConfidence:
+      typeof overallConfidence === "number"
+        ? Math.min(Math.max(overallConfidence, 0), 1)
+        : null,
+    fieldConfidence:
+      fieldConfidence && typeof fieldConfidence === "object"
+        ? fieldConfidence
+        : null
   };
 }

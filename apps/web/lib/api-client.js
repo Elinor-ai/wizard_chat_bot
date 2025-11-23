@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CompanySchema, CompanyDiscoveredJobSchema, UserSchema } from "@wizard/core";
+import { CompanySchema, UserSchema } from "@wizard/core";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
@@ -10,7 +10,7 @@ const valueSchema = z.union([
   z.boolean(),
   z.record(z.string(), z.unknown()),
   z.array(z.unknown()),
-  z.null()
+  z.null(),
 ]);
 
 const suggestionSchema = z.object({
@@ -18,7 +18,7 @@ const suggestionSchema = z.object({
   value: valueSchema,
   rationale: z.string().optional(),
   confidence: z.number().optional(),
-  source: z.string().optional()
+  source: z.string().optional(),
 });
 
 const suggestionFailureSchema = z
@@ -26,7 +26,7 @@ const suggestionFailureSchema = z
     reason: z.string(),
     rawPreview: z.string().optional().nullable(),
     error: z.string().optional().nullable(),
-    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional()
+    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional(),
   })
   .transform((data) => ({
     reason: data.reason,
@@ -36,8 +36,8 @@ const suggestionFailureSchema = z
       data.occurredAt instanceof Date
         ? data.occurredAt
         : data.occurredAt
-        ? new Date(data.occurredAt)
-        : null
+          ? new Date(data.occurredAt)
+          : null,
   }));
 
 const copilotSuggestionResponseSchema = z
@@ -46,20 +46,20 @@ const copilotSuggestionResponseSchema = z
     suggestions: z.array(suggestionSchema).optional(),
     updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
     refreshed: z.boolean().optional(),
-    failure: suggestionFailureSchema.optional().nullable()
+    failure: suggestionFailureSchema.optional().nullable(),
   })
   .transform((data) => ({
     jobId: data.jobId ?? null,
     suggestions: data.suggestions ?? [],
     updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
     refreshed: Boolean(data.refreshed),
-    failure: data.failure ?? null
+    failure: data.failure ?? null,
   }));
 
 const channelRecommendationSchema = z.object({
   channel: z.string(),
   reason: z.string(),
-  expectedCPA: z.number().optional()
+  expectedCPA: z.number().optional(),
 });
 
 const channelRecommendationFailureSchema = z
@@ -67,7 +67,7 @@ const channelRecommendationFailureSchema = z
     reason: z.string(),
     message: z.string().optional().nullable(),
     rawPreview: z.string().optional().nullable(),
-    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional()
+    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional(),
   })
   .transform((data) => ({
     reason: data.reason,
@@ -77,8 +77,8 @@ const channelRecommendationFailureSchema = z
       data.occurredAt instanceof Date
         ? data.occurredAt
         : data.occurredAt
-        ? new Date(data.occurredAt)
-        : null
+          ? new Date(data.occurredAt)
+          : null,
   }));
 
 const channelRecommendationResponseSchema = z
@@ -87,14 +87,14 @@ const channelRecommendationResponseSchema = z
     recommendations: z.array(channelRecommendationSchema).optional(),
     updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
     refreshed: z.boolean().optional(),
-    failure: channelRecommendationFailureSchema.optional().nullable()
+    failure: channelRecommendationFailureSchema.optional().nullable(),
   })
   .transform((data) => ({
     jobId: data.jobId,
     recommendations: data.recommendations ?? [],
     updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
     refreshed: Boolean(data.refreshed),
-    failure: data.failure ?? null
+    failure: data.failure ?? null,
   }));
 
 const jobAssetFailureSchema = z
@@ -102,7 +102,7 @@ const jobAssetFailureSchema = z
     reason: z.string(),
     message: z.string().optional().nullable(),
     rawPreview: z.string().optional().nullable(),
-    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional()
+    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional(),
   })
   .transform((data) => ({
     reason: data.reason,
@@ -112,7 +112,7 @@ const jobAssetFailureSchema = z
       ? data.occurredAt instanceof Date
         ? data.occurredAt
         : new Date(data.occurredAt)
-      : null
+      : null,
   }));
 
 const jobAssetSchema = z
@@ -128,7 +128,10 @@ const jobAssetSchema = z
     llmRationale: z.string().nullable().optional(),
     content: z.record(z.string(), z.unknown()).optional(),
     failure: jobAssetFailureSchema.optional().nullable(),
-    updatedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional()
+    updatedAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
   })
   .transform((data) => ({
     ...data,
@@ -136,8 +139,48 @@ const jobAssetSchema = z
       ? data.updatedAt instanceof Date
         ? data.updatedAt
         : new Date(data.updatedAt)
-      : null
+      : null,
   }));
+
+const jobImportContextSchema = z
+  .object({
+    source: z.string().optional(),
+    externalSource: z.string().optional(),
+    externalUrl: z.string().optional(),
+    sourceUrl: z.string().optional(),
+    companyJobId: z.string().optional(),
+    companyIntelSource: z.string().optional(),
+    discoveredAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
+    originalPostedAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
+    importedAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
+    overallConfidence: z.number().optional(),
+    fieldConfidence: z.record(z.number()).optional(),
+    evidenceSources: z.array(z.string()).optional(),
+  })
+  .partial()
+  .nullable()
+  .transform((data) => {
+    if (!data) {
+      return null;
+    }
+    const toDate = (value) =>
+      value ? (value instanceof Date ? value : new Date(value)) : null;
+    return {
+      ...data,
+      discoveredAt: toDate(data.discoveredAt ?? null),
+      originalPostedAt: toDate(data.originalPostedAt ?? null),
+      importedAt: toDate(data.importedAt ?? null),
+    };
+  });
 
 const jobAssetRunSchema = z
   .object({
@@ -151,18 +194,24 @@ const jobAssetRunSchema = z
         assetsPlanned: z.number().optional().nullable(),
         assetsCompleted: z.number().optional().nullable(),
         promptTokens: z.number().optional().nullable(),
-        responseTokens: z.number().optional().nullable()
+        responseTokens: z.number().optional().nullable(),
       })
       .optional(),
-    startedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional(),
-    completedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional(),
+    startedAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
+    completedAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
     error: z
       .object({
         reason: z.string(),
-        message: z.string().nullable().optional()
+        message: z.string().nullable().optional(),
       })
       .nullable()
-      .optional()
+      .optional(),
   })
   .transform((data) => ({
     ...data,
@@ -177,27 +226,65 @@ const jobAssetRunSchema = z
       ? data.completedAt instanceof Date
         ? data.completedAt
         : new Date(data.completedAt)
-      : null
+      : null,
   }));
 
 const jobAssetResponseSchema = z.object({
   jobId: z.string(),
   assets: z.array(jobAssetSchema).default([]),
-  run: jobAssetRunSchema.nullable().optional()
+  run: jobAssetRunSchema.nullable().optional(),
 });
 
 const companyOverviewResponseSchema = z.object({
   company: CompanySchema,
-  hasDiscoveredJobs: z.boolean().optional().default(false)
+  hasDiscoveredJobs: z.boolean().optional().default(false),
 });
+
+const discoveredJobListItemSchema = z
+  .object({
+    id: z.string(),
+    roleTitle: z.string().optional(),
+    location: z.string().optional(),
+    status: z.string().nullable().optional(),
+    source: z.string().nullable().optional(),
+    externalUrl: z.string().nullable().optional(),
+    importContext: jobImportContextSchema.optional(),
+    createdAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
+    updatedAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
+  })
+  .transform((data) => ({
+    id: data.id,
+    roleTitle: data.roleTitle ?? "",
+    location: data.location ?? "",
+    status: data.status ?? null,
+    source: data.source ?? null,
+    externalUrl: data.externalUrl ?? null,
+    importContext: data.importContext ?? null,
+    createdAt: data.createdAt
+      ? data.createdAt instanceof Date
+        ? data.createdAt
+        : new Date(data.createdAt)
+      : null,
+    updatedAt: data.updatedAt
+      ? data.updatedAt instanceof Date
+        ? data.updatedAt
+        : new Date(data.updatedAt)
+      : null,
+  }));
 
 const companyJobsResponseSchema = z.object({
   companyId: z.string().nullable(),
-  jobs: z.array(CompanyDiscoveredJobSchema).default([])
+  jobs: z.array(discoveredJobListItemSchema).default([]),
 });
 
 const companyListResponseSchema = z.object({
-  companies: z.array(CompanySchema).default([])
+  companies: z.array(CompanySchema).default([]),
 });
 
 const userResponseSchema = UserSchema;
@@ -216,13 +303,13 @@ const subscriptionPlanSchema = z.object({
   perks: z.array(z.string()).default([]),
   badge: z.string().optional().nullable(),
   effectiveUsdPerCredit: z.number().optional().nullable(),
-  markupMultiplier: z.number().optional().nullable()
+  markupMultiplier: z.number().optional().nullable(),
 });
 
 const subscriptionPlanListResponseSchema = z.object({
   plans: z.array(subscriptionPlanSchema).default([]),
   currency: z.string().default("USD"),
-  usdPerCredit: z.number().optional().nullable()
+  usdPerCredit: z.number().optional().nullable(),
 });
 
 const subscriptionPurchaseResponseSchema = z
@@ -241,30 +328,30 @@ const subscriptionPurchaseResponseSchema = z
         paymentMethod: z
           .object({
             brand: z.string().optional().nullable(),
-            last4: z.string().optional().nullable()
+            last4: z.string().optional().nullable(),
           })
-          .optional()
+          .optional(),
       })
       .nullable(),
     credits: z
       .object({
         balance: z.number(),
         reserved: z.number(),
-        lifetimeUsed: z.number()
+        lifetimeUsed: z.number(),
       })
       .optional(),
     usage: z
       .object({
-        remainingCredits: z.number().optional()
+        remainingCredits: z.number().optional(),
       })
       .passthrough()
       .optional(),
     user: z
       .object({
-        id: z.string()
+        id: z.string(),
       })
       .passthrough()
-      .optional()
+      .optional(),
   })
   .transform((data) => ({
     ...data,
@@ -275,22 +362,22 @@ const subscriptionPurchaseResponseSchema = z
             ? data.purchase.processedAt instanceof Date
               ? data.purchase.processedAt
               : new Date(data.purchase.processedAt)
-            : null
+            : null,
         }
-      : null
+      : null,
   }));
 
 const companyUpdateResponseSchema = z.object({
-  company: CompanySchema
+  company: CompanySchema,
 });
 
 const companyCreateResponseSchema = z.object({
-  company: CompanySchema
+  company: CompanySchema,
 });
 
 const setMainCompanyResponseSchema = z.object({
   success: z.boolean().optional(),
-  mainCompanyId: z.string()
+  mainCompanyId: z.string(),
 });
 
 const jobDetailsSchema = z
@@ -309,7 +396,7 @@ const jobDetailsSchema = z
     benefits: z.array(z.string()).optional().nullable(),
     salary: z.string().optional().nullable(),
     salaryPeriod: z.string().optional().nullable(),
-    currency: z.string().optional().nullable()
+    currency: z.string().optional().nullable(),
   })
   .transform((data) => ({
     roleTitle: data.roleTitle ?? "",
@@ -326,7 +413,7 @@ const jobDetailsSchema = z
     benefits: Array.isArray(data.benefits) ? data.benefits : [],
     salary: data.salary ?? "",
     salaryPeriod: data.salaryPeriod ?? "",
-    currency: data.currency ?? ""
+    currency: data.currency ?? "",
   }));
 
 const refinementFailureSchema = z
@@ -334,7 +421,7 @@ const refinementFailureSchema = z
     reason: z.string(),
     message: z.string().optional().nullable(),
     rawPreview: z.string().optional().nullable(),
-    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional()
+    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional(),
   })
   .transform((data) => ({
     reason: data.reason,
@@ -344,8 +431,8 @@ const refinementFailureSchema = z
       data.occurredAt instanceof Date
         ? data.occurredAt
         : data.occurredAt
-        ? new Date(data.occurredAt)
-        : null
+          ? new Date(data.occurredAt)
+          : null,
   }));
 
 const refinementResponseSchema = z
@@ -358,7 +445,7 @@ const refinementResponseSchema = z
     model: z.string().optional().nullable(),
     updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
     refreshed: z.boolean().optional(),
-    failure: refinementFailureSchema.optional().nullable()
+    failure: refinementFailureSchema.optional().nullable(),
   })
   .transform((data) => ({
     jobId: data.jobId,
@@ -369,7 +456,7 @@ const refinementResponseSchema = z
     model: data.model ?? null,
     updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
     refreshed: Boolean(data.refreshed),
-    failure: data.failure ?? null
+    failure: data.failure ?? null,
   }));
 
 const finalizeResponseSchema = z
@@ -377,11 +464,9 @@ const finalizeResponseSchema = z
     jobId: z.string(),
     finalJob: jobDetailsSchema,
     source: z.string().optional().nullable(),
-    channelRecommendations: z
-      .array(channelRecommendationSchema)
-      .optional(),
+    channelRecommendations: z.array(channelRecommendationSchema).optional(),
     channelUpdatedAt: z.union([z.string(), z.date()]).nullable().optional(),
-    channelFailure: channelRecommendationFailureSchema.optional().nullable()
+    channelFailure: channelRecommendationFailureSchema.optional().nullable(),
   })
   .transform((data) => ({
     jobId: data.jobId,
@@ -391,7 +476,7 @@ const finalizeResponseSchema = z
     channelUpdatedAt: data.channelUpdatedAt
       ? new Date(data.channelUpdatedAt)
       : null,
-    channelFailure: data.channelFailure ?? null
+    channelFailure: data.channelFailure ?? null,
   }));
 
 const persistResponseSchema = z
@@ -401,7 +486,7 @@ const persistResponseSchema = z
     status: z.string(),
     state: z.string().optional(),
     companyId: z.string().nullable().optional(),
-    intake: z.record(z.string(), z.unknown()).optional()
+    intake: z.record(z.string(), z.unknown()).optional(),
   })
   .transform((data) => {
     const jobId = data.jobId ?? data.draftId;
@@ -413,12 +498,12 @@ const persistResponseSchema = z
       status: data.status,
       state: data.state ?? null,
       companyId: data.companyId ?? null,
-      intake: data.intake ?? null
+      intake: data.intake ?? null,
     };
   });
 
 const mergeResponseSchema = z.object({
-  status: z.string()
+  status: z.string(),
 });
 
 const copilotMessageSchema = z
@@ -428,14 +513,14 @@ const copilotMessageSchema = z
     type: z.string().optional().nullable(),
     content: z.string(),
     createdAt: z.union([z.string(), z.instanceof(Date)]),
-    metadata: z.record(z.string(), z.unknown()).optional().nullable()
+    metadata: z.record(z.string(), z.unknown()).optional().nullable(),
   })
   .transform((data) => ({
     ...data,
     createdAt:
       data.createdAt instanceof Date
         ? data.createdAt
-        : new Date(data.createdAt)
+        : new Date(data.createdAt),
   }));
 
 const copilotConversationResponseSchema = z.object({
@@ -446,10 +531,10 @@ const copilotConversationResponseSchema = z.object({
       z.object({
         type: z.string(),
         fieldId: z.string().optional(),
-        value: z.unknown().optional()
+        value: z.unknown().optional(),
       })
     )
-    .optional()
+    .optional(),
 });
 
 const dashboardSummarySchema = z.object({
@@ -458,35 +543,35 @@ const dashboardSummarySchema = z.object({
     active: z.number(),
     awaitingApproval: z.number(),
     draft: z.number(),
-    states: z.record(z.string(), z.number())
+    states: z.record(z.string(), z.number()),
   }),
   assets: z.object({
     total: z.number(),
     approved: z.number(),
-    queued: z.number()
+    queued: z.number(),
   }),
   campaigns: z.object({
     total: z.number(),
     live: z.number(),
-    planned: z.number()
+    planned: z.number(),
   }),
   credits: z.object({
     balance: z.number(),
     reserved: z.number(),
-    lifetimeUsed: z.number()
+    lifetimeUsed: z.number(),
   }),
   usage: z.object({
     tokens: z.number(),
     applies: z.number(),
     interviews: z.number(),
     hires: z.number(),
-    remainingCredits: z.number().optional().default(0)
+    remainingCredits: z.number().optional().default(0),
   }),
-  updatedAt: z.string()
+  updatedAt: z.string(),
 });
 
 const dashboardSummaryResponseSchema = z.object({
-  summary: dashboardSummarySchema
+  summary: dashboardSummarySchema,
 });
 
 const dashboardCampaignSchema = z.object({
@@ -498,13 +583,15 @@ const dashboardCampaignSchema = z.object({
   status: z.string(),
   budget: z.number(),
   objective: z.string(),
-  createdAt: z.union([z.string(), z.instanceof(Date)]).transform((value) =>
-    value instanceof Date ? value.toISOString() : value
-  )
+  createdAt: z
+    .union([z.string(), z.instanceof(Date)])
+    .transform((value) =>
+      value instanceof Date ? value.toISOString() : value
+    ),
 });
 
 const dashboardCampaignResponseSchema = z.object({
-  campaigns: z.array(dashboardCampaignSchema)
+  campaigns: z.array(dashboardCampaignSchema),
 });
 
 const dashboardLedgerEntrySchema = z.object({
@@ -514,13 +601,15 @@ const dashboardLedgerEntrySchema = z.object({
   workflow: z.string(),
   amount: z.number(),
   status: z.string(),
-  occurredAt: z.union([z.string(), z.instanceof(Date)]).transform((value) =>
-    value instanceof Date ? value.toISOString() : value
-  )
+  occurredAt: z
+    .union([z.string(), z.instanceof(Date)])
+    .transform((value) =>
+      value instanceof Date ? value.toISOString() : value
+    ),
 });
 
 const dashboardLedgerResponseSchema = z.object({
-  entries: z.array(dashboardLedgerEntrySchema)
+  entries: z.array(dashboardLedgerEntrySchema),
 });
 
 const dashboardActivityEventSchema = z.object({
@@ -528,62 +617,43 @@ const dashboardActivityEventSchema = z.object({
   type: z.string(),
   title: z.string(),
   detail: z.string(),
-  occurredAt: z.union([z.string(), z.instanceof(Date)]).transform((value) =>
-    value instanceof Date ? value.toISOString() : value
-  )
+  occurredAt: z
+    .union([z.string(), z.instanceof(Date)])
+    .transform((value) =>
+      value instanceof Date ? value.toISOString() : value
+    ),
 });
 
 const dashboardActivityResponseSchema = z.object({
-  events: z.array(dashboardActivityEventSchema)
+  events: z.array(dashboardActivityEventSchema),
 });
-
-const jobImportContextSchema = z
-  .object({
-    source: z.string().optional(),
-    externalSource: z.string().optional(),
-    externalUrl: z.string().optional(),
-    companyJobId: z.string().optional(),
-    importedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional()
-  })
-  .partial()
-  .nullable()
-  .transform((data) => {
-    if (!data) {
-      return null;
-    }
-    return {
-      ...data,
-      importedAt: data.importedAt
-        ? data.importedAt instanceof Date
-          ? data.importedAt
-          : new Date(data.importedAt)
-        : null
-    };
-  });
 
 const wizardJobResponseSchema = z
   .object({
     jobId: z.string(),
     state: z.record(z.string(), z.unknown()).optional(),
     includeOptional: z.boolean().optional(),
-    updatedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional(),
+    updatedAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
     status: z.string().nullable().optional(),
     companyId: z.string().nullable().optional(),
-    importContext: jobImportContextSchema.optional()
+    importContext: jobImportContextSchema.optional(),
   })
   .transform((data) => ({
-      jobId: data.jobId,
-      state: data.state ?? {},
-      includeOptional: Boolean(data.includeOptional),
-      updatedAt: data.updatedAt
-        ? data.updatedAt instanceof Date
-          ? data.updatedAt
-          : new Date(data.updatedAt)
-        : null,
-      status: data.status ?? null,
-      companyId: data.companyId ?? null,
-      importContext: data.importContext ?? null
-    }));
+    jobId: data.jobId,
+    state: data.state ?? {},
+    includeOptional: Boolean(data.includeOptional),
+    updatedAt: data.updatedAt
+      ? data.updatedAt instanceof Date
+        ? data.updatedAt
+        : new Date(data.updatedAt)
+      : null,
+    status: data.status ?? null,
+    companyId: data.companyId ?? null,
+    importContext: data.importContext ?? null,
+  }));
 
 const heroImageSchema = z
   .object({
@@ -602,12 +672,18 @@ const heroImageSchema = z
         reason: z.string(),
         message: z.string().nullable().optional(),
         rawPreview: z.string().nullable().optional(),
-        occurredAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional()
+        occurredAt: z
+          .union([z.string(), z.instanceof(Date)])
+          .nullable()
+          .optional(),
       })
       .nullable()
       .optional(),
     metadata: z.record(z.string(), z.unknown()).nullable().optional(),
-    updatedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional()
+    updatedAt: z
+      .union([z.string(), z.instanceof(Date)])
+      .nullable()
+      .optional(),
   })
   .transform((data) => ({
     ...data,
@@ -623,9 +699,9 @@ const heroImageSchema = z
             ? data.failure.occurredAt instanceof Date
               ? data.failure.occurredAt
               : new Date(data.failure.occurredAt)
-            : null
+            : null,
         }
-      : null
+      : null,
   }));
 
 function authHeaders(authToken) {
@@ -633,7 +709,7 @@ function authHeaders(authToken) {
     return {};
   }
   return {
-    Authorization: `Bearer ${authToken}`
+    Authorization: `Bearer ${authToken}`,
   };
 }
 
@@ -641,8 +717,8 @@ export const WizardApi = {
   async fetchJob(jobId, options = {}) {
     const response = await fetch(`${API_BASE_URL}/wizard/${jobId}`, {
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (!response.ok) {
@@ -670,9 +746,9 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -697,18 +773,20 @@ export const WizardApi = {
 
   async fetchSuggestions(payload, options = {}) {
     const normalizedJobId =
-      options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
+      options.jobId === null || options.jobId === undefined
+        ? payload.jobId
+        : options.jobId;
     const response = await fetch(`${API_BASE_URL}/wizard/suggestions`, {
       method: "POST",
       signal: options.signal,
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
         ...payload,
-        jobId: normalizedJobId
-      })
+        jobId: normalizedJobId,
+      }),
     });
 
     if (!response.ok) {
@@ -721,18 +799,23 @@ export const WizardApi = {
 
   async fetchChannelRecommendations(payload, options = {}) {
     const normalizedJobId =
-      options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
-    const response = await fetch(`${API_BASE_URL}/wizard/channels/recommendations`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
-      },
-      body: JSON.stringify({
-        ...payload,
-        jobId: normalizedJobId
-      })
-    });
+      options.jobId === null || options.jobId === undefined
+        ? payload.jobId
+        : options.jobId;
+    const response = await fetch(
+      `${API_BASE_URL}/wizard/channels/recommendations`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(options.authToken),
+        },
+        body: JSON.stringify({
+          ...payload,
+          jobId: normalizedJobId,
+        }),
+      }
+    );
 
     if (!response.ok) {
       let message = "Channel recommendation fetch failed";
@@ -762,8 +845,8 @@ export const WizardApi = {
       `${API_BASE_URL}/wizard/hero-image?jobId=${encodeURIComponent(jobId)}`,
       {
         headers: {
-          ...authHeaders(options.authToken)
-        }
+          ...authHeaders(options.authToken),
+        },
       }
     );
     if (!response.ok) {
@@ -772,7 +855,7 @@ export const WizardApi = {
     const data = await response.json();
     return {
       jobId: data.jobId,
-      heroImage: data.heroImage ? heroImageSchema.parse(data.heroImage) : null
+      heroImage: data.heroImage ? heroImageSchema.parse(data.heroImage) : null,
     };
   },
 
@@ -781,9 +864,9 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
     if (!response.ok) {
       let message = "Image generation failed";
@@ -803,7 +886,7 @@ export const WizardApi = {
     const data = await response.json();
     return {
       jobId: data.jobId,
-      heroImage: data.heroImage ? heroImageSchema.parse(data.heroImage) : null
+      heroImage: data.heroImage ? heroImageSchema.parse(data.heroImage) : null,
     };
   },
 
@@ -816,8 +899,8 @@ export const WizardApi = {
       {
         method: "GET",
         headers: {
-          ...authHeaders(options.authToken)
-        }
+          ...authHeaders(options.authToken),
+        },
       }
     );
 
@@ -846,9 +929,9 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -873,17 +956,19 @@ export const WizardApi = {
 
   async refineJob(payload, options = {}) {
     const normalizedJobId =
-      options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
+      options.jobId === null || options.jobId === undefined
+        ? payload.jobId
+        : options.jobId;
     const response = await fetch(`${API_BASE_URL}/wizard/refine`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
         ...payload,
-        jobId: normalizedJobId
-      })
+        jobId: normalizedJobId,
+      }),
     });
 
     if (!response.ok) {
@@ -908,17 +993,19 @@ export const WizardApi = {
 
   async finalizeJob(payload, options = {}) {
     const normalizedJobId =
-      options.jobId === null || options.jobId === undefined ? payload.jobId : options.jobId;
+      options.jobId === null || options.jobId === undefined
+        ? payload.jobId
+        : options.jobId;
     const response = await fetch(`${API_BASE_URL}/wizard/refine/finalize`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
         ...payload,
-        jobId: normalizedJobId
-      })
+        jobId: normalizedJobId,
+      }),
     });
 
     if (!response.ok) {
@@ -943,20 +1030,22 @@ export const WizardApi = {
 
   async persistJob(state, options = {}) {
     const normalizedJobId =
-      options.jobId === null || options.jobId === undefined ? undefined : options.jobId;
+      options.jobId === null || options.jobId === undefined
+        ? undefined
+        : options.jobId;
     const response = await fetch(`${API_BASE_URL}/wizard/draft`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
         state,
         jobId: normalizedJobId,
         intent: options.intent ?? {},
         currentStepId: options.currentStepId,
-        companyId: options.companyId ?? null
-      })
+        companyId: options.companyId ?? null,
+      }),
     });
 
     if (!response.ok) {
@@ -972,9 +1061,9 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -987,12 +1076,15 @@ export const WizardApi = {
 
   async fetchCopilotConversation(jobId, options = {}) {
     const params = new URLSearchParams({ jobId });
-    const response = await fetch(`${API_BASE_URL}/wizard/copilot/chat?${params.toString()}`, {
-      method: "GET",
-      headers: {
-        ...authHeaders(options.authToken)
+    const response = await fetch(
+      `${API_BASE_URL}/wizard/copilot/chat?${params.toString()}`,
+      {
+        method: "GET",
+        headers: {
+          ...authHeaders(options.authToken),
+        },
       }
-    });
+    );
 
     if (!response.ok) {
       throw new Error("Failed to load copilot conversation");
@@ -1007,9 +1099,9 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -1024,8 +1116,8 @@ export const WizardApi = {
     const response = await fetch(`${API_BASE_URL}/companies/me`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (response.status === 404) {
@@ -1044,14 +1136,14 @@ export const WizardApi = {
     const response = await fetch(`${API_BASE_URL}/companies/me/jobs`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (response.status === 404) {
       return {
         companyId: null,
-        jobs: []
+        jobs: [],
       };
     }
 
@@ -1067,12 +1159,15 @@ export const WizardApi = {
     if (!companyId) {
       throw new Error("companyId is required");
     }
-    const response = await fetch(`${API_BASE_URL}/companies/my-companies/${companyId}/jobs`, {
-      method: "GET",
-      headers: {
-        ...authHeaders(options.authToken)
+    const response = await fetch(
+      `${API_BASE_URL}/companies/my-companies/${companyId}/jobs`,
+      {
+        method: "GET",
+        headers: {
+          ...authHeaders(options.authToken),
+        },
       }
-    });
+    );
 
     if (!response.ok) {
       throw new Error("Failed to load discovered jobs for company");
@@ -1087,9 +1182,9 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -1111,14 +1206,17 @@ export const WizardApi = {
   },
 
   async confirmCompanyProfile(payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/companies/me/confirm-profile`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
-      },
-      body: JSON.stringify(payload)
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/companies/me/confirm-profile`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(options.authToken),
+        },
+        body: JSON.stringify(payload),
+      }
+    );
 
     if (!response.ok) {
       let message = "Unable to confirm company profile";
@@ -1142,8 +1240,8 @@ export const WizardApi = {
     const response = await fetch(`${API_BASE_URL}/companies/my-companies`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (!response.ok) {
@@ -1155,14 +1253,17 @@ export const WizardApi = {
   },
 
   async updateCompany(companyId, payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/companies/my-companies/${companyId}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
-      },
-      body: JSON.stringify(payload)
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/companies/my-companies/${companyId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(options.authToken),
+        },
+        body: JSON.stringify(payload),
+      }
+    );
 
     if (!response.ok) {
       let message = "Unable to update company";
@@ -1187,9 +1288,9 @@ export const WizardApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -1215,9 +1316,9 @@ export const WizardApi = {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify({ companyId })
+      body: JSON.stringify({ companyId }),
     });
 
     if (!response.ok) {
@@ -1236,7 +1337,7 @@ export const WizardApi = {
 
     const data = await response.json();
     return setMainCompanyResponseSchema.parse(data);
-  }
+  },
 };
 
 export const DashboardApi = {
@@ -1244,8 +1345,8 @@ export const DashboardApi = {
     const response = await fetch(`${API_BASE_URL}/dashboard/summary`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (!response.ok) {
@@ -1260,8 +1361,8 @@ export const DashboardApi = {
     const response = await fetch(`${API_BASE_URL}/dashboard/campaigns`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (!response.ok) {
@@ -1276,8 +1377,8 @@ export const DashboardApi = {
     const response = await fetch(`${API_BASE_URL}/dashboard/ledger`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (!response.ok) {
@@ -1292,8 +1393,8 @@ export const DashboardApi = {
     const response = await fetch(`${API_BASE_URL}/dashboard/activity`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (!response.ok) {
@@ -1302,7 +1403,7 @@ export const DashboardApi = {
 
     const data = await response.json();
     return dashboardActivityResponseSchema.parse(data).events;
-  }
+  },
 };
 
 export const UsersApi = {
@@ -1310,8 +1411,8 @@ export const UsersApi = {
     const response = await fetch(`${API_BASE_URL}/users/me`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (!response.ok) {
@@ -1320,7 +1421,7 @@ export const UsersApi = {
 
     const data = await response.json();
     return userResponseSchema.parse(data);
-  }
+  },
 };
 
 export const SubscriptionApi = {
@@ -1328,8 +1429,8 @@ export const SubscriptionApi = {
     const response = await fetch(`${API_BASE_URL}/subscriptions/plans`, {
       method: "GET",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (!response.ok) {
@@ -1345,9 +1446,9 @@ export const SubscriptionApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -1357,13 +1458,13 @@ export const SubscriptionApi = {
 
     const data = await response.json();
     return subscriptionPurchaseResponseSchema.parse(data);
-  }
+  },
 };
 
 const videoThumbnailSchema = z
   .object({
     description: z.string().optional().nullable(),
-    overlayText: z.string().optional().nullable()
+    overlayText: z.string().optional().nullable(),
   })
   .optional()
   .transform((data) => data ?? null);
@@ -1376,7 +1477,7 @@ const videoJobSnapshotSchema = z.object({
   locationPolicy: z.string().nullable().optional(),
   payRange: z.string().nullable().optional(),
   benefits: z.array(z.string()).default([]),
-  roleFamily: z.string().nullable().optional()
+  roleFamily: z.string().nullable().optional(),
 });
 
 const storyboardShotSchema = z.object({
@@ -1387,12 +1488,12 @@ const storyboardShotSchema = z.object({
   durationSeconds: z.number(),
   visual: z.string().optional().nullable(),
   onScreenText: z.string().optional().nullable(),
-  voiceOver: z.string().optional().nullable()
+  voiceOver: z.string().optional().nullable(),
 });
 
 const videoCaptionSchema = z.object({
   text: z.string(),
-  hashtags: z.array(z.string()).default([])
+  hashtags: z.array(z.string()).default([]),
 });
 
 const videoManifestSchema = z.object({
@@ -1411,7 +1512,7 @@ const videoManifestSchema = z.object({
             id: z.string(),
             label: z.string(),
             severity: z.string(),
-            details: z.string().nullable().optional()
+            details: z.string().nullable().optional(),
           })
         )
         .default([]),
@@ -1421,10 +1522,10 @@ const videoManifestSchema = z.object({
             id: z.string(),
             label: z.string(),
             status: z.string(),
-            details: z.string().nullable().optional()
+            details: z.string().nullable().optional(),
           })
         )
-        .default([])
+        .default([]),
     })
     .default({ flags: [], qaChecklist: [] }),
   tracking: z
@@ -1432,9 +1533,9 @@ const videoManifestSchema = z.object({
       utmSource: z.string(),
       utmMedium: z.string(),
       utmCampaign: z.string(),
-      utmContent: z.string()
+      utmContent: z.string(),
     })
-    .optional()
+    .optional(),
 });
 
 const generationMetricsSchema = z
@@ -1445,7 +1546,7 @@ const generationMetricsSchema = z
     model: z.string().nullable().optional(),
     tier: z.string().nullable().optional(),
     costEstimateUsd: z.number().nullable().optional(),
-    synthIdWatermark: z.boolean().nullable().optional()
+    synthIdWatermark: z.boolean().nullable().optional(),
   })
   .nullable()
   .optional();
@@ -1456,7 +1557,7 @@ const veoStateSchema = z
     status: z.string().default("none"),
     attempts: z.number().nullable().optional(),
     lastFetchAt: z.union([z.string(), z.date()]).nullable().optional(),
-    hash: z.string().nullable().optional()
+    hash: z.string().nullable().optional(),
   })
   .nullable()
   .optional();
@@ -1473,7 +1574,7 @@ const videoListItemSchema = z.object({
   durationSeconds: z.number().nullable().optional(),
   updatedAt: z.union([z.string(), z.date()]).optional(),
   thumbnail: videoThumbnailSchema,
-  hasVideo: z.boolean().optional().default(false)
+  hasVideo: z.boolean().optional().default(false),
 });
 
 const videoDetailSchema = z.object({
@@ -1497,7 +1598,7 @@ const videoDetailSchema = z.object({
         id: z.string(),
         type: z.string(),
         message: z.string(),
-        occurredAt: z.union([z.string(), z.date()])
+        occurredAt: z.union([z.string(), z.date()]),
       })
     )
     .default([]),
@@ -1517,19 +1618,19 @@ const videoDetailSchema = z.object({
             .array(
               z.object({
                 hop: z.number().optional(),
-                clipId: z.string().nullable().optional()
+                clipId: z.string().nullable().optional(),
               })
             )
-            .optional()
+            .optional(),
         })
         .nullable()
-        .optional()
+        .optional(),
     })
     .nullable()
     .optional(),
   trackingString: z.string().nullable().optional(),
   createdAt: z.union([z.string(), z.date()]).optional(),
-  updatedAt: z.union([z.string(), z.date()]).optional()
+  updatedAt: z.union([z.string(), z.date()]).optional(),
 });
 
 const videoJobsResponseSchema = z.object({
@@ -1541,10 +1642,10 @@ const videoJobsResponseSchema = z.object({
         company: z.string().nullable().optional(),
         location: z.string().optional(),
         payRange: z.string().nullable().optional(),
-        benefits: z.array(z.string()).default([])
+        benefits: z.array(z.string()).default([]),
       })
     )
-    .default([])
+    .default([]),
 });
 
 export const VideoLibraryApi = {
@@ -1557,8 +1658,8 @@ export const VideoLibraryApi = {
     const query = params.toString() ? `?${params.toString()}` : "";
     const response = await fetch(`${API_BASE_URL}/videos${query}`, {
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
 
     if (!response.ok) {
@@ -1566,18 +1667,20 @@ export const VideoLibraryApi = {
     }
 
     const data = await response.json();
-    const parsed = z.object({ items: z.array(videoListItemSchema).default([]) }).parse(data);
+    const parsed = z
+      .object({ items: z.array(videoListItemSchema).default([]) })
+      .parse(data);
     return parsed.items.map((item) => ({
       ...item,
-      updatedAt: item.updatedAt ? new Date(item.updatedAt) : null
+      updatedAt: item.updatedAt ? new Date(item.updatedAt) : null,
     }));
   },
 
   async fetchJobs(options = {}) {
     const response = await fetch(`${API_BASE_URL}/videos/jobs`, {
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
     if (!response.ok) {
       throw new Error("Failed to load jobs for videos");
@@ -1590,9 +1693,9 @@ export const VideoLibraryApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
     if (!response.ok) {
       const message = await response.text();
@@ -1605,8 +1708,8 @@ export const VideoLibraryApi = {
   async fetchItem(itemId, options = {}) {
     const response = await fetch(`${API_BASE_URL}/videos/${itemId}`, {
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
     if (!response.ok) {
       throw new Error("Failed to load video item");
@@ -1616,14 +1719,17 @@ export const VideoLibraryApi = {
   },
 
   async regenerate(itemId, payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/videos/${itemId}/regenerate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
-      },
-      body: JSON.stringify(payload)
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/videos/${itemId}/regenerate`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(options.authToken),
+        },
+        body: JSON.stringify(payload),
+      }
+    );
     if (!response.ok) {
       throw new Error("Failed to regenerate manifest");
     }
@@ -1635,8 +1741,8 @@ export const VideoLibraryApi = {
     const response = await fetch(`${API_BASE_URL}/videos/${itemId}/render`, {
       method: "POST",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
     if (!response.ok) {
       throw new Error("Failed to trigger render");
@@ -1650,9 +1756,9 @@ export const VideoLibraryApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
     if (!response.ok) {
       throw new Error("Failed to update caption");
@@ -1665,8 +1771,8 @@ export const VideoLibraryApi = {
     const response = await fetch(`${API_BASE_URL}/videos/${itemId}/approve`, {
       method: "POST",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
     if (!response.ok) {
       throw new Error("Failed to approve video");
@@ -1679,8 +1785,8 @@ export const VideoLibraryApi = {
     const response = await fetch(`${API_BASE_URL}/videos/${itemId}/publish`, {
       method: "POST",
       headers: {
-        ...authHeaders(options.authToken)
-      }
+        ...authHeaders(options.authToken),
+      },
     });
     if (!response.ok) {
       throw new Error("Failed to publish video");
@@ -1694,15 +1800,17 @@ export const VideoLibraryApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken)
+        ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
     if (!response.ok) {
       throw new Error("Failed to run bulk action");
     }
     const data = await response.json();
-    const parsed = z.object({ items: z.array(videoListItemSchema).default([]) }).parse(data);
+    const parsed = z
+      .object({ items: z.array(videoListItemSchema).default([]) })
+      .parse(data);
     return parsed.items;
-  }
+  },
 };

@@ -242,39 +242,25 @@ updatedAt (timestamp).
 
 createdByUserId (string | null) – who created this company record.
 
-3.3 Company job schema (discovered jobs)
-Collection: "companyJobs" (or a subcollection under companies, implementation detail).
-Schema defined in packages/core/src/schemas/company.js as CompanyJob (or similar).
+3.3 Discovered jobs (JobSchema)
+Collection: "discoveredJobs".
 
-Fields:
+Schema: **JobSchema** (packages/core/src/schemas/job.js).
 
-id (string) – job doc ID.
+Rules:
 
-companyId (string) – ID of the company.
-
-companyDomain (string) – redundant but helpful.
-
-source (string) – "careers-site" | "linkedin" | "linkedin-post" | "other".
-
-externalId (string | null) – ID from source if available.
-
-title (string) – job title.
-
-location (string | null).
-
-description (string | null) – snippet or full description.
-
-url (string | null) – MUST be real, clickable URL if present.
-
-postedAt (timestamp | null).
-
-discoveredAt (timestamp).
-
-isActive (boolean).
-
-Important rule:
-Do not create placeholder jobs with fake URLs such as https://example.com/....
-If no real jobs are found, companyJobs stays empty, and the UI must hide the “Open postings” section.
+- Discovered jobs are stored as full JobSchema documents with:
+  - `status = "draft"` and a default DRAFT stateMachine.
+  - `ownerUserId` = company.createdByUserId when available, otherwise `system_company_intel`.
+  - `companyId` linking back to the company.
+  - `roleTitle`, `location`, `jobDescription`, etc. populated from scraping + the LLM agent (only when >=90% confident).
+  - `importContext` populated with:
+    - `source`, `sourceUrl` / `externalUrl`.
+    - `discoveredAt`, `originalPostedAt`, `importedAt`.
+    - `overallConfidence`, optional `fieldConfidence` map.
+    - `evidenceSources` (career-page-crawler, linkedin-jobs-tab, linkedin-post, llm-company-intel, etc.).
+- Legacy `companyJobs` remains read-only for historical data; **new discovery writes exclusively to `discoveredJobs`.**
+- Never create placeholder jobs (no fake URLs). If no real roles are found, leave the collection empty and set `jobDiscoveryStatus` accordingly.
 
 3.4 Job schema (wizard-created jobs)
 Jobs created by the wizard live in a normal "jobs" collection (packages/core/src/schemas/job.js).
@@ -603,7 +589,7 @@ title, source, url (or null), location, description, postedAt.
 
 Call saveDiscoveredJobs(company, jobs) to:
 
-Write jobs into companyJobs.
+Write jobs into discoveredJobs.
 
 Set:
 
@@ -677,7 +663,7 @@ Auth required.
 
 Uses the same main-company resolution as /companies/me.
 
-Fetches related companyJobs for that company.
+Fetches related discoveredJobs for that company.
 
 Response:
 
@@ -971,7 +957,7 @@ Returns an array of real jobs, or an empty array.
 
 saveDiscoveredJobs(company, jobs):
 
-Writes jobs into companyJobs.
+Writes jobs into discoveredJobs.
 
 Updates:
 
@@ -1261,7 +1247,7 @@ The main requirement: every job created by the wizard must be linked to a specif
 When a recruiter clicks “Launch Wizard” and their selected company already has verified discovered jobs, we offer a fast path:
 
 - Eligibility: `company.profileConfirmed === true`, `company.jobDiscoveryStatus === "FOUND_JOBS"`, and at least one “usable” companyJob (has title, real URL, isActive !== false, and was discovered/posted within ~90 days).
-- Instead of jumping straight into the full wizard, surface an ExistingJobsModal that lists the usable companyJobs with source, location, and recency. Two options are available:
+- Instead of jumping straight into the full wizard, surface an ExistingJobsModal that lists the usable discoveredJobs with source, location, and recency. Two options are available:
   1. “Use this job” → calls `POST /wizard/import-company-job` with `{ companyJobId, companyId }`. The endpoint creates a wizard-ready job record, copies over the high-signal fields, marks `importContext.source = "external_import"` (with `externalSource`, `externalUrl`, `companyJobId`), and returns a wizard draft payload.
   2. “Start from scratch” → open the normal wizard flow (same behavior as before).
 - After a successful import we route to `/wizard/:jobId?mode=import`, automatically jump to the review step, and show a banner explaining that the job was imported (with a link back to the original posting). The rest of the pipeline (channel recommendations, asset generation) is unchanged.

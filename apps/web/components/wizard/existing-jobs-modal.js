@@ -3,8 +3,18 @@
 import { createPortal } from "react-dom";
 import { filterUsableCompanyJobs } from "../../lib/company-job-helpers";
 
+function resolveJobUrl(job) {
+  if (job?.externalUrl) return job.externalUrl;
+  return job?.importContext?.sourceUrl ?? job?.importContext?.externalUrl ?? null;
+}
+
 function formatJobAge(job) {
-  const timestamp = job?.postedAt ?? job?.discoveredAt ?? null;
+  const timestamp =
+    job?.importContext?.originalPostedAt ??
+    job?.importContext?.discoveredAt ??
+    job?.createdAt ??
+    job?.updatedAt ??
+    null;
   if (!timestamp) {
     return null;
   }
@@ -85,7 +95,11 @@ export function ExistingJobsModal({
             <ul className="space-y-4">
               {usableJobs.map((job) => {
                 const ageLabel = formatJobAge(job);
-                const sourceLabel = formatSourceLabel(job.source);
+                const sourceLabel = formatSourceLabel(
+                  job.source ?? job.importContext?.source
+                );
+                const url = resolveJobUrl(job);
+                const title = job.roleTitle ?? job.title ?? "Untitled role";
                 return (
                   <li
                     key={job.id}
@@ -93,7 +107,7 @@ export function ExistingJobsModal({
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <h3 className="text-lg font-semibold text-neutral-900">{job.title}</h3>
+                        <h3 className="text-lg font-semibold text-neutral-900">{title}</h3>
                         <p className="text-sm text-neutral-600">
                           {job.location || deriveCompanyLocationFallback(company) || "Location unknown"}
                         </p>
@@ -111,9 +125,9 @@ export function ExistingJobsModal({
                         >
                           {loadingJobId === job.id ? "Importing…" : "Use this job"}
                         </button>
-                        {job.url ? (
+                        {url ? (
                           <a
-                            href={job.url}
+                            href={url}
                             target="_blank"
                             rel="noreferrer"
                             className="text-center text-xs font-semibold uppercase tracking-wide text-primary-600 underline-offset-2 hover:underline"
@@ -123,9 +137,9 @@ export function ExistingJobsModal({
                         ) : null}
                       </div>
                     </div>
-                    {job.description ? (
+                    {job.jobDescription || job.description ? (
                       <p className="mt-3 text-sm text-neutral-600">
-                        {job.description}
+                        {job.jobDescription ?? job.description}
                       </p>
                     ) : null}
                   </li>

@@ -116,7 +116,14 @@ export const JobImportContextSchema = z
     externalSource: z.string().optional(),
     externalUrl: z.string().optional(),
     companyJobId: z.string().optional(),
-    importedAt: TimestampSchema.optional()
+    sourceUrl: z.string().optional(),
+    discoveredAt: TimestampSchema.optional(),
+    originalPostedAt: TimestampSchema.optional(),
+    importedAt: TimestampSchema.optional(),
+    companyIntelSource: z.string().optional(),
+    overallConfidence: z.number().min(0).max(1).optional(),
+    fieldConfidence: z.record(z.number().min(0).max(1)).optional(),
+    evidenceSources: z.array(z.string()).optional()
   })
   .partial();
 

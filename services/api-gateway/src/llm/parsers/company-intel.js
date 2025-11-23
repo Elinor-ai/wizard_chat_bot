@@ -26,6 +26,15 @@ function parseDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function coerceStringArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => coerceString(item))
+    .filter(Boolean);
+}
+
 function normalizeJob(job) {
   if (!job || typeof job !== "object") {
     return null;
@@ -43,9 +52,39 @@ function normalizeJob(job) {
     url,
     location: coerceString(job.location) ?? "",
     description: coerceString(job.description) ?? "",
+    industry: coerceString(job.industry),
+    seniorityLevel: coerceString(job.seniorityLevel),
+    employmentType: coerceString(job.employmentType),
+    workModel: coerceString(job.workModel),
     source: coerceString(job.source) ?? "intel-agent",
     externalId: coerceString(job.externalId),
-    postedAt: parseDate(job.postedAt)
+    postedAt: parseDate(job.postedAt),
+    discoveredAt: parseDate(job.discoveredAt),
+    coreDuties: coerceStringArray(job.coreDuties),
+    mustHaves: coerceStringArray(job.mustHaves),
+    benefits: coerceStringArray(job.benefits),
+    salary: coerceString(job.salary),
+    salaryPeriod: coerceString(job.salaryPeriod),
+    currency: coerceString(job.currency),
+    confidence:
+      typeof job.confidence === "number"
+        ? Math.min(Math.max(job.confidence, 0), 1)
+        : null,
+    fieldConfidence:
+      job.fieldConfidence && typeof job.fieldConfidence === "object"
+        ? Object.fromEntries(
+            Object.entries(job.fieldConfidence)
+              .map(([key, value]) => {
+                if (typeof value !== "number") {
+                  return null;
+                }
+                const normalized = Math.min(Math.max(value, 0), 1);
+                return [key, normalized];
+              })
+              .filter(Boolean)
+          )
+        : null,
+    sourceEvidence: coerceStringArray(job.sourceEvidence)
   };
 }
 

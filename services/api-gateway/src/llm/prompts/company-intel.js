@@ -17,13 +17,15 @@ function sanitizeCompanySnapshot(company = {}) {
     socials: company.socials ?? {},
     brand: {
       logoUrl: company.brand?.logoUrl ?? company.logoUrl ?? "",
-      primaryColor: company.brand?.colors?.primary ?? company.primaryColor ?? "",
-      fontFamilyPrimary: company.brand?.fonts?.primary ?? company.fontFamilyPrimary ?? ""
+      primaryColor:
+        company.brand?.colors?.primary ?? company.primaryColor ?? "",
+      fontFamilyPrimary:
+        company.brand?.fonts?.primary ?? company.fontFamilyPrimary ?? "",
     },
     intelSummary: company.intelSummary ?? "",
     fieldSources: company.fieldSources ?? {},
     enrichmentStatus: company.enrichmentStatus ?? "",
-    jobDiscoveryStatus: company.jobDiscoveryStatus ?? ""
+    jobDiscoveryStatus: company.jobDiscoveryStatus ?? "",
   };
 }
 
@@ -35,7 +37,7 @@ function normalizeGaps(gaps = {}) {
     branding: [],
     voice: [],
     socials: [],
-    jobs: []
+    jobs: [],
   };
   const normalized = { ...defaultShape };
   Object.entries(gaps ?? {}).forEach(([section, fields]) => {
@@ -51,8 +53,7 @@ export function buildCompanyIntelPrompt(context = {}) {
   const gaps = normalizeGaps(context.gaps);
 
   const payload = {
-    role:
-      "You are Wizard's company intelligence collective. You triangulate Brandfetch results, LinkedIn data, and public web sources to fill only the requested gaps.",
+    role: "You are Wizard's company intelligence collective. You triangulate Brandfetch results, LinkedIn data, and public web sources to fill only the requested gaps.",
     mission:
       "Confirm or fill the missing fields for the company tied to this domain. Treat existing values as ground truth unless you have strong contradictory evidence and can cite the new source.",
     domain,
@@ -64,7 +65,8 @@ export function buildCompanyIntelPrompt(context = {}) {
       "Favor primary sources (official website, press releases, LinkedIn company page, trusted news) over scraped directories.",
       "Provide concise descriptions (summary max 2 sentences) suitable for recruiters.",
       "Every field you populate must have an evidence entry listing the sources that justify it.",
-      "Do not hallucinate social URLs or job postings. Return null/omit if uncertain."
+      "For job fields, set a value only when you are at least ~90% confident in its accuracy; otherwise emit null/omit.",
+      "Do not hallucinate social URLs or job postings. Return null/omit if uncertain.",
     ],
     responseContract: {
       profile: {
@@ -72,18 +74,20 @@ export function buildCompanyIntelPrompt(context = {}) {
         website: "absolute URL",
         companyType: "company | agency | freelancer",
         industry: "string",
-        employeeCountBucket: "1-10 | 11-50 | 51-200 | 201-500 | 501-1000 | 1000+",
+        employeeCountBucket:
+          "1-10 | 11-50 | 51-200 | 201-500 | 501-1000 | 1000+",
         hqCountry: "string",
         hqCity: "string",
         tagline: "string",
         summary: "<=2 sentences overview",
-        toneOfVoice: "keywords describing writing voice"
+        toneOfVoice: "keywords describing writing voice",
       },
       branding: {
         primaryColor: "hex or CSS color keyword",
         secondaryColor: "hex or CSS color keyword",
         fontFamilyPrimary: "string",
-        additionalBrandNotes: "optional short notes about slogans or design patterns"
+        additionalBrandNotes:
+          "optional short notes about slogans or design patterns",
       },
       socials: {
         linkedin: "url",
@@ -91,40 +95,59 @@ export function buildCompanyIntelPrompt(context = {}) {
         instagram: "url",
         tiktok: "url",
         twitter: "url",
-        youtube: "url"
+        youtube: "url",
       },
       jobs: [
         {
           title: "string",
-          url: "absolute URL to the job or application",
-          location: "city/state or remote",
-          description: "one-sentence summary",
+          url: "absolute URL to the job or application (required)",
           source: "careers-site | linkedin | linkedin-post | other",
-          externalId: "string or null",
-          postedAt: "ISO-8601 timestamp or null"
-        }
+          location: "city/state or remote string or null",
+          industry: "string or null",
+          seniorityLevel: "entry | mid | senior | lead | executive | null",
+          employmentType:
+            "full_time | part_time | contract | temporary | seasonal | intern | null",
+          workModel: "on_site | hybrid | remote | null",
+          description: "full paragraph describing the role",
+          coreDuties: ["bullet list of responsibilities"],
+          mustHaves: ["bullet list of requirements"],
+          benefits: ["bullet list of key benefits/perks"],
+          salary: "string or null",
+          salaryPeriod: "string or null",
+          currency: "string or null",
+          postedAt: "ISO-8601 timestamp or null",
+          discoveredAt: "ISO-8601 timestamp or null",
+          confidence: "0-1 float confidence score",
+          fieldConfidence: { fieldName: "0-1 float" },
+          sourceEvidence: [
+            "linkedin-jobs-tab | linkedin-post | careers-page | web-search | other",
+          ],
+        },
       ],
       evidence: {
         profile: {
-          field: { value: "string", sources: ["list of evidence labels or URLs"] }
+          field: {
+            value: "string",
+            sources: ["list of evidence labels or URLs"],
+          },
         },
         branding: {
-          field: { value: "string", sources: ["..."] }
+          field: { value: "string", sources: ["..."] },
         },
         socials: {
-          field: { value: "string", sources: ["..."] }
+          field: { value: "string", sources: ["..."] },
         },
         jobs: [
           {
             title: "string",
             url: "string",
-            sources: ["linkedin-jobs-tab", "careers-page", "news-article"]
-          }
-        ]
-      }
+            sources: ["linkedin-jobs-tab", "careers-page", "news-article"],
+          },
+        ],
+      },
     },
     attempt: context.attempt ?? 0,
-    strictMode: context.strictMode ?? false
+    strictMode: context.strictMode ?? false,
   };
 
   const prompt = JSON.stringify(payload, null, 2);
@@ -132,7 +155,7 @@ export function buildCompanyIntelPrompt(context = {}) {
     {
       task: "company_intel",
       domain,
-      length: prompt.length
+      length: prompt.length,
     },
     "LLM company intel prompt built"
   );

@@ -6,6 +6,7 @@ import { loadEnv, createLogger } from "@wizard/utils";
 
 const COMPANY_COLLECTION = "companies";
 const COMPANY_JOBS_COLLECTION = "companyJobs";
+const DISCOVERED_JOBS_COLLECTION = "discoveredJobs";
 const LLM_USAGE_COLLECTION = "LLMsUsage";
 
 const firestoreConfigSchema = z.object({
@@ -162,6 +163,23 @@ export function createFirestoreAdapter(options = {}) {
         throw new Error("Company job id is required");
       }
       return this.saveDocument(COMPANY_JOBS_COLLECTION, id, data);
+    },
+    async listDiscoveredJobs(companyId) {
+      if (!companyId) {
+        return [];
+      }
+      return this.queryDocuments(
+        DISCOVERED_JOBS_COLLECTION,
+        "companyId",
+        "==",
+        companyId
+      );
+    },
+    async saveDiscoveredJob(id, data) {
+      if (!id) {
+        throw new Error("Discovered job id is required");
+      }
+      return this.saveDocument(DISCOVERED_JOBS_COLLECTION, id, data);
     },
     async recordLlmUsage(entry) {
       if (!entry) {
