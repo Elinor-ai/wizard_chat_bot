@@ -8,6 +8,7 @@ import { TASK_REGISTRY } from "./llm/tasks.js";
 import { DalleImageAdapter } from "./llm/providers/dalle-image-adapter.js";
 import { ImagenImageAdapter } from "./llm/providers/imagen-image-adapter.js";
 import { StableDiffusionAdapter } from "./llm/providers/stable-diffusion-adapter.js";
+import { BananaImageAdapter } from "./llm/providers/banana-image-adapter.js";
 
 loadEnv();
 
@@ -70,6 +71,14 @@ const RAW_IMAGE_GENERATION_PROVIDER =
   process.env.IMAGE_GENERATION_PROVIDER ?? "dall-e";
 const IMAGE_GENERATION_PROVIDER = RAW_IMAGE_GENERATION_PROVIDER.replace("-", "_");
 
+const BANANA_API_KEY = process.env.BANANA_API_KEY ?? null;
+const BANANA_API_URL = process.env.BANANA_API_URL ?? "https://api.banana.dev/v4/";
+const BANANA_MODEL_NANO = process.env.BANANA_MODEL_NANO ?? null;
+const BANANA_MODEL_NANO_PRO = process.env.BANANA_MODEL_NANO_PRO ?? null;
+const DEFAULT_BANANA_IMAGE_MODEL =
+  process.env.BANANA_IMAGE_MODEL ??
+  (BANANA_MODEL_NANO ? "nano" : BANANA_MODEL_NANO_PRO ? "nano-pro" : "nano");
+
 const DEFAULT_STABLE_DIFFUSION_MODEL =
   process.env.STABLE_DIFFUSION_MODEL ?? "sd3";
 const DEFAULT_IMAGE_GEN_MODEL =
@@ -77,7 +86,9 @@ const DEFAULT_IMAGE_GEN_MODEL =
     ? DEFAULT_IMAGEN_IMAGE_MODEL
     : IMAGE_GENERATION_PROVIDER === "stable_diffusion"
       ? DEFAULT_STABLE_DIFFUSION_MODEL
-      : DEFAULT_DALLE_IMAGE_MODEL;
+      : IMAGE_GENERATION_PROVIDER === "banana"
+        ? DEFAULT_BANANA_IMAGE_MODEL
+        : DEFAULT_DALLE_IMAGE_MODEL;
 const DALL_E_API_KEY =
   process.env.DALL_E_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
 const IMAGEN_API_KEY =
@@ -175,6 +186,7 @@ const providerSelectionConfig = {
       "dall-e": DEFAULT_DALLE_IMAGE_MODEL,
       imagen: DEFAULT_IMAGEN_IMAGE_MODEL,
       stable_diffusion: DEFAULT_STABLE_DIFFUSION_MODEL,
+      banana: DEFAULT_BANANA_IMAGE_MODEL,
     },
   },
   copilot_agent: {
@@ -232,6 +244,14 @@ const adapters = {
   }),
   stable_diffusion: new StableDiffusionAdapter({
     apiKey: STABLE_DIFFUSION_API_KEY,
+  }),
+  banana: new BananaImageAdapter({
+    apiKey: BANANA_API_KEY,
+    apiUrl: BANANA_API_URL,
+    modelKeyMap: {
+      nano: BANANA_MODEL_NANO,
+      "nano-pro": BANANA_MODEL_NANO_PRO,
+    },
   }),
 };
 

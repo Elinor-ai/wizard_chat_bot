@@ -109,6 +109,22 @@ const BASE_RATE_CARD = {
           costPerUnitUsd: 0.02
         }
       }
+    },
+    banana: {
+      planName: "banana-gpu",
+      image: {
+        models: {
+          nano: {
+            costPerUnitUsd: 0.025
+          },
+          "nano-pro": {
+            costPerUnitUsd: 0.045
+          }
+        },
+        default: {
+          costPerUnitUsd: 0.03
+        }
+      }
     }
   }
 };
