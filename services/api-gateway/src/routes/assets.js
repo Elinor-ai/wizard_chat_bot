@@ -54,7 +54,20 @@ export function assetsRouter({ firestore, logger }) {
         .map((asset) => {
           const job = jobMap.get(asset.jobId);
           let jobLogo = null;
+          let companyId = null;
+          let companyName = null;
           if (job) {
+            if (typeof job.companyId === "string" && job.companyId.trim().length > 0) {
+              companyId = job.companyId.trim();
+            }
+            if (typeof job.companyName === "string" && job.companyName.trim().length > 0) {
+              companyName = job.companyName.trim();
+            } else if (
+              typeof job.confirmed?.companyName === "string" &&
+              job.confirmed.companyName.trim().length > 0
+            ) {
+              companyName = job.confirmed.companyName.trim();
+            }
             if (typeof job.logoUrl === "string" && job.logoUrl.trim().length > 0) {
               jobLogo = job.logoUrl;
             } else if (
@@ -70,6 +83,8 @@ export function assetsRouter({ firestore, logger }) {
             jobId: asset.jobId,
             jobTitle: deriveJobTitle(job),
             logoUrl: jobLogo,
+            companyId,
+            companyName,
             channelId: asset.channelId,
             formatId: asset.formatId,
             artifactType: asset.artifactType,
