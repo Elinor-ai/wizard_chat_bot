@@ -22,6 +22,7 @@ const AssetFailureSchema = z
 export const JobAssetRecordSchema = z.object({
   id: z.string(),
   jobId: z.string(),
+  companyId: z.string().nullable().optional(),
   ownerUserId: z.string(),
   channelId: ChannelIdEnum,
   formatId: AssetFormatEnum,
@@ -77,6 +78,7 @@ export const JobAssetRecordSchema = z.object({
 export const JobAssetRunSchema = z.object({
   id: z.string(),
   jobId: z.string(),
+  companyId: z.string().nullable().optional(),
   ownerUserId: z.string(),
   blueprintVersion: z.string().default(ASSET_BLUEPRINT_VERSION),
   channelIds: z.array(ChannelIdEnum).default([]),

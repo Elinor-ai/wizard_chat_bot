@@ -21,6 +21,11 @@ import {
 } from "@wizard/core";
 import { createAssetPlan } from "../llm/domain/asset-plan.js";
 import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
+import {
+  loadCompanyProfile,
+  buildTailoredCompanyContext,
+  loadCompanyContext
+} from "../services/company-context.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
@@ -235,8 +240,8 @@ function setDeep(target, path, value) {
   }
 }
 
-function createBaseJob({ jobId, userId, companyId = null, now }) {
-  return JobSchema.parse({
+function createBaseJob({ jobId, userId, companyId = null, companyProfile = null, now }) {
+  const job = {
     id: jobId,
     ownerUserId: userId,
     orgId: null,
@@ -267,7 +272,8 @@ function createBaseJob({ jobId, userId, companyId = null, now }) {
     createdAt: now,
     updatedAt: now,
     archivedAt: null
-  });
+  };
+  return applyCompanyDefaults(job, companyProfile);
 }
 
 function normalizeIntakeValue(existingValue, incomingValue, key) {
@@ -458,6 +464,7 @@ async function overwriteSuggestionDocument({
   firestore,
   logger,
   jobId,
+  companyId = null,
   candidates,
   provider,
   model,
@@ -478,6 +485,7 @@ async function overwriteSuggestionDocument({
   const payload = JobSuggestionSchema.parse({
     id: jobId,
     jobId,
+    companyId: companyId ?? null,
     schema_version: "3",
     candidates: mapCandidatesByField(candidates),
     provider,
@@ -499,6 +507,7 @@ async function persistSuggestionFailure({
   firestore,
   logger,
   jobId,
+  companyId = null,
   reason,
   rawPreview,
   error,
@@ -509,6 +518,7 @@ async function persistSuggestionFailure({
   const payload = JobSuggestionSchema.parse({
     id: jobId,
     jobId,
+    companyId: companyId ?? existing?.companyId ?? null,
     schema_version: "3",
     candidates: existing?.candidates ?? {},
     provider: existing?.provider,
@@ -548,6 +558,7 @@ async function acknowledgeSuggestionField({
   firestore,
   jobId,
   fieldId,
+  companyId = null,
   logger,
   now
 }) {
@@ -562,6 +573,7 @@ async function acknowledgeSuggestionField({
   const payload = JobSuggestionSchema.parse({
     id: jobId,
     jobId,
+    companyId: companyId ?? existing?.companyId ?? null,
     schema_version: "3",
     candidates: candidateMap,
     provider: existing.provider,
@@ -599,6 +611,7 @@ async function overwriteRefinementDocument({
   firestore,
   logger,
   jobId,
+  companyId = null,
   refinedJob,
   summary,
   provider,
@@ -609,6 +622,7 @@ async function overwriteRefinementDocument({
   const payload = JobRefinementSchema.parse({
     id: jobId,
     jobId,
+    companyId: companyId ?? existing?.companyId ?? null,
     schema_version: "1",
     refinedJob,
     summary: summary ?? null,
@@ -627,6 +641,7 @@ async function persistRefinementFailure({
   firestore,
   logger,
   jobId,
+  companyId = null,
   reason,
   message,
   rawPreview,
@@ -636,6 +651,7 @@ async function persistRefinementFailure({
   const payload = JobRefinementSchema.parse({
     id: jobId,
     jobId,
+    companyId,
     schema_version: "1",
     refinedJob: existing?.refinedJob ?? {},
     summary: existing?.summary ?? null,
@@ -670,6 +686,7 @@ async function overwriteFinalJobDocument({
   firestore,
   logger,
   jobId,
+  companyId = null,
   finalJob,
   source,
   now
@@ -677,6 +694,7 @@ async function overwriteFinalJobDocument({
   const payload = JobFinalSchema.parse({
     id: jobId,
     jobId,
+    companyId: companyId ?? null,
     schema_version: "1",
     job: finalJob,
     source,
@@ -705,6 +723,7 @@ async function overwriteChannelRecommendationDocument({
   firestore,
   logger,
   jobId,
+  companyId = null,
   recommendations,
   provider,
   model,
@@ -714,6 +733,7 @@ async function overwriteChannelRecommendationDocument({
   const payload = JobChannelRecommendationSchema.parse({
     id: jobId,
     jobId,
+    companyId: companyId ?? null,
     schema_version: "1",
     recommendations,
     provider,
@@ -746,6 +766,7 @@ async function persistChannelRecommendationFailure({
   firestore,
   logger,
   jobId,
+  companyId = null,
   reason,
   message,
   rawPreview,
@@ -756,6 +777,7 @@ async function persistChannelRecommendationFailure({
   const payload = JobChannelRecommendationSchema.parse({
     id: jobId,
     jobId,
+    companyId: companyId ?? existing?.companyId ?? null,
     schema_version: "1",
     recommendations: existing?.recommendations ?? [],
     provider: existing?.provider,
@@ -796,6 +818,7 @@ async function upsertHeroImageDocument({
   firestore,
   jobId,
   ownerUserId,
+  companyId = null,
   patch,
   now = new Date()
 }) {
@@ -803,6 +826,7 @@ async function upsertHeroImageDocument({
   const payload = JobHeroImageSchema.parse({
     id: jobId,
     jobId,
+    companyId: companyId ?? existing?.companyId ?? null,
     ownerUserId,
     status: existing?.status ?? "PENDING",
     prompt: existing?.prompt ?? null,
@@ -827,6 +851,7 @@ async function persistHeroImageFailure({
   firestore,
   jobId,
   ownerUserId,
+  companyId = null,
   reason,
   message,
   rawPreview,
@@ -836,6 +861,7 @@ async function persistHeroImageFailure({
     firestore,
     jobId,
     ownerUserId,
+    companyId,
     now,
     patch: {
       status: "FAILED",
@@ -988,6 +1014,7 @@ function incrementRunStats(stats, metadata, succeeded) {
 function createAssetRecordsFromPlan({
   jobId,
   ownerUserId,
+  companyId = null,
   plan,
   sourceJobVersion,
   now
@@ -997,6 +1024,7 @@ function createAssetRecordsFromPlan({
     const record = {
       id: buildAssetId(jobId, item.channelId, item.formatId),
       jobId,
+      companyId,
       ownerUserId,
       channelId: item.channelId,
       formatId: item.formatId,
@@ -1055,6 +1083,29 @@ function buildMasterContext(record) {
   };
 }
 
+const SOCIAL_POST_FORMAT_IDS = new Set(["LINKEDIN_FEED_POST"]);
+const SOCIAL_BATCH_KEYS = new Set(["linkedin_feed"]);
+
+function resolvePlanItemTask(planItem) {
+  if (!planItem) return null;
+  if (planItem.artifactType === "image_prompt") {
+    return "image_prompt_generation";
+  }
+  if (
+    planItem.artifactType === "video_script" ||
+    planItem.artifactType === "script"
+  ) {
+    return "video_script";
+  }
+  if (
+    SOCIAL_POST_FORMAT_IDS.has(planItem.formatId) ||
+    (planItem.batchKey && SOCIAL_BATCH_KEYS.has(planItem.batchKey))
+  ) {
+    return "social_posts";
+  }
+  return null;
+}
+
 async function runAssetGenerationPipeline({
   firestore,
   llmClient,
@@ -1064,7 +1115,8 @@ async function runAssetGenerationPipeline({
   channelMetaMap,
   logger,
   trackUsage,
-  usageContext
+  usageContext,
+  companyProfile
 }) {
   const stats = {
     assetsPlanned: plan.items.length,
@@ -1082,6 +1134,18 @@ async function runAssetGenerationPipeline({
       return;
     }
     await trackUsage(result, { ...baseUsage, taskType });
+  };
+
+  const companyContextCache = new Map();
+  const getCompanyContext = (taskType) => {
+    if (!companyProfile || !taskType) {
+      return "";
+    }
+    if (!companyContextCache.has(taskType)) {
+      const context = buildTailoredCompanyContext(companyProfile, taskType);
+      companyContextCache.set(taskType, context);
+    }
+    return companyContextCache.get(taskType) ?? "";
   };
 
   const markFailure = async (
@@ -1138,10 +1202,13 @@ async function runAssetGenerationPipeline({
       continue;
     }
     await markGenerating(record);
+    const taskType = resolvePlanItemTask(item);
+    const companyContext = getCompanyContext(taskType);
     const result = await llmClient.askAssetMaster({
       planItem: item,
       channelMeta: channelMetaMap[item.channelId],
-      jobSnapshot
+      jobSnapshot,
+      companyContext
     });
     await logUsage(result, "asset_master");
     if (result?.asset) {
@@ -1180,10 +1247,16 @@ async function runAssetGenerationPipeline({
       await markGenerating(record);
     }
 
+    const batchTaskType =
+      items
+        .map((planItem) => resolvePlanItemTask(planItem))
+        .find((type) => Boolean(type)) ?? null;
+    const batchCompanyContext = getCompanyContext(batchTaskType);
     const result = await llmClient.askAssetChannelBatch({
       planItems: items,
       jobSnapshot,
-      channelMetaMap
+      channelMetaMap,
+      companyContext: batchCompanyContext
     });
     await logUsage(result, "asset_channel_batch");
 
@@ -1248,11 +1321,14 @@ async function runAssetGenerationPipeline({
       continue;
     }
     await markGenerating(record);
+    const taskType = resolvePlanItemTask(item);
+    const companyContext = getCompanyContext(taskType);
     const result = await llmClient.askAssetAdapt({
       planItem: item,
       masterAsset: buildMasterContext(masterRecord),
       jobSnapshot,
-      channelMeta: channelMetaMap[item.channelId]
+      channelMeta: channelMetaMap[item.channelId],
+      companyContext
     });
     await logUsage(result, "asset_adapt");
     if (result?.asset) {
@@ -1295,6 +1371,61 @@ function valueProvided(value) {
 function valueProvidedAt(state, path) {
   return valueProvided(getDeep(state, path));
 }
+
+function applyCompanyDefaults(job, companyProfile) {
+  if (!companyProfile) {
+    return job;
+  }
+  const next = deepClone(job);
+  const companyName =
+    companyProfile.name ??
+    companyProfile.brand?.name ??
+    null;
+  if (!valueProvided(next.companyName) && valueProvided(companyName)) {
+    next.companyName = companyName;
+  }
+
+  const logoUrl =
+    companyProfile.brand?.logoUrl ??
+    companyProfile.logoUrl ??
+    companyProfile.brand?.iconUrl ??
+    null;
+  if (!valueProvided(next.logoUrl) && valueProvided(logoUrl)) {
+    next.logoUrl = logoUrl;
+  }
+
+  const locationHint = companyProfile.locationHint;
+  const cityCountry = [companyProfile.hqCity, companyProfile.hqCountry]
+    .filter((part) => typeof part === "string" && part.trim().length > 0)
+    .join(", ");
+  const derivedLocation =
+    locationHint && locationHint.trim().length > 0
+      ? locationHint
+      : cityCountry;
+  if (!valueProvided(next.location) && valueProvided(derivedLocation)) {
+    next.location = derivedLocation;
+  }
+
+  if (!valueProvided(next.industry) && valueProvided(companyProfile.industry)) {
+    next.industry = companyProfile.industry;
+  }
+
+  if (!isPlainObject(next.confirmed)) {
+    next.confirmed = {};
+  }
+  if (!valueProvided(next.confirmed.companyName) && valueProvided(companyName)) {
+    next.confirmed.companyName = companyName;
+  }
+  if (!valueProvided(next.confirmed.logoUrl) && valueProvided(logoUrl)) {
+    next.confirmed.logoUrl = logoUrl;
+  }
+  if (!valueProvided(next.confirmed.location) && valueProvided(derivedLocation)) {
+    next.confirmed.location = derivedLocation;
+  }
+  if (!valueProvided(next.confirmed.industry) && valueProvided(companyProfile.industry)) {
+    next.confirmed.industry = companyProfile.industry;
+  }
+
 export function wizardRouter({ firestore, logger, llmClient }) {
   const router = Router();
   const trackLlmUsage = (result, usageContext, options = {}) =>
@@ -1329,10 +1460,30 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         typeof payload.companyId === "string" && payload.companyId.trim().length > 0
           ? payload.companyId.trim()
           : null;
-      const selectedCompanyId =
-        requestedCompanyId && allowedCompanySet.has(requestedCompanyId) ? requestedCompanyId : null;
+      let selectedCompanyId = null;
+      if (requestedCompanyId) {
+        if (allowedCompanySet.size === 0 || allowedCompanySet.has(requestedCompanyId)) {
+          selectedCompanyId = requestedCompanyId;
+        }
+      }
+      const companyDocId = selectedCompanyId ?? normalizedMainCompanyId ?? null;
+      const companyProfile = companyDocId
+        ? await loadCompanyProfile({ firestore, companyId: companyDocId, logger })
+        : null;
+      const jobId = typeof payload.jobId === "string" && payload.jobId.length > 0 ? payload.jobId : `job_${uuid()}`;
 
-      const jobId = payload.jobId ?? `job_${uuid()}`;
+      logger.info(
+        {
+          userId,
+          jobId,
+          requestedCompanyId,
+          selectedCompanyId,
+          normalizedMainCompanyId,
+          companyProfileLoaded: Boolean(companyProfile)
+        },
+        "wizard:draft:company-selection"
+      );
+
       const now = new Date();
       const existing = await firestore.getDocument(JOB_COLLECTION, jobId);
 
@@ -1350,6 +1501,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             jobId,
             userId: existing.ownerUserId ?? userId,
             companyId: selectedCompanyId ?? normalizedMainCompanyId ?? null,
+            companyProfile,
             now
           });
         }
@@ -1364,6 +1516,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           jobId,
           userId,
           companyId: selectedCompanyId ?? normalizedMainCompanyId ?? null,
+          companyProfile,
           now
         });
       }
@@ -1388,12 +1541,28 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         "Job persisted"
       );
 
+      const latestFields = ALLOWED_INTAKE_KEYS.reduce((acc, key) => {
+        acc[key] = validatedJob[key];
+        return acc;
+      }, {});
+
       res.json({
         jobId,
         status: savedJob.status,
         state: savedJob.stateMachine?.currentState ?? "DRAFT",
-        companyId: savedJob.companyId ?? null
+        companyId: savedJob.companyId ?? null,
+        intake: latestFields
       });
+      logger.info(
+        {
+          jobId,
+          intakePreview: {
+            location: latestFields.location ?? null,
+            companyName: latestFields.companyName ?? null
+          }
+        },
+        "wizard:draft:response"
+      );
     })
   );
 
@@ -1435,6 +1604,12 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           : [];
 
       let suggestionDoc = await loadSuggestionDocument(firestore, payload.jobId);
+      const companyContext = await loadCompanyContext({
+        firestore,
+        companyId: job.companyId ?? null,
+        taskType: "wizard_suggestions",
+        logger
+      });
       const shouldRefresh =
         !suggestionDoc ||
         payload.intent?.forceRefresh === true ||
@@ -1451,7 +1626,8 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           jobSnapshot: ALLOWED_INTAKE_KEYS.reduce((acc, key) => {
             acc[key] = mergedJob[key];
             return acc;
-          }, {})
+          }, {}),
+          companyContext
         };
 
         const llmResult = await llmClient.askSuggestions(llmPayload);
@@ -1465,6 +1641,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             firestore,
             logger,
             jobId: payload.jobId,
+            companyId: mergedJob.companyId ?? null,
             candidates: llmResult.candidates,
             provider: llmResult.provider,
             model: llmResult.model,
@@ -1477,6 +1654,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             firestore,
             logger,
             jobId: payload.jobId,
+            companyId: mergedJob.companyId ?? null,
             reason: llmResult.error.reason ?? "unknown_error",
             rawPreview: llmResult.error.rawPreview ?? null,
             error: llmResult.error.message ?? null,
@@ -1488,6 +1666,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             firestore,
             logger,
             jobId: payload.jobId,
+            companyId: mergedJob.companyId ?? null,
             reason: "no_suggestions",
             rawPreview: null,
             error: "LLM returned no candidates",
@@ -1539,6 +1718,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         firestore,
         jobId: payload.jobId,
         fieldId: payload.fieldId,
+        companyId: parsedJob.companyId ?? null,
         logger,
         now
       });
@@ -1568,6 +1748,12 @@ export function wizardRouter({ firestore, logger, llmClient }) {
 
       const now = new Date();
       const jobSnapshot = buildJobSnapshot(parsedJob);
+      const companyContext = await loadCompanyContext({
+        firestore,
+        companyId: parsedJob.companyId ?? null,
+        taskType: "job_refinement",
+        logger
+      });
 
       let refinementDoc = await loadRefinementDocument(
         firestore,
@@ -1584,6 +1770,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         const llmResult = await llmClient.askRefineJob({
           jobSnapshot,
           confirmed: parsedJob.confirmed ?? {},
+          companyContext
         });
         await trackLlmUsage(llmResult, {
           userId,
@@ -1596,6 +1783,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             firestore,
             logger,
             jobId: payload.jobId,
+            companyId: parsedJob.companyId ?? null,
             refinedJob: llmResult.refinedJob,
             summary: llmResult.summary ?? null,
             provider: llmResult.provider,
@@ -1609,6 +1797,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             firestore,
             logger,
             jobId: payload.jobId,
+            companyId: parsedJob.companyId ?? null,
             reason: llmResult.error.reason ?? "unknown_error",
             message: llmResult.error.message ?? null,
             rawPreview: llmResult.error.rawPreview ?? null,
@@ -1684,9 +1873,17 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         firestore,
         logger,
         jobId: payload.jobId,
+        companyId: validatedJob.companyId ?? null,
         finalJob,
         source,
         now
+      });
+
+      const channelCompanyContext = await loadCompanyContext({
+        firestore,
+        companyId: validatedJob.companyId ?? null,
+        taskType: "channel_recommendations",
+        logger
       });
 
       const channelResult = await llmClient.askChannelRecommendations({
@@ -1697,7 +1894,8 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           ? validatedJob.campaigns
               .map((campaign) => campaign?.channel)
               .filter((channel) => typeof channel === "string")
-          : []
+          : [],
+        companyContext: channelCompanyContext
       });
       await trackLlmUsage(channelResult, {
         userId,
@@ -1712,6 +1910,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           firestore,
           logger,
           jobId: payload.jobId,
+          companyId: validatedJob.companyId ?? null,
           recommendations: channelResult.recommendations,
           provider: channelResult.provider,
           model: channelResult.model,
@@ -1723,6 +1922,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           firestore,
           logger,
           jobId: payload.jobId,
+          companyId: validatedJob.companyId ?? null,
           reason: channelResult.error.reason ?? "unknown_error",
           message: channelResult.error.message ?? null,
           rawPreview: channelResult.error.rawPreview ?? null,
@@ -1733,6 +1933,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           firestore,
           logger,
           jobId: payload.jobId,
+          companyId: validatedJob.companyId ?? null,
           reason: "no_recommendations",
           message: "LLM returned no channel recommendations",
           rawPreview: null,
@@ -1785,9 +1986,18 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       const now = new Date();
       const sourceJobVersion = payload.source ?? finalJob.source ?? "refined";
       const jobSnapshot = finalJob.job ?? buildJobSnapshot(job);
+      const companyProfile =
+        job.companyId && job.companyId.trim().length > 0
+          ? await loadCompanyProfile({
+              firestore,
+              companyId: job.companyId,
+              logger
+            })
+          : null;
       const assetRecords = createAssetRecordsFromPlan({
         jobId: payload.jobId,
         ownerUserId: job.ownerUserId ?? userId,
+        companyId: job.companyId ?? null,
         plan,
         sourceJobVersion,
         now
@@ -1800,6 +2010,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       let run = {
         id: `run_${uuid()}`,
         jobId: payload.jobId,
+        companyId: job.companyId ?? null,
         ownerUserId: job.ownerUserId ?? userId,
         blueprintVersion: plan.version,
         channelIds,
@@ -1828,7 +2039,8 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             channelMetaMap: buildChannelMetaMap(plan.channelMeta),
             logger,
             usageContext: { userId, jobId: payload.jobId },
-            trackUsage: trackLlmUsage
+            trackUsage: trackLlmUsage,
+            companyProfile
           });
 
         run.stats = stats;
@@ -1928,6 +2140,13 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         payload.jobId
       );
 
+      const companyContext = await loadCompanyContext({
+        firestore,
+        companyId: parsedJob.companyId ?? null,
+        taskType: "channel_recommendations",
+        logger
+      });
+
       const shouldRefresh =
         !doc || payload.forceRefresh === true;
 
@@ -1942,7 +2161,8 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             ? parsedJob.campaigns
                 .map((campaign) => campaign?.channel)
                 .filter((channel) => typeof channel === "string")
-            : []
+            : [],
+          companyContext
         });
         await trackLlmUsage(llmResult, {
           userId,
@@ -2045,6 +2265,8 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           throw httpError(403, "You do not have access to this job");
         }
 
+        const jobCompanyId = job.companyId ?? null;
+
         const existing = await loadHeroImageDocument(firestore, payload.jobId);
         if (
           existing &&
@@ -2078,6 +2300,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           firestore,
           jobId: payload.jobId,
           ownerUserId: ownerId,
+          companyId: jobCompanyId,
           now,
           patch: {
             status: "PROMPTING",
@@ -2097,9 +2320,17 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         let promptResult;
         let imageResult;
 
+        const heroCompanyContext = await loadCompanyContext({
+          firestore,
+          companyId: jobCompanyId,
+          taskType: "image_prompt_generation",
+          logger
+        });
+
         try {
           promptResult = await llmClient.askHeroImagePrompt({
-            refinedJob: refinedSnapshot
+            refinedJob: refinedSnapshot,
+            companyContext: heroCompanyContext
           });
           await trackLlmUsage(promptResult, {
             userId,
@@ -2112,6 +2343,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
               firestore,
               jobId: payload.jobId,
               ownerUserId: ownerId,
+              companyId: jobCompanyId,
               reason: promptResult.error.reason ?? "prompt_failed",
               message: promptResult.error.message,
               rawPreview: promptResult.error.rawPreview ?? null,
@@ -2144,6 +2376,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             firestore,
             jobId: payload.jobId,
             ownerUserId: ownerId,
+            companyId: jobCompanyId,
             patch: {
               status: "GENERATING",
               prompt: promptResult.prompt,
@@ -2186,6 +2419,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
               firestore,
               jobId: payload.jobId,
               ownerUserId: ownerId,
+              companyId: jobCompanyId,
               reason: imageResult.error.reason ?? "generation_failed",
               message: imageResult.error.message,
               rawPreview: imageResult.error.rawPreview ?? null,

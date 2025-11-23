@@ -35,6 +35,7 @@ export function buildImagePromptInstructions(context = {}) {
       "If you recommend avoiding certain elements, include them inside negative_prompt."
     ],
     jobContext: jobSnapshot,
+    companyContext: context.companyContext ?? null,
     responseContract: {
       prompt: "string - the final descriptive prompt for the image model",
       negative_prompt:

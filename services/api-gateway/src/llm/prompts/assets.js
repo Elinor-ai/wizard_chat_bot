@@ -124,7 +124,8 @@ export function buildAssetMasterPrompt(context = {}) {
         call_to_action: "Tap to apply in 60 seconds—interviews start this week.",
         hashtags: ["#HiringNow", "#CustomerSuccess", "#TechJobs"]
       }
-    }
+    },
+    companyContext: context.companyContext ?? null
   };
 
   return stringify(payload, "asset_master");
@@ -155,7 +156,8 @@ export function buildAssetChannelBatchPrompt(context = {}) {
           call_to_action: "string"
         }
       ]
-    }
+    },
+    companyContext: context.companyContext ?? null
   };
 
   return stringify(payload, "asset_channel_batch");
@@ -195,7 +197,8 @@ export function buildAssetAdaptPrompt(context = {}) {
         call_to_action: "string",
         hashtags: ["string"]
       }
-    }
+    },
+    companyContext: context.companyContext ?? null
   };
 
   return stringify(payload, "asset_adapt");

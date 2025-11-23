@@ -22,6 +22,7 @@ export const HeroImageFailureSchema = z
 export const JobHeroImageSchema = z.object({
   id: z.string(),
   jobId: z.string(),
+  companyId: z.string().nullable().optional(),
   ownerUserId: z.string(),
   status: HeroImageStatusEnum.default("PENDING"),
   prompt: z.string().nullable().optional(),

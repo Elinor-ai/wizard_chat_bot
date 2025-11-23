@@ -13,7 +13,14 @@ export async function persistJobDraft({
   wizardMeta = {},
   companyId = null,
 }) {
-  return WizardApi.persistJob(state, {
+  // eslint-disable-next-line no-console
+  console.log("[WizardServices] persistJobDraft:request", {
+    jobId,
+    hasState: state && Object.keys(state ?? {}).length > 0,
+    companyId,
+    stepId,
+  });
+  const result = await WizardApi.persistJob(state, {
     authToken,
     jobId,
     intent,
@@ -21,6 +28,13 @@ export async function persistJobDraft({
     wizardMeta,
     companyId,
   });
+  // eslint-disable-next-line no-console
+  console.log("[WizardServices] persistJobDraft:response", {
+    jobId: result?.jobId ?? jobId ?? null,
+    intakeLocation: result?.intake?.location ?? null,
+    companyId: result?.companyId ?? null,
+  });
+  return result;
 }
 
 export async function fetchStepSuggestions({

@@ -5,6 +5,7 @@ import { TimestampSchema } from "../common/zod.js";
 export const JobChannelRecommendationSchema = z.object({
   id: z.string(),
   jobId: z.string(),
+  companyId: z.string().nullable().optional(),
   schema_version: z.literal("1"),
   recommendations: z.array(ChannelRecommendationSchema).default([]),
   provider: z.string().optional(),
@@ -27,4 +28,3 @@ export const JobChannelRecommendationSchema = z.object({
     .optional(),
   updatedAt: TimestampSchema
 });
-

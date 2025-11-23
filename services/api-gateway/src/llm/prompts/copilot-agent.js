@@ -40,6 +40,7 @@ export function buildCopilotAgentPrompt(context = {}) {
     passiveSuggestions: context.suggestions ?? [],
     userMessage: context.userMessage ?? "",
     stageMetadata: stageConfig.stageMetadata ?? null,
+    companyContext: context.companyContext ?? null,
     instructions: stageConfig.instructions
       ? `${stageConfig.instructions} ${BASE_INSTRUCTIONS}`
       : BASE_INSTRUCTIONS

@@ -213,6 +213,19 @@ function mergeStateSnapshots(base = {}, override = {}) {
   return result;
 }
 
+const ALL_WIZARD_FIELDS = [...REQUIRED_STEPS, ...OPTIONAL_STEPS].flatMap(
+  (step) => step.fields
+);
+
+function hasMeaningfulWizardState(state) {
+  if (!state || typeof state !== "object") {
+    return false;
+  }
+  return ALL_WIZARD_FIELDS.some((field) =>
+    isFieldValueProvided(getDeep(state, field.id), field)
+  );
+}
+
 export function useWizardController({ user, initialJobId = null, initialCompanyId = null }) {
   const router = useRouter();
   const [wizardState, dispatch] = useReducer(
@@ -224,17 +237,25 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
     },
     (seed) => {
       const next = createInitialWizardState();
-      if (
-        typeof window === "undefined" ||
-        !seed?.userId
-      ) {
+      if (typeof window === "undefined" || !seed?.userId) {
         return next;
       }
-      const draft = loadDraft({
+      const seedCompanyId = seed.companyIdSeed ?? null;
+      let draft = loadDraft({
         userId: seed.userId,
         jobId: seed.jobId ?? null,
       });
-      next.companyId = seed.companyIdSeed ?? null;
+      if (
+        draft &&
+        !seed.jobId &&
+        seedCompanyId &&
+        draft.companyId &&
+        draft.companyId !== seedCompanyId
+      ) {
+        clearDraft({ userId: seed.userId, jobId: seed.jobId ?? null });
+        draft = null;
+      }
+      next.companyId = seedCompanyId;
       if (draft) {
         next.state = deepClone(draft.state ?? {});
         next.committedState = deepClone(next.state);
@@ -266,6 +287,8 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
   const currentStepIndexRef = useRef(wizardState.currentStepIndex);
   const maxVisitedIndexRef = useRef(wizardState.maxVisitedIndex);
   const companyIdRef = useRef(wizardState.companyId);
+  const jobIdRef = useRef(wizardState.jobId);
+  const currentStepIdRef = useRef(null);
   const previousFieldValuesRef = useRef({});
   const lastSuggestionSnapshotRef = useRef({});
   const toastTimeoutRef = useRef(null);
@@ -274,6 +297,7 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
   const lastHydrationKeyRef = useRef(hydrationKey);
   const migratedJobIdRef = useRef(initialJobId ?? null);
   const hasNavigatedToJobRef = useRef(false);
+  const jobBootstrapRef = useRef(false);
   const isHydratedRef = useRef(isHydrated);
   const debugEnabled = process.env.NODE_ENV !== "production";
   const debug = useCallback(
@@ -315,12 +339,24 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
   }, [wizardState.companyId]);
 
   useEffect(() => {
+    jobIdRef.current = wizardState.jobId;
+  }, [wizardState.jobId]);
+
+  useEffect(() => {
     isHydratedRef.current = isHydrated;
   }, [isHydrated]);
 
   useEffect(() => {
     conversationRef.current = wizardState.copilotConversation;
   }, [wizardState.copilotConversation]);
+
+  useEffect(() => {
+    debug("state:update", {
+      jobId: wizardState.jobId,
+      companyName: getDeep(wizardState.state, "companyName"),
+      location: getDeep(wizardState.state, "location"),
+    });
+  }, [debug, wizardState.jobId, wizardState.state]);
 
   useEffect(() => {
     if (!wizardState.jobId) {
@@ -516,6 +552,11 @@ export function useWizardController({ user, initialJobId = null, initialCompanyI
   );
 
   const currentStep = steps[wizardState.currentStepIndex] ?? null;
+  useEffect(() => {
+    const nextStepId = currentStep?.id ?? null;
+    currentStepIdRef.current = nextStepId;
+    debug("currentStep:update", { stepId: nextStepId });
+  }, [currentStep?.id, debug]);
   const totalSteps = steps.length;
   const isCurrentStepRequired =
     wizardState.currentStepIndex < REQUIRED_STEPS.length;
@@ -606,6 +647,15 @@ useEffect(() => {
       debug("hydrate:start", { userId: user.id, initialJobId });
       setIsHydrated(false);
 
+      if (!initialJobId && jobIdRef.current) {
+        setIsHydrated(true);
+        debug("hydrate:skip-existing-job", {
+          userId: user.id,
+          jobId: jobIdRef.current,
+        });
+        return;
+      }
+
       if (!initialJobId) {
         const localDraft = loadDraft({ userId: user.id, jobId: null });
         if (localDraft) {
@@ -643,11 +693,11 @@ useEffect(() => {
           });
         }
         if (!cancelled) {
-          setIsHydrated(true);
-          debug("hydrate:complete-new");
-        }
-        return;
-      }
+      setIsHydrated(true);
+      debug("hydrate:complete-new");
+    }
+    return;
+  }
 
       try {
         const serverJob = await fetchJobDraft({
@@ -677,14 +727,20 @@ useEffect(() => {
         };
 
         const allowLiveOverlay = !hydrationKeyChanged;
-        const hasLiveOverlay =
-          allowLiveOverlay && unsavedChangesRef.current && stateRef.current;
-        const liveStateOverride = hasLiveOverlay
+        const liveOverlayEligible =
+          allowLiveOverlay &&
+          unsavedChangesRef.current &&
+          hasMeaningfulWizardState(stateRef.current);
+        const liveStateOverride = liveOverlayEligible
           ? deepClone(stateRef.current ?? {})
           : null;
-        const localStateOverride = !liveStateOverride && localDraft?.state
-          ? deepClone(localDraft.state)
-          : null;
+        const localStateOverride =
+          !liveStateOverride &&
+          localDraft?.state &&
+          hasMeaningfulWizardState(localDraft.state)
+            ? deepClone(localDraft.state)
+            : null;
+        const hasLiveOverlay = Boolean(liveStateOverride);
         const overrideState = liveStateOverride ?? localStateOverride;
         const overrideIncludeOptional = hasLiveOverlay
           ? includeOptionalRef.current
@@ -989,6 +1045,96 @@ useEffect(() => {
   const persistMutation = useMutation({
     mutationFn: persistJobDraft,
   });
+  const persistMutateRef = useRef(persistMutation.mutateAsync);
+  useEffect(() => {
+    persistMutateRef.current = persistMutation.mutateAsync;
+  }, [persistMutation.mutateAsync]);
+
+  useEffect(() => {
+    if (initialJobId) {
+      return;
+    }
+    if (!isHydrated) {
+      return;
+    }
+    if (!user?.authToken) {
+      return;
+    }
+    if (wizardState.jobId) {
+      return;
+    }
+    if (jobBootstrapRef.current) {
+      return;
+    }
+    jobBootstrapRef.current = true;
+    let cancelled = false;
+
+    const bootstrapJob = async () => {
+      try {
+        const intent = { includeOptional: includeOptionalRef.current ?? false };
+        const stepId =
+          currentStepIdRef.current ?? REQUIRED_STEPS[0]?.id ?? "role-basics";
+        const companySeed =
+          companyIdRef.current ?? resolvedDefaultCompanyId ?? null;
+        const response = await persistMutateRef.current({
+          state: {},
+          authToken: user.authToken,
+          jobId: undefined,
+          intent,
+          stepId,
+          wizardMeta: {},
+          companyId: companySeed,
+        });
+        if (cancelled) {
+          return;
+        }
+        const rawServerState =
+          response.intake && typeof response.intake === "object"
+            ? response.intake
+            : {};
+        debug("bootstrap-job:intake", {
+          jobId: response.jobId,
+          keys: Object.keys(rawServerState),
+          location: rawServerState?.location ?? null,
+          companyName: rawServerState?.companyName ?? null,
+        });
+        const serverState = deepClone(rawServerState);
+        const nextPayload = {
+          jobId: response.jobId,
+          companyId:
+            response.companyId ?? companySeed ?? resolvedDefaultCompanyId ?? null,
+          state: serverState,
+          committedState: deepClone(serverState),
+          includeOptional: intent.includeOptional,
+        };
+        clearDraft({ userId: user.id, jobId: null });
+        dispatch({
+          type: "PATCH_STATE",
+          payload: nextPayload,
+        });
+        debug("bootstrap-job:patched", {
+          jobId: response.jobId,
+          statePreview: {
+            companyName: nextPayload.state?.companyName ?? null,
+            location: nextPayload.state?.location ?? null,
+          },
+        });
+        if (!initialJobId) {
+          hasNavigatedToJobRef.current = true;
+          router.replace(`/wizard/${response.jobId}`);
+        }
+      } catch (error) {
+        jobBootstrapRef.current = false;
+        debug("bootstrap-job:error", error);
+      }
+    };
+
+    bootstrapJob();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debug, initialJobId, isHydrated, resolvedDefaultCompanyId, user?.authToken, router, wizardState.jobId]);
 
   const loadCopilotConversation = useCallback(async () => {
     if (!user?.authToken || !wizardState.jobId) return;
@@ -1441,6 +1587,12 @@ useEffect(() => {
           jobId: response?.jobId ?? wizardState.jobId,
           intent,
           creatingJob,
+        });
+        debug("persist:server-response", {
+          jobId: response?.jobId ?? wizardState.jobId,
+          intakeSnapshot: response?.intake ?? null,
+          intakeLocation: response?.intake?.location ?? null,
+          companyId: response?.companyId ?? null,
         });
 
         showToast("success", "Draft saved successfully.");

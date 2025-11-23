@@ -6,6 +6,7 @@ export function buildChatPayload(context = {}) {
       userMessage: context.userMessage,
       draftState: context.draftState ?? {},
       intent: context.intent ?? {},
+      companyContext: context.companyContext ?? null
     },
     null,
     2

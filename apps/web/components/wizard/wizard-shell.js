@@ -341,6 +341,15 @@ export function WizardShell({ jobId = null, initialCompanyId = null }) {
               } else {
                 inputValue = effectiveValue ?? "";
               }
+              if (field.id === "location") {
+                // eslint-disable-next-line no-console
+                console.log("[WizardShell] location-field", {
+                  rawValue,
+                  inputValue,
+                  committedValue: getDeep(committedState, field.id),
+                  hidden: Boolean(hiddenReason),
+                });
+              }
 
               const handleChange = (event) => {
                 const { value } = event.target;

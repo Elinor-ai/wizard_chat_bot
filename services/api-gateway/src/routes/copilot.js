@@ -14,6 +14,7 @@ import {
 } from "../copilot/stages.js";
 import { loadCopilotHistory, appendCopilotMessages } from "../copilot/chat-store.js";
 import { buildJobSnapshot } from "../wizard/job-intake.js";
+import { loadCompanyContext } from "../services/company-context.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
@@ -185,6 +186,12 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         jobId: payload.jobId,
         userId
       });
+      const companyContext = await loadCompanyContext({
+        firestore,
+        companyId: job.companyId ?? null,
+        taskType: "copilot_agent",
+        logger
+      });
 
       const [conversation, suggestions] = await Promise.all([
         loadCopilotHistory({ firestore, jobId: payload.jobId, limit: 8 }),
@@ -221,7 +228,8 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         conversation,
         jobSnapshot: buildJobSnapshot(job),
         suggestions,
-        toolContext
+        toolContext,
+        companyContext
       });
 
       const assistantReply =

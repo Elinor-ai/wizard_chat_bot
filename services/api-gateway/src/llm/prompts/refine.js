@@ -69,6 +69,7 @@ export function buildRefinementInstructions(context = {}) {
       summary:
         "Clarified duties, tightened qualifications, and expanded benefits for a compelling candidate pitch.",
     },
+    companyContext: context.companyContext ?? null,
   };
 
   const payload = JSON.stringify(payloadObject, null, 2);

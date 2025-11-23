@@ -12,6 +12,7 @@ const CandidateSchema = z.object({
 export const JobSuggestionSchema = z.object({
   id: z.string(),
   jobId: z.string(),
+  companyId: z.string().nullable().optional(),
   schema_version: z.literal("3"),
   candidates: z.record(CandidateSchema).default({}),
   provider: z.string().optional(),

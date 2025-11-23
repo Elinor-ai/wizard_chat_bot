@@ -60,7 +60,8 @@ export class WizardCopilotAgent {
     conversation,
     jobSnapshot,
     suggestions,
-    toolContext
+    toolContext,
+    companyContext
   }) {
     const scratchpad = [];
     const appliedActions = [];
@@ -79,6 +80,7 @@ export class WizardCopilotAgent {
         jobSnapshot,
         suggestions,
         scratchpad,
+        companyContext,
         tools: activeTools.map((tool) => ({
           name: tool.name,
           description: tool.description,

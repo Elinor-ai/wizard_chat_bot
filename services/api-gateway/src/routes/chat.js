@@ -3,6 +3,7 @@ import { z } from "zod";
 import { wrapAsync } from "@wizard/utils";
 import { JobSchema } from "@wizard/core";
 import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
+import { loadCompanyContext } from "../services/company-context.js";
 
 const chatRequestSchema = z.object({
   jobId: z.string().optional(),
@@ -22,12 +23,21 @@ export function chatRouter({ firestore, llmClient, logger }) {
       const userId = req.user?.id ?? null;
 
       let draftState = {};
+      let companyContext = "";
       if (payload.jobId) {
         const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
         if (job) {
           const parsed = JobSchema.safeParse(job);
           if (parsed.success) {
             draftState = parsed.data;
+            if (draftState.companyId) {
+              companyContext = await loadCompanyContext({
+                firestore,
+                companyId: draftState.companyId,
+                taskType: "copilot_chat",
+                logger
+              });
+            }
           }
         }
       }
@@ -35,7 +45,8 @@ export function chatRouter({ firestore, llmClient, logger }) {
       const assistantResponse = await llmClient.askChat({
         userMessage: payload.userMessage,
         draftState,
-        intent: payload.intent ?? {}
+        intent: payload.intent ?? {},
+        companyContext
       });
 
       await recordLlmUsageFromResult({

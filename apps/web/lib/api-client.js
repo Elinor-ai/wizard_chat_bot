@@ -400,7 +400,8 @@ const persistResponseSchema = z
     draftId: z.string().optional(),
     status: z.string(),
     state: z.string().optional(),
-    companyId: z.string().nullable().optional()
+    companyId: z.string().nullable().optional(),
+    intake: z.record(z.string(), z.unknown()).optional()
   })
   .transform((data) => {
     const jobId = data.jobId ?? data.draftId;
@@ -411,7 +412,8 @@ const persistResponseSchema = z
       jobId,
       status: data.status,
       state: data.state ?? null,
-      companyId: data.companyId ?? null
+      companyId: data.companyId ?? null,
+      intake: data.intake ?? null
     };
   });
 

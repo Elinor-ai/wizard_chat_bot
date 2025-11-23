@@ -330,12 +330,13 @@ async function askChannelRecommendations(context) {
   }
 }
 
-async function askChat({ userMessage, draftState, intent }) {
+async function askChat({ userMessage, draftState, intent, companyContext }) {
   try {
     const result = await orchestrator.run("chat", {
       userMessage,
       draftState,
       intent,
+      companyContext
     });
     if (result.error) {
       llmLogger.warn(

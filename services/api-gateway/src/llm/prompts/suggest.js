@@ -56,6 +56,7 @@ export function buildSuggestionInstructions(context = {}) {
     updatedFieldId: context.updatedFieldId ?? null,
     attempt: context.attempt ?? 0,
     retryGuidance: strictNotes,
+    companyContext: context.companyContext ?? null,
   };
 
   const payload = JSON.stringify(payloadObject, null, 2);

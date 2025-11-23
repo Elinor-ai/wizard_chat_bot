@@ -69,6 +69,7 @@ export function buildChannelRecommendationInstructions(context = {}) {
       ],
     },
     hiringContext,
+    companyContext: context.companyContext ?? null
   };
 
   const payload = JSON.stringify(payloadObject, null, 2);
