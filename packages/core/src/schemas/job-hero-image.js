@@ -48,6 +48,8 @@ export const JobHeroImageSchema = z.object({
       costCents: z.number().nullable().optional()
     })
     .optional(),
+  caption: z.string().nullable().optional(),
+  captionHashtags: z.array(z.string()).nullable().optional(),
   failure: HeroImageFailureSchema,
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema

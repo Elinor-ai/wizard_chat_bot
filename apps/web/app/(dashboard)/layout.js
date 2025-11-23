@@ -16,6 +16,7 @@ import {
   PanelLeftClose,
   PanelRightOpen,
   Settings,
+  ImageDown
 } from "lucide-react";
 import { GiBearFace } from "react-icons/gi";
 import { clsx } from "../../lib/cn";
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/dashboard", label: "Overview", Icon: LayoutDashboard },
   { href: "/wizard", label: "Job Wizard", Icon: Sparkles },
   { href: "/assets", label: "Assets", Icon: Images },
+  { href: "/images", label: "Images", Icon: ImageDown },
   { href: "/videos", label: "Videos", Icon: Clapperboard },
   { href: "/campaigns", label: "Campaigns", Icon: Target },
   { href: "/credits", label: "Credits", Icon: Coins },

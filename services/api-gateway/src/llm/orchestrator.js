@@ -109,7 +109,12 @@ export class LlmOrchestrator {
 
       let parsed;
       try {
-        parsed = task.parser(response, builderContext);
+        const parserContext = {
+          ...builderContext,
+          provider: selection.provider,
+          model: selection.model,
+        };
+        parsed = task.parser(response, parserContext);
       } catch (parseError) {
         parsed = {
           error: {

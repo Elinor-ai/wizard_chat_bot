@@ -30,11 +30,13 @@ import {
   buildImagePromptInstructions,
   buildImageGenerationPayload
 } from "./prompts/image.js";
+import { buildImageCaptionPrompt } from "./prompts/image-caption.js";
 import { buildCompanyIntelPrompt } from "./prompts/company-intel.js";
 import {
   parseImagePromptResult,
   parseImageGenerationResult
 } from "./parsers/image.js";
+import { parseImageCaptionResult } from "./parsers/image-caption.js";
 import { parseCompanyIntelResult } from "./parsers/company-intel.js";
 import {
   logChannelPreview,
@@ -219,6 +221,17 @@ export const TASK_REGISTRY = {
     temperature: 0,
     maxTokens: 50,
     retries: 1,
+    strictOnRetry: true
+  },
+  hero_image_caption: {
+    system:
+      "You craft short, compelling captions for AI hero images promoting open roles. Respond with JSON only.",
+    builder: buildImageCaptionPrompt,
+    parser: parseImageCaptionResult,
+    mode: "json",
+    temperature: 0.35,
+    maxTokens: { default: 400, gemini: 800 },
+    retries: 2,
     strictOnRetry: true
   },
 };

@@ -189,6 +189,15 @@ const providerSelectionConfig = {
       banana: DEFAULT_BANANA_IMAGE_MODEL,
     },
   },
+  hero_image_caption: {
+    env: "LLM_ASSET_PROVIDER",
+    defaultProvider: "openai",
+    defaultSpec: `openai:${DEFAULT_OPENAI_ASSET_MODEL}`,
+    providerDefaults: {
+      openai: DEFAULT_OPENAI_ASSET_MODEL,
+      gemini: DEFAULT_GEMINI_ASSET_MODEL,
+    },
+  },
   copilot_agent: {
     env: "LLM_COPILOT_PROVIDER",
     defaultProvider: DEFAULT_COPILOT_PROVIDER ?? "openai",
@@ -282,6 +291,36 @@ async function askSuggestions(context) {
     };
   } catch (error) {
     llmLogger.warn({ err: error }, "askSuggestions orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error),
+      },
+    };
+  }
+}
+
+async function askHeroImageCaption(context) {
+  try {
+    const result = await orchestrator.run("hero_image_caption", context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model,
+        },
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      caption: result.caption ?? null,
+      hashtags: Array.isArray(result.hashtags) ? result.hashtags : [],
+      metadata: result.metadata ?? null,
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "heroImageCaption orchestrator failure");
     return {
       error: {
         reason: "exception",
@@ -781,5 +820,6 @@ export const llmClient = {
   askVideoCompliance,
   runCopilotAgent,
   askHeroImagePrompt,
+  askHeroImageCaption,
   runImageGeneration
 };

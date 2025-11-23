@@ -103,6 +103,20 @@ const META_BLUEPRINT = {
       batchKey: "meta_image"
     },
     {
+      formatId: "SOCIAL_IMAGE_CAPTION",
+      artifactType: "text",
+      title: "Image caption copy",
+      description:
+        "Short social caption that pairs with the hero image. Highlight the hook in one sentence, add 1-2 key perks, and end with a CTA + hashtags.",
+      tone: "friendly, motivating, community-forward",
+      length: {
+        body: 160
+      },
+      structure: ["hook", "value prop", "cta + hashtags"],
+      callToAction: "Encourage candidates to click, swipe, or DM to apply.",
+      batchKey: "meta_image"
+    },
+    {
       formatId: "SOCIAL_STORY_SCRIPT",
       artifactType: "script",
       title: "Story/vertical script",

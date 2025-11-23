@@ -932,6 +932,8 @@ async function upsertHeroImageDocument({
     imageProvider: existing?.imageProvider ?? null,
     imageModel: existing?.imageModel ?? null,
     imageMetadata: existing?.imageMetadata,
+    caption: existing?.caption ?? null,
+    captionHashtags: existing?.captionHashtags ?? null,
     failure: null,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -987,6 +989,8 @@ function serializeHeroImage(document) {
     failure: document.failure ?? null,
     updatedAt: document.updatedAt,
     metadata: document.imageMetadata ?? null,
+    caption: document.caption ?? null,
+    captionHashtags: document.captionHashtags ?? null,
   };
 }
 
@@ -2585,6 +2589,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
 
         let promptResult;
         let imageResult;
+        let captionResultData = null;
 
         const heroCompanyContext = await loadCompanyContext({
           firestore,
@@ -2660,25 +2665,69 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             "image status set to GENERATING"
           );
 
-          imageResult = await llmClient.runImageGeneration({
-            prompt: promptResult.prompt,
-            negativePrompt: promptResult.negativePrompt ?? undefined,
-            style: promptResult.style ?? undefined,
-          });
-          await trackLlmUsage(
-            imageResult,
-            {
+          const [imageOutcome, captionOutcome] = await Promise.allSettled([
+            llmClient.runImageGeneration({
+              prompt: promptResult.prompt,
+              negativePrompt: promptResult.negativePrompt ?? undefined,
+              style: promptResult.style ?? undefined,
+            }),
+            llmClient.askHeroImageCaption({
+              jobSnapshot: refinedSnapshot,
+              companyContext: heroCompanyContext,
+            }),
+          ]);
+
+          if (imageOutcome.status === "fulfilled") {
+            imageResult = imageOutcome.value;
+            await trackLlmUsage(
+              imageResult,
+              {
+                userId,
+                jobId: payload.jobId,
+                taskType: "image_generation",
+              },
+              {
+                usageType: "image",
+                usageMetrics: {
+                  units: 1,
+                },
+              }
+            );
+          } else {
+            throw imageOutcome.reason;
+          }
+
+          let captionResult = null;
+          if (captionOutcome.status === "fulfilled") {
+            captionResult = captionOutcome.value;
+            await trackLlmUsage(captionResult, {
               userId,
               jobId: payload.jobId,
-              taskType: "image_generation",
-            },
-            {
-              usageType: "image",
-              usageMetrics: {
-                units: 1,
-              },
+              taskType: "hero_image_caption",
+            });
+            if (!captionResult.error) {
+              captionResultData = {
+                caption: captionResult.caption ?? null,
+                hashtags: Array.isArray(captionResult.hashtags)
+                  ? captionResult.hashtags
+                  : null,
+              };
+            } else {
+              logger.warn(
+                {
+                  jobId: payload.jobId,
+                  reason: captionResult.error.reason,
+                  message: captionResult.error.message,
+                },
+                "hero image caption generation failed"
+              );
             }
-          );
+          } else {
+            logger.warn(
+              { jobId: payload.jobId, err: captionOutcome.reason },
+              "hero image caption generation threw"
+            );
+          }
 
           if (imageResult.error) {
             await persistHeroImageFailure({
@@ -2724,6 +2773,10 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           throw error;
         }
 
+        const captionText =
+          captionResultData?.caption ?? document.caption ?? null;
+        const captionHashtags = captionResultData?.hashtags ?? document.captionHashtags ?? null;
+
         const compression = await compressBase64Image(imageResult.imageBase64, {
           maxBytes: 900000,
         });
@@ -2745,6 +2798,8 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             imageProvider: imageResult.provider ?? null,
             imageModel: imageResult.model ?? null,
             imageMetadata: imageResult.metadata ?? null,
+            caption: captionText ?? null,
+            captionHashtags: captionHashtags ?? null,
           },
         });
         logger.info(
@@ -2770,6 +2825,35 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         );
         throw error;
       }
+    })
+  );
+
+  router.get(
+    "/jobs",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const docs = await firestore.listCollection(JOB_COLLECTION, [
+        { field: "ownerUserId", operator: "==", value: userId }
+      ]);
+      const normalized = docs
+        .map((raw) => {
+          const parsed = JobSchema.safeParse(raw);
+          if (!parsed.success) {
+            return null;
+          }
+          const job = parsed.data;
+          return {
+            id: job.id,
+            roleTitle: job.roleTitle ?? "",
+            companyName: job.companyName ?? null,
+            status: job.status ?? "draft",
+            location: job.location ?? "",
+            updatedAt: job.updatedAt ?? job.createdAt ?? null
+          };
+        })
+        .filter(Boolean);
+
+      res.json({ jobs: normalized });
     })
   );
 

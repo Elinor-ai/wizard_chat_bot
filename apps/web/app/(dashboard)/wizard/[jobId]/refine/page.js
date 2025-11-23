@@ -683,6 +683,7 @@ const ASSET_VARIANT_MAP = {
   LINKEDIN_FEED_POST: "linkedin_feed",
   GENERIC_JOB_POSTING: "linkedin_job",
   SOCIAL_IMAGE_POST: "social_image",
+  SOCIAL_IMAGE_CAPTION: "image_caption",
   SOCIAL_STORY_SCRIPT: "story",
   SHORT_VIDEO_MASTER: "story",
   SHORT_VIDEO_TIKTOK: "story",
@@ -748,15 +749,17 @@ function AssetPreviewCard({ asset, logoUrl }) {
         <LinkedInJobCard content={content} logoUrl={finalLogo} />
       ) : variant === "linkedin_feed" ? (
         <LinkedInFeedCard content={content} logoUrl={finalLogo} />
-      ) : variant === "social_image" ? (
-        <SocialImageCard content={content} logoUrl={finalLogo} />
-      ) : variant === "story" ? (
-        <StoryCard content={content} logoUrl={finalLogo} />
-      ) : variant === "hero_image" ? (
-        <HeroImageCard content={content} status={asset.status} />
-      ) : (
-        <GenericAssetCard content={content} logoUrl={finalLogo} />
-      )}
+  ) : variant === "social_image" ? (
+    <SocialImageCard content={content} logoUrl={finalLogo} />
+  ) : variant === "story" ? (
+    <StoryCard content={content} logoUrl={finalLogo} />
+  ) : variant === "hero_image" ? (
+    <HeroImageCard content={content} status={asset.status} />
+  ) : variant === "image_caption" ? (
+    <ImageCaptionCard content={content} />
+  ) : (
+    <GenericAssetCard content={content} logoUrl={finalLogo} />
+  )}
     </div>
   );
 }
@@ -900,6 +903,53 @@ function HeroImageCard({ content, status }) {
   const provider = content?.provider ?? "pending";
   const model = content?.model ?? "pending";
   const imageUrl = content?.imageUrl;
+  const caption = content?.caption ?? null;
+  const hashtags = Array.isArray(content?.hashtags)
+    ? content.hashtags.filter(Boolean).join(" ")
+    : content?.hashtags ?? "";
+  const captionText = [caption, hashtags].filter(Boolean).join("\n\n");
+
+  const handleCopyCaption = async () => {
+    if (!captionText) return;
+    try {
+      await navigator.clipboard?.writeText(captionText);
+    } catch (error) {
+      const textarea = document.createElement("textarea");
+      textarea.value = captionText;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    }
+  };
+  const filename = `hero-image-${provider ?? "ai"}.png`;
+
+  const handleDownload = () => {
+    if (!imageUrl) {
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = imageUrl;
+    const isDataUrl = imageUrl.startsWith("data:");
+    const extensionMatch = isDataUrl
+      ? imageUrl.match(/^data:image\/([a-zA-Z0-9+]+);/i)
+      : imageUrl.split("?")[0].split(".").pop();
+    const extension =
+      (Array.isArray(extensionMatch) && extensionMatch[1]) ||
+      (typeof extensionMatch === "string" ? extensionMatch : "png");
+    link.download = filename.endsWith(extension)
+      ? filename
+      : `${filename.replace(/\.[a-z]+$/i, "")}.${extension}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   if (status === "READY" && imageUrl) {
     return (
@@ -911,9 +961,40 @@ function HeroImageCard({ content, status }) {
             className="h-auto w-full rounded-lg object-cover"
           />
         </div>
-        <p className="text-xs text-neutral-500">
-          Provider: {provider} • Model: {model}
-        </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-4 text-xs text-neutral-500">
+            <p>
+              Provider: {provider} • Model: {model}
+            </p>
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="rounded-full border border-neutral-300 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-600 transition hover:border-primary-400 hover:text-primary-600"
+            >
+              Download
+            </button>
+          </div>
+          {captionText ? (
+            <div className="rounded-xl border border-neutral-200 bg-white/80 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Suggested caption
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCopyCaption}
+                  className="rounded-full border border-neutral-300 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-600 transition hover:border-primary-400 hover:text-primary-600"
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-800">
+                {caption}
+                {hashtags ? `\n\n${hashtags}` : ""}
+              </p>
+            </div>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -929,6 +1010,60 @@ function HeroImageCard({ content, status }) {
   return (
     <div className="rounded-2xl border border-dashed border-primary-200 bg-white px-4 py-4 text-sm text-primary-600">
       Generating image… this usually takes ~20 seconds.
+    </div>
+  );
+}
+
+function ImageCaptionCard({ content }) {
+  const caption = content?.body ?? content?.caption ?? "";
+  const hashtags = Array.isArray(content?.hashtags)
+    ? content.hashtags.filter(Boolean).join(" ")
+    : content?.hashtags ?? "";
+  const fullText = [caption.trim(), hashtags.trim()].filter(Boolean).join("\n\n");
+
+  const handleCopy = async () => {
+    if (!fullText) {
+      return;
+    }
+    try {
+      await navigator.clipboard?.writeText(fullText);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = fullText;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-2xl border border-neutral-100 bg-neutral-50 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Suggested caption
+        </p>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="rounded-full border border-neutral-300 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-600 transition hover:border-primary-400 hover:text-primary-600"
+        >
+          Copy
+        </button>
+      </div>
+      {fullText ? (
+        <p className="whitespace-pre-wrap text-sm text-neutral-800">{fullText}</p>
+      ) : (
+        <p className="text-sm text-neutral-400">
+          Caption not available yet. Generate assets to populate it.
+        </p>
+      )}
     </div>
   );
 }
@@ -1261,7 +1396,9 @@ export default function RefineJobPage() {
         failureMessage:
           heroImage?.failure?.message ?? heroImage?.failure?.reason ?? null,
         provider: heroImage?.imageProvider ?? "pending",
-        model: heroImage?.imageModel ?? "pending"
+        model: heroImage?.imageModel ?? "pending",
+        caption: heroImage?.caption ?? null,
+        hashtags: heroImage?.captionHashtags ?? null
       }
     };
   }, [

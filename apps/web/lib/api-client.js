@@ -655,6 +655,28 @@ const wizardJobResponseSchema = z
     importContext: data.importContext ?? null,
   }));
 
+const wizardJobSummarySchema = z
+  .object({
+    id: z.string(),
+    roleTitle: z.string().nullable().optional(),
+    companyName: z.string().nullable().optional(),
+    status: z.string().nullable().optional(),
+    location: z.string().nullable().optional(),
+    updatedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional(),
+  })
+  .transform((data) => ({
+    id: data.id,
+    roleTitle: data.roleTitle ?? "Untitled role",
+    companyName: data.companyName ?? null,
+    status: data.status ?? "draft",
+    location: data.location ?? "",
+    updatedAt: data.updatedAt
+      ? data.updatedAt instanceof Date
+        ? data.updatedAt
+        : new Date(data.updatedAt)
+      : null,
+  }));
+
 const heroImageSchema = z
   .object({
     jobId: z.string(),
@@ -684,6 +706,8 @@ const heroImageSchema = z
       .union([z.string(), z.instanceof(Date)])
       .nullable()
       .optional(),
+    caption: z.string().nullable().optional(),
+    captionHashtags: z.array(z.string()).nullable().optional(),
   })
   .transform((data) => ({
     ...data,
@@ -702,6 +726,8 @@ const heroImageSchema = z
             : null,
         }
       : null,
+    caption: data.caption ?? null,
+    captionHashtags: data.captionHashtags ?? null,
   }));
 
 function authHeaders(authToken) {
@@ -739,6 +765,24 @@ export const WizardApi = {
 
     const data = await response.json();
     return wizardJobResponseSchema.parse(data);
+  },
+
+  async fetchJobs(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/wizard/jobs`, {
+      headers: {
+        ...authHeaders(options.authToken),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load jobs");
+    }
+
+    const data = await response.json();
+    const parsed = z
+      .object({ jobs: z.array(wizardJobSummarySchema).default([]) })
+      .parse(data);
+    return parsed.jobs;
   },
 
   async importCompanyJob(payload, options = {}) {
