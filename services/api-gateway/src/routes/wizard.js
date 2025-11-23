@@ -17,14 +17,14 @@ import {
   JobAssetRunSchema,
   JobAssetStatusEnum,
   JobAssetRunStatusEnum,
-  JobHeroImageSchema
+  JobHeroImageSchema,
 } from "@wizard/core";
 import { createAssetPlan } from "../llm/domain/asset-plan.js";
 import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 import {
   loadCompanyProfile,
   buildTailoredCompanyContext,
-  loadCompanyContext
+  loadCompanyContext,
 } from "../services/company-context.js";
 
 const JOB_COLLECTION = "jobs";
@@ -53,13 +53,13 @@ async function compressBase64Image(base64, { maxBytes = 900000 } = {}) {
     const compressed = await sharp(buffer)
       .jpeg({
         quality: 75,
-        chromaSubsampling: "4:4:4"
+        chromaSubsampling: "4:4:4",
       })
       .toBuffer();
     if (compressed.length <= maxBytes) {
       return {
         base64: compressed.toString("base64"),
-        mimeType: "image/jpeg"
+        mimeType: "image/jpeg",
       };
     }
     return { base64: null, mimeType: "image/jpeg" };
@@ -84,7 +84,7 @@ const ALLOWED_INTAKE_KEYS = [
   "benefits",
   "salary",
   "salaryPeriod",
-  "currency"
+  "currency",
 ];
 const ARRAY_FIELD_KEYS = new Set(["coreDuties", "mustHaves", "benefits"]);
 const ENUM_FIELD_KEYS = ["workModel", "employmentType", "seniorityLevel"];
@@ -95,7 +95,7 @@ const REQUIRED_FIELD_PATHS = [
   "location",
   "seniorityLevel",
   "employmentType",
-  "jobDescription"
+  "jobDescription",
 ];
 
 const draftRequestSchema = z.object({
@@ -103,7 +103,7 @@ const draftRequestSchema = z.object({
   state: looseObjectSchema.default({}),
   intent: looseObjectSchema.optional(),
   currentStepId: z.string(),
-  companyId: z.string().nullable().optional()
+  companyId: z.string().nullable().optional(),
 });
 
 const suggestionsRequestSchema = z.object({
@@ -115,44 +115,44 @@ const suggestionsRequestSchema = z.object({
   updatedFieldValue: z.unknown().optional(),
   emptyFieldIds: z.array(z.string()).optional(),
   upcomingFieldIds: z.array(z.string()).optional(),
-  visibleFieldIds: z.array(z.string()).optional()
+  visibleFieldIds: z.array(z.string()).optional(),
 });
 
 const mergeRequestSchema = z.object({
   jobId: z.string(),
   fieldId: z.string(),
-  value: z.unknown()
+  value: z.unknown(),
 });
 
 const channelRecommendationRequestSchema = z.object({
   jobId: z.string(),
-  forceRefresh: z.boolean().optional()
+  forceRefresh: z.boolean().optional(),
 });
 
 const refinementRequestSchema = z.object({
   jobId: z.string(),
-  forceRefresh: z.boolean().optional()
+  forceRefresh: z.boolean().optional(),
 });
 
 const finalizeRequestSchema = z.object({
   jobId: z.string(),
   finalJob: ConfirmedJobDetailsSchema,
-  source: z.enum(["original", "refined", "edited"]).optional()
+  source: z.enum(["original", "refined", "edited"]).optional(),
 });
 
 const assetGenerationRequestSchema = z.object({
   jobId: z.string(),
   channelIds: z.array(ChannelIdEnum).min(1),
-  source: z.enum(["original", "refined", "edited"]).optional()
+  source: z.enum(["original", "refined", "edited"]).optional(),
 });
 
 const assetStatusRequestSchema = z.object({
-  jobId: z.string()
+  jobId: z.string(),
 });
 
 const heroImageRequestSchema = z.object({
   jobId: z.string(),
-  forceRefresh: z.boolean().optional()
+  forceRefresh: z.boolean().optional(),
 });
 
 function getAuthenticatedUserId(req) {
@@ -176,7 +176,7 @@ function deepMerge(base, update) {
 
   const keys = new Set([
     ...Object.keys(isPlainObject(base) ? base : {}),
-    ...Object.keys(update)
+    ...Object.keys(update),
   ]);
 
   for (const key of keys) {
@@ -189,7 +189,10 @@ function deepMerge(base, update) {
 
     if (isPlainObject(incoming) && isPlainObject(existing)) {
       const mergedChild = deepMerge(existing, incoming);
-      if (mergedChild === undefined || (isPlainObject(mergedChild) && Object.keys(mergedChild).length === 0)) {
+      if (
+        mergedChild === undefined ||
+        (isPlainObject(mergedChild) && Object.keys(mergedChild).length === 0)
+      ) {
         delete result[key];
       } else {
         result[key] = mergedChild;
@@ -240,7 +243,13 @@ function setDeep(target, path, value) {
   }
 }
 
-function createBaseJob({ jobId, userId, companyId = null, companyProfile = null, now }) {
+function createBaseJob({
+  jobId,
+  userId,
+  companyId = null,
+  companyProfile = null,
+  now,
+}) {
   const job = {
     id: jobId,
     ownerUserId: userId,
@@ -254,7 +263,7 @@ function createBaseJob({ jobId, userId, companyId = null, companyProfile = null,
       requiredComplete: false,
       optionalComplete: false,
       lastTransitionAt: now,
-      lockedByRequestId: null
+      lockedByRequestId: null,
     },
     roleTitle: "",
     companyName: "",
@@ -271,7 +280,7 @@ function createBaseJob({ jobId, userId, companyId = null, companyProfile = null,
     confirmed: {},
     createdAt: now,
     updatedAt: now,
-    archivedAt: null
+    archivedAt: null,
   };
   return applyCompanyDefaults(job, companyProfile);
 }
@@ -329,7 +338,7 @@ function computeRequiredProgress(jobState) {
     total,
     completed,
     allComplete: completed === total,
-    started: completed > 0
+    started: completed > 0,
   };
 }
 
@@ -346,7 +355,7 @@ function applyRequiredProgress(job, progress, now) {
         from: "DRAFT",
         to: "REQUIRED_IN_PROGRESS",
         at: now,
-        reason: "Started filling required fields"
+        reason: "Started filling required fields",
       });
       machine.currentState = "REQUIRED_IN_PROGRESS";
     }
@@ -355,7 +364,7 @@ function applyRequiredProgress(job, progress, now) {
         from: "REQUIRED_IN_PROGRESS",
         to: "REQUIRED_COMPLETE",
         at: now,
-        reason: "All required fields complete"
+        reason: "All required fields complete",
       });
       machine.currentState = "REQUIRED_COMPLETE";
     }
@@ -364,13 +373,14 @@ function applyRequiredProgress(job, progress, now) {
       from: "DRAFT",
       to: "REQUIRED_IN_PROGRESS",
       at: now,
-      reason: "Started filling required fields"
+      reason: "Started filling required fields",
     });
     machine.currentState = "REQUIRED_IN_PROGRESS";
   }
 
   machine.lastTransitionAt = now;
-  machine.previousState = machine.history.at(-1)?.from ?? machine.previousState ?? null;
+  machine.previousState =
+    machine.history.at(-1)?.from ?? machine.previousState ?? null;
 
   const optionalTouched =
     valueProvidedAt(nextJob, "workModel") ||
@@ -390,7 +400,7 @@ function applyRequiredProgress(job, progress, now) {
         from: "REQUIRED_COMPLETE",
         to: "OPTIONAL_IN_PROGRESS",
         at: now,
-        reason: "Optional context added"
+        reason: "Optional context added",
       });
       machine.currentState = "OPTIONAL_IN_PROGRESS";
     } else if (machine.currentState === "OPTIONAL_IN_PROGRESS") {
@@ -398,7 +408,7 @@ function applyRequiredProgress(job, progress, now) {
         from: "OPTIONAL_IN_PROGRESS",
         to: "OPTIONAL_COMPLETE",
         at: now,
-        reason: "Optional context enriched"
+        reason: "Optional context enriched",
       });
       machine.currentState = "OPTIONAL_COMPLETE";
     }
@@ -417,7 +427,7 @@ function normalizeStateMachine(rawState, now) {
     requiredComplete: false,
     optionalComplete: false,
     lastTransitionAt: now,
-    lockedByRequestId: null
+    lockedByRequestId: null,
   };
 
   if (!isPlainObject(rawState)) {
@@ -425,7 +435,10 @@ function normalizeStateMachine(rawState, now) {
   }
 
   return {
-    currentState: typeof rawState.currentState === "string" ? rawState.currentState : fallback.currentState,
+    currentState:
+      typeof rawState.currentState === "string"
+        ? rawState.currentState
+        : fallback.currentState,
     previousState: rawState.previousState ?? fallback.previousState,
     history: Array.isArray(rawState.history) ? rawState.history.slice() : [],
     requiredComplete:
@@ -436,11 +449,12 @@ function normalizeStateMachine(rawState, now) {
       typeof rawState.optionalComplete === "boolean"
         ? rawState.optionalComplete
         : Boolean(rawState.optional_complete ?? fallback.optionalComplete),
-    lastTransitionAt: rawState.lastTransitionAt ?? rawState.last_transition_at ?? now,
-    lockedByRequestId: rawState.lockedByRequestId ?? rawState.locked_by_request_id ?? null
+    lastTransitionAt:
+      rawState.lastTransitionAt ?? rawState.last_transition_at ?? now,
+    lockedByRequestId:
+      rawState.lockedByRequestId ?? rawState.locked_by_request_id ?? null,
   };
 }
-
 
 function mapCandidatesByField(candidates = []) {
   const map = {};
@@ -469,19 +483,19 @@ async function overwriteSuggestionDocument({
   provider,
   model,
   metadata,
-  now
+  now,
 }) {
-  const telemetry = metadata && Object.keys(metadata).length > 0
-    ? {
-        promptTokens:
-          metadata.promptTokens ?? metadata.promptTokenCount ?? null,
-        candidateTokens:
-          metadata.candidateTokens ?? metadata.candidatesTokenCount ?? null,
-        totalTokens:
-          metadata.totalTokens ?? metadata.totalTokenCount ?? null,
-        finishReason: metadata.finishReason ?? null
-      }
-    : undefined;
+  const telemetry =
+    metadata && Object.keys(metadata).length > 0
+      ? {
+          promptTokens:
+            metadata.promptTokens ?? metadata.promptTokenCount ?? null,
+          candidateTokens:
+            metadata.candidateTokens ?? metadata.candidatesTokenCount ?? null,
+          totalTokens: metadata.totalTokens ?? metadata.totalTokenCount ?? null,
+          finishReason: metadata.finishReason ?? null,
+        }
+      : undefined;
   const payload = JobSuggestionSchema.parse({
     id: jobId,
     jobId,
@@ -491,7 +505,7 @@ async function overwriteSuggestionDocument({
     provider,
     model,
     metadata: telemetry,
-    updatedAt: now
+    updatedAt: now,
   });
 
   await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
@@ -511,7 +525,7 @@ async function persistSuggestionFailure({
   reason,
   rawPreview,
   error,
-  now
+  now,
 }) {
   const existing = await loadSuggestionDocument(firestore, jobId);
 
@@ -528,9 +542,9 @@ async function persistSuggestionFailure({
       reason,
       rawPreview,
       error,
-      occurredAt: now
+      occurredAt: now,
     },
-    updatedAt: existing?.updatedAt ?? now
+    updatedAt: existing?.updatedAt ?? now,
   });
 
   await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
@@ -550,7 +564,7 @@ function selectSuggestionsForFields(candidateMap = {}, fieldIds = []) {
       value: candidate.value,
       rationale: candidate.rationale ?? "",
       confidence: candidate.confidence ?? undefined,
-      source: candidate.source ?? "expert-assistant"
+      source: candidate.source ?? "expert-assistant",
     }));
 }
 
@@ -560,7 +574,7 @@ async function acknowledgeSuggestionField({
   fieldId,
   companyId = null,
   logger,
-  now
+  now,
 }) {
   const existing = await loadSuggestionDocument(firestore, jobId);
   if (!existing || !existing.candidates?.[fieldId]) {
@@ -580,7 +594,7 @@ async function acknowledgeSuggestionField({
     model: existing.model,
     metadata: existing.metadata,
     lastFailure: existing.lastFailure,
-    updatedAt: now
+    updatedAt: now,
   });
 
   await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
@@ -617,7 +631,7 @@ async function overwriteRefinementDocument({
   provider,
   model,
   metadata,
-  now
+  now,
 }) {
   const payload = JobRefinementSchema.parse({
     id: jobId,
@@ -629,7 +643,7 @@ async function overwriteRefinementDocument({
     provider,
     model,
     metadata,
-    updatedAt: now
+    updatedAt: now,
   });
 
   await firestore.saveDocument(REFINEMENT_COLLECTION, jobId, payload);
@@ -645,7 +659,7 @@ async function persistRefinementFailure({
   reason,
   message,
   rawPreview,
-  now
+  now,
 }) {
   const existing = await loadRefinementDocument(firestore, jobId);
   const payload = JobRefinementSchema.parse({
@@ -662,9 +676,9 @@ async function persistRefinementFailure({
       reason,
       message: message ?? null,
       rawPreview: rawPreview ?? null,
-      occurredAt: now
+      occurredAt: now,
     },
-    updatedAt: existing?.updatedAt ?? now
+    updatedAt: existing?.updatedAt ?? now,
   });
 
   await firestore.saveDocument(REFINEMENT_COLLECTION, jobId, payload);
@@ -689,7 +703,7 @@ async function overwriteFinalJobDocument({
   companyId = null,
   finalJob,
   source,
-  now
+  now,
 }) {
   const payload = JobFinalSchema.parse({
     id: jobId,
@@ -698,7 +712,7 @@ async function overwriteFinalJobDocument({
     schema_version: "1",
     job: finalJob,
     source,
-    updatedAt: now
+    updatedAt: now,
   });
 
   await firestore.saveDocument(FINAL_JOB_COLLECTION, jobId, payload);
@@ -728,7 +742,7 @@ async function overwriteChannelRecommendationDocument({
   provider,
   model,
   metadata,
-  now
+  now,
 }) {
   const payload = JobChannelRecommendationSchema.parse({
     id: jobId,
@@ -744,10 +758,10 @@ async function overwriteChannelRecommendationDocument({
             promptTokens: metadata.promptTokens ?? null,
             responseTokens: metadata.responseTokens ?? null,
             totalTokens: metadata.totalTokens ?? null,
-            finishReason: metadata.finishReason ?? null
+            finishReason: metadata.finishReason ?? null,
           }
         : undefined,
-    updatedAt: now
+    updatedAt: now,
   });
 
   await firestore.saveDocument(
@@ -770,7 +784,7 @@ async function persistChannelRecommendationFailure({
   reason,
   message,
   rawPreview,
-  now
+  now,
 }) {
   const existing = await loadChannelRecommendationDocument(firestore, jobId);
 
@@ -787,9 +801,9 @@ async function persistChannelRecommendationFailure({
       reason,
       message: message ?? null,
       rawPreview: rawPreview ?? null,
-      occurredAt: now
+      occurredAt: now,
     },
-    updatedAt: existing?.updatedAt ?? now
+    updatedAt: existing?.updatedAt ?? now,
   });
 
   await firestore.saveDocument(
@@ -797,10 +811,7 @@ async function persistChannelRecommendationFailure({
     jobId,
     payload
   );
-  logger.warn(
-    { jobId, reason },
-    "Persisted channel recommendation failure"
-  );
+  logger.warn({ jobId, reason }, "Persisted channel recommendation failure");
   return payload;
 }
 
@@ -820,7 +831,7 @@ async function upsertHeroImageDocument({
   ownerUserId,
   companyId = null,
   patch,
-  now = new Date()
+  now = new Date(),
 }) {
   const existing = await loadHeroImageDocument(firestore, jobId);
   const payload = JobHeroImageSchema.parse({
@@ -841,7 +852,7 @@ async function upsertHeroImageDocument({
     failure: null,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
-    ...patch
+    ...patch,
   });
   await firestore.saveDocument(HERO_IMAGE_COLLECTION, jobId, payload);
   return payload;
@@ -855,7 +866,7 @@ async function persistHeroImageFailure({
   reason,
   message,
   rawPreview,
-  now = new Date()
+  now = new Date(),
 }) {
   return upsertHeroImageDocument({
     firestore,
@@ -869,9 +880,9 @@ async function persistHeroImageFailure({
         reason,
         message: message ?? null,
         rawPreview: rawPreview ?? null,
-        occurredAt: now
-      }
-    }
+        occurredAt: now,
+      },
+    },
   });
 }
 
@@ -892,7 +903,7 @@ function serializeHeroImage(document) {
     imageModel: document.imageModel,
     failure: document.failure ?? null,
     updatedAt: document.updatedAt,
-    metadata: document.imageMetadata ?? null
+    metadata: document.imageMetadata ?? null,
   };
 }
 
@@ -925,7 +936,7 @@ function serializeJobAsset(record) {
     llmRationale: record.llmRationale ?? null,
     content: record.content ?? null,
     failure: record.failure ?? null,
-    updatedAt: record.updatedAt ?? record.createdAt ?? null
+    updatedAt: record.updatedAt ?? record.createdAt ?? null,
   };
 }
 
@@ -940,7 +951,7 @@ function serializeAssetRun(run) {
     stats: run.stats ?? null,
     startedAt: run.startedAt ?? null,
     completedAt: run.completedAt ?? null,
-    error: run.error ?? null
+    error: run.error ?? null,
   };
 }
 
@@ -973,8 +984,7 @@ async function loadLatestAssetRun(firestore, jobId) {
   );
   const parsed = runs.map(normalizeJobAssetRun).filter(Boolean);
   parsed.sort(
-    (a, b) =>
-      new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
   );
   return parsed[0] ?? null;
 }
@@ -997,7 +1007,9 @@ function incrementRunStats(stats, metadata, succeeded) {
     stats.assetsCompleted = (stats.assetsCompleted ?? 0) + 1;
   }
   if (metadata) {
-    const promptTokens = Number(metadata.promptTokens ?? metadata.prompt_tokens);
+    const promptTokens = Number(
+      metadata.promptTokens ?? metadata.prompt_tokens
+    );
     const responseTokens = Number(
       metadata.responseTokens ?? metadata.response_tokens
     );
@@ -1017,7 +1029,7 @@ function createAssetRecordsFromPlan({
   companyId = null,
   plan,
   sourceJobVersion,
-  now
+  now,
 }) {
   const records = new Map();
   plan.items.forEach((item) => {
@@ -1040,7 +1052,7 @@ function createAssetRecordsFromPlan({
       derivedFromFormatId: item.derivedFromFormatId ?? null,
       sourceJobVersion,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
     records.set(item.planId, record);
   });
@@ -1079,7 +1091,7 @@ function buildMasterContext(record) {
   return {
     plan_id: record.planId ?? buildPlanKey(record.channelId, record.formatId),
     rationale: record.llmRationale ?? null,
-    content: record.content ?? {}
+    content: record.content ?? {},
   };
 }
 
@@ -1116,18 +1128,18 @@ async function runAssetGenerationPipeline({
   logger,
   trackUsage,
   usageContext,
-  companyProfile
+  companyProfile,
 }) {
   const stats = {
     assetsPlanned: plan.items.length,
     assetsCompleted: 0,
     promptTokens: 0,
-    responseTokens: 0
+    responseTokens: 0,
   };
   let hasFailures = false;
   const baseUsage = {
     userId: usageContext?.userId ?? null,
-    jobId: usageContext?.jobId ?? null
+    jobId: usageContext?.jobId ?? null,
   };
   const logUsage = async (result, taskType) => {
     if (typeof trackUsage !== "function" || !result) {
@@ -1148,20 +1160,14 @@ async function runAssetGenerationPipeline({
     return companyContextCache.get(taskType) ?? "";
   };
 
-  const markFailure = async (
-    record,
-    reason,
-    message,
-    rawPreview,
-    metadata
-  ) => {
+  const markFailure = async (record, reason, message, rawPreview, metadata) => {
     const now = new Date();
     record.status = ASSET_STATUS.FAILED;
     record.failure = {
       reason: reason ?? "asset_generation_failed",
       message: message ?? null,
       rawPreview: rawPreview ?? null,
-      occurredAt: now
+      occurredAt: now,
     };
     record.updatedAt = now;
     incrementRunStats(stats, metadata, false);
@@ -1208,7 +1214,7 @@ async function runAssetGenerationPipeline({
       planItem: item,
       channelMeta: channelMetaMap[item.channelId],
       jobSnapshot,
-      companyContext
+      companyContext,
     });
     await logUsage(result, "asset_master");
     if (result?.asset) {
@@ -1256,7 +1262,7 @@ async function runAssetGenerationPipeline({
       planItems: items,
       jobSnapshot,
       channelMetaMap,
-      companyContext: batchCompanyContext
+      companyContext: batchCompanyContext,
     });
     await logUsage(result, "asset_channel_batch");
 
@@ -1328,7 +1334,7 @@ async function runAssetGenerationPipeline({
       masterAsset: buildMasterContext(masterRecord),
       jobSnapshot,
       channelMeta: channelMetaMap[item.channelId],
-      companyContext
+      companyContext,
     });
     await logUsage(result, "asset_adapt");
     if (result?.asset) {
@@ -1354,7 +1360,7 @@ async function runAssetGenerationPipeline({
   return {
     stats,
     hasFailures,
-    records: Array.from(assetRecords.values())
+    records: Array.from(assetRecords.values()),
   };
 }
 
@@ -1377,10 +1383,7 @@ function applyCompanyDefaults(job, companyProfile) {
     return job;
   }
   const next = deepClone(job);
-  const companyName =
-    companyProfile.name ??
-    companyProfile.brand?.name ??
-    null;
+  const companyName = companyProfile.name ?? companyProfile.brand?.name ?? null;
   if (!valueProvided(next.companyName) && valueProvided(companyName)) {
     next.companyName = companyName;
   }
@@ -1399,9 +1402,7 @@ function applyCompanyDefaults(job, companyProfile) {
     .filter((part) => typeof part === "string" && part.trim().length > 0)
     .join(", ");
   const derivedLocation =
-    locationHint && locationHint.trim().length > 0
-      ? locationHint
-      : cityCountry;
+    locationHint && locationHint.trim().length > 0 ? locationHint : cityCountry;
   if (!valueProvided(next.location) && valueProvided(derivedLocation)) {
     next.location = derivedLocation;
   }
@@ -1413,18 +1414,28 @@ function applyCompanyDefaults(job, companyProfile) {
   if (!isPlainObject(next.confirmed)) {
     next.confirmed = {};
   }
-  if (!valueProvided(next.confirmed.companyName) && valueProvided(companyName)) {
+  if (
+    !valueProvided(next.confirmed.companyName) &&
+    valueProvided(companyName)
+  ) {
     next.confirmed.companyName = companyName;
   }
   if (!valueProvided(next.confirmed.logoUrl) && valueProvided(logoUrl)) {
     next.confirmed.logoUrl = logoUrl;
   }
-  if (!valueProvided(next.confirmed.location) && valueProvided(derivedLocation)) {
+  if (
+    !valueProvided(next.confirmed.location) &&
+    valueProvided(derivedLocation)
+  ) {
     next.confirmed.location = derivedLocation;
   }
-  if (!valueProvided(next.confirmed.industry) && valueProvided(companyProfile.industry)) {
+  if (
+    !valueProvided(next.confirmed.industry) &&
+    valueProvided(companyProfile.industry)
+  ) {
     next.confirmed.industry = companyProfile.industry;
   }
+}
 
 export function wizardRouter({ firestore, logger, llmClient }) {
   const router = Router();
@@ -1435,7 +1446,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       usageContext,
       result,
       usageType: options.usageType,
-      usageMetrics: options.usageMetrics
+      usageMetrics: options.usageMetrics,
     });
 
   router.post(
@@ -1445,32 +1456,46 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       const payload = draftRequestSchema.parse(req.body ?? {});
       const userProfile = req.user?.profile ?? {};
       const normalizedMainCompanyId =
-        typeof userProfile.mainCompanyId === "string" && userProfile.mainCompanyId.trim().length > 0
+        typeof userProfile.mainCompanyId === "string" &&
+        userProfile.mainCompanyId.trim().length > 0
           ? userProfile.mainCompanyId.trim()
           : null;
       const allowedCompanySet = new Set(
         Array.isArray(userProfile.companyIds)
-          ? userProfile.companyIds.filter((value) => typeof value === "string" && value.trim().length > 0)
+          ? userProfile.companyIds.filter(
+              (value) => typeof value === "string" && value.trim().length > 0
+            )
           : []
       );
       if (normalizedMainCompanyId) {
         allowedCompanySet.add(normalizedMainCompanyId);
       }
       const requestedCompanyId =
-        typeof payload.companyId === "string" && payload.companyId.trim().length > 0
+        typeof payload.companyId === "string" &&
+        payload.companyId.trim().length > 0
           ? payload.companyId.trim()
           : null;
       let selectedCompanyId = null;
       if (requestedCompanyId) {
-        if (allowedCompanySet.size === 0 || allowedCompanySet.has(requestedCompanyId)) {
+        if (
+          allowedCompanySet.size === 0 ||
+          allowedCompanySet.has(requestedCompanyId)
+        ) {
           selectedCompanyId = requestedCompanyId;
         }
       }
       const companyDocId = selectedCompanyId ?? normalizedMainCompanyId ?? null;
       const companyProfile = companyDocId
-        ? await loadCompanyProfile({ firestore, companyId: companyDocId, logger })
+        ? await loadCompanyProfile({
+            firestore,
+            companyId: companyDocId,
+            logger,
+          })
         : null;
-      const jobId = typeof payload.jobId === "string" && payload.jobId.length > 0 ? payload.jobId : `job_${uuid()}`;
+      const jobId =
+        typeof payload.jobId === "string" && payload.jobId.length > 0
+          ? payload.jobId
+          : `job_${uuid()}`;
 
       logger.info(
         {
@@ -1479,7 +1504,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           requestedCompanyId,
           selectedCompanyId,
           normalizedMainCompanyId,
-          companyProfileLoaded: Boolean(companyProfile)
+          companyProfileLoaded: Boolean(companyProfile),
         },
         "wizard:draft:company-selection"
       );
@@ -1502,13 +1527,13 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             userId: existing.ownerUserId ?? userId,
             companyId: selectedCompanyId ?? normalizedMainCompanyId ?? null,
             companyProfile,
-            now
+            now,
           });
         }
         if (!baseJob.companyId) {
           baseJob = {
             ...baseJob,
-            companyId: selectedCompanyId ?? normalizedMainCompanyId ?? null
+            companyId: selectedCompanyId ?? normalizedMainCompanyId ?? null,
           };
         }
       } else {
@@ -1517,26 +1542,37 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           userId,
           companyId: selectedCompanyId ?? normalizedMainCompanyId ?? null,
           companyProfile,
-          now
+          now,
         });
       }
 
-      const mergedJob = mergeIntakeIntoJob(baseJob, payload.state ?? {}, { userId, now });
+      const mergedJob = mergeIntakeIntoJob(baseJob, payload.state ?? {}, {
+        userId,
+        now,
+      });
       const progress = computeRequiredProgress(mergedJob);
       const jobWithProgress = applyRequiredProgress(mergedJob, progress, now);
-      if (!jobWithProgress.companyId && (selectedCompanyId || normalizedMainCompanyId)) {
-        jobWithProgress.companyId = selectedCompanyId ?? normalizedMainCompanyId ?? null;
+      if (
+        !jobWithProgress.companyId &&
+        (selectedCompanyId || normalizedMainCompanyId)
+      ) {
+        jobWithProgress.companyId =
+          selectedCompanyId ?? normalizedMainCompanyId ?? null;
       }
       const validatedJob = JobSchema.parse(jobWithProgress);
 
-      const savedJob = await firestore.saveDocument(JOB_COLLECTION, jobId, validatedJob);
+      const savedJob = await firestore.saveDocument(
+        JOB_COLLECTION,
+        jobId,
+        validatedJob
+      );
 
       logger.info(
         {
           jobId,
           userId,
           step: payload.currentStepId,
-          state: savedJob.stateMachine?.currentState
+          state: savedJob.stateMachine?.currentState,
         },
         "Job persisted"
       );
@@ -1551,15 +1587,15 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         status: savedJob.status,
         state: savedJob.stateMachine?.currentState ?? "DRAFT",
         companyId: savedJob.companyId ?? null,
-        intake: latestFields
+        intake: latestFields,
       });
       logger.info(
         {
           jobId,
           intakePreview: {
             location: latestFields.location ?? null,
-            companyName: latestFields.companyName ?? null
-          }
+            companyName: latestFields.companyName ?? null,
+          },
         },
         "wizard:draft:response"
       );
@@ -1579,7 +1615,10 @@ export function wizardRouter({ firestore, logger, llmClient }) {
 
       const parsedJob = JobSchema.parse(job);
       const now = new Date();
-      const mergedJob = mergeIntakeIntoJob(parsedJob, payload.state ?? {}, { userId, now });
+      const mergedJob = mergeIntakeIntoJob(parsedJob, payload.state ?? {}, {
+        userId,
+        now,
+      });
       const progress = computeRequiredProgress(mergedJob);
 
       if (!progress.allComplete) {
@@ -1592,23 +1631,28 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           suggestions: [],
           updatedAt: null,
           refreshed: false,
-          failure: null
+          failure: null,
         });
       }
 
       const visibleFieldIds =
-        Array.isArray(payload.visibleFieldIds) && payload.visibleFieldIds.length > 0
+        Array.isArray(payload.visibleFieldIds) &&
+        payload.visibleFieldIds.length > 0
           ? payload.visibleFieldIds
-          : Array.isArray(payload.emptyFieldIds) && payload.emptyFieldIds.length > 0
-          ? payload.emptyFieldIds
-          : [];
+          : Array.isArray(payload.emptyFieldIds) &&
+              payload.emptyFieldIds.length > 0
+            ? payload.emptyFieldIds
+            : [];
 
-      let suggestionDoc = await loadSuggestionDocument(firestore, payload.jobId);
+      let suggestionDoc = await loadSuggestionDocument(
+        firestore,
+        payload.jobId
+      );
       const companyContext = await loadCompanyContext({
         firestore,
         companyId: job.companyId ?? null,
         taskType: "wizard_suggestions",
-        logger
+        logger,
       });
       const shouldRefresh =
         !suggestionDoc ||
@@ -1627,14 +1671,14 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             acc[key] = mergedJob[key];
             return acc;
           }, {}),
-          companyContext
+          companyContext,
         };
 
         const llmResult = await llmClient.askSuggestions(llmPayload);
         await trackLlmUsage(llmResult, {
           userId,
           jobId: payload.jobId,
-          taskType: "wizard_suggestions"
+          taskType: "wizard_suggestions",
         });
         if (llmResult?.candidates?.length > 0) {
           suggestionDoc = await overwriteSuggestionDocument({
@@ -1646,7 +1690,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             provider: llmResult.provider,
             model: llmResult.model,
             metadata: llmResult.metadata,
-            now
+            now,
           });
           refreshed = true;
         } else if (llmResult?.error) {
@@ -1658,7 +1702,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             reason: llmResult.error.reason ?? "unknown_error",
             rawPreview: llmResult.error.rawPreview ?? null,
             error: llmResult.error.message ?? null,
-            now
+            now,
           });
           refreshed = true;
         } else {
@@ -1670,7 +1714,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             reason: "no_suggestions",
             rawPreview: null,
             error: "LLM returned no candidates",
-            now
+            now,
           });
           refreshed = true;
         }
@@ -1686,7 +1730,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         suggestions,
         updatedAt: suggestionDoc?.updatedAt ?? null,
         refreshed,
-        failure: suggestionDoc?.lastFailure ?? null
+        failure: suggestionDoc?.lastFailure ?? null,
       });
     })
   );
@@ -1720,7 +1764,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         fieldId: payload.fieldId,
         companyId: parsedJob.companyId ?? null,
         logger,
-        now
+        now,
       });
 
       res.json({ status: "ok" });
@@ -1752,7 +1796,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         firestore,
         companyId: parsedJob.companyId ?? null,
         taskType: "job_refinement",
-        logger
+        logger,
       });
 
       let refinementDoc = await loadRefinementDocument(
@@ -1770,12 +1814,12 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         const llmResult = await llmClient.askRefineJob({
           jobSnapshot,
           confirmed: parsedJob.confirmed ?? {},
-          companyContext
+          companyContext,
         });
         await trackLlmUsage(llmResult, {
           userId,
           jobId: payload.jobId,
-          taskType: "job_refinement"
+          taskType: "job_refinement",
         });
 
         if (llmResult?.refinedJob) {
@@ -1789,7 +1833,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             provider: llmResult.provider,
             model: llmResult.model,
             metadata: llmResult.metadata,
-            now
+            now,
           });
           refreshed = true;
         } else if (llmResult?.error) {
@@ -1801,7 +1845,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             reason: llmResult.error.reason ?? "unknown_error",
             message: llmResult.error.message ?? null,
             rawPreview: llmResult.error.rawPreview ?? null,
-            now
+            now,
           });
           refreshed = true;
         }
@@ -1820,7 +1864,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         updatedAt: refinementDoc.updatedAt ?? null,
         refreshed,
         failure: refinementDoc.lastFailure ?? null,
-        originalJob: jobSnapshot
+        originalJob: jobSnapshot,
       });
     })
   );
@@ -1860,12 +1904,16 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       }
       nextJob.confirmed = {
         ...(nextJob.confirmed ?? {}),
-        ...finalJob
+        ...finalJob,
       };
       nextJob.updatedAt = now;
 
       const finalProgress = computeRequiredProgress(nextJob);
-      const jobWithProgress = applyRequiredProgress(nextJob, finalProgress, now);
+      const jobWithProgress = applyRequiredProgress(
+        nextJob,
+        finalProgress,
+        now
+      );
       const validatedJob = JobSchema.parse(jobWithProgress);
       await firestore.saveDocument(JOB_COLLECTION, payload.jobId, validatedJob);
 
@@ -1876,14 +1924,14 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         companyId: validatedJob.companyId ?? null,
         finalJob,
         source,
-        now
+        now,
       });
 
       const channelCompanyContext = await loadCompanyContext({
         firestore,
         companyId: validatedJob.companyId ?? null,
         taskType: "channel_recommendations",
-        logger
+        logger,
       });
 
       const channelResult = await llmClient.askChannelRecommendations({
@@ -1895,12 +1943,12 @@ export function wizardRouter({ firestore, logger, llmClient }) {
               .map((campaign) => campaign?.channel)
               .filter((channel) => typeof channel === "string")
           : [],
-        companyContext: channelCompanyContext
+        companyContext: channelCompanyContext,
       });
       await trackLlmUsage(channelResult, {
         userId,
         jobId: payload.jobId,
-        taskType: "channel_recommendations"
+        taskType: "channel_recommendations",
       });
 
       let channelDoc = null;
@@ -1915,7 +1963,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           provider: channelResult.provider,
           model: channelResult.model,
           metadata: channelResult.metadata,
-          now
+          now,
         });
       } else if (channelResult?.error) {
         channelDoc = await persistChannelRecommendationFailure({
@@ -1926,7 +1974,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           reason: channelResult.error.reason ?? "unknown_error",
           message: channelResult.error.message ?? null,
           rawPreview: channelResult.error.rawPreview ?? null,
-          now
+          now,
         });
       } else {
         channelDoc = await persistChannelRecommendationFailure({
@@ -1937,7 +1985,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           reason: "no_recommendations",
           message: "LLM returned no channel recommendations",
           rawPreview: null,
-          now
+          now,
         });
       }
 
@@ -1947,7 +1995,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         source,
         channelRecommendations: channelDoc?.recommendations ?? [],
         channelUpdatedAt: channelDoc?.updatedAt ?? null,
-        channelFailure: channelDoc?.lastFailure ?? null
+        channelFailure: channelDoc?.lastFailure ?? null,
       });
     })
   );
@@ -1968,10 +2016,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
 
       const finalJob = await loadFinalJobDocument(firestore, payload.jobId);
       if (!finalJob?.job) {
-        throw httpError(
-          409,
-          "Finalize the job before generating assets."
-        );
+        throw httpError(409, "Finalize the job before generating assets.");
       }
 
       const channelIds = Array.from(new Set(payload.channelIds));
@@ -1991,7 +2036,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           ? await loadCompanyProfile({
               firestore,
               companyId: job.companyId,
-              logger
+              logger,
             })
           : null;
       const assetRecords = createAssetRecordsFromPlan({
@@ -2000,7 +2045,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         companyId: job.companyId ?? null,
         plan,
         sourceJobVersion,
-        now
+        now,
       });
 
       for (const record of assetRecords.values()) {
@@ -2020,10 +2065,10 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           assetsPlanned: plan.items.length,
           assetsCompleted: 0,
           promptTokens: 0,
-          responseTokens: 0
+          responseTokens: 0,
         },
         startedAt: now,
-        completedAt: null
+        completedAt: null,
       };
 
       run = await persistAssetRun({ firestore, run });
@@ -2040,20 +2085,18 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             logger,
             usageContext: { userId, jobId: payload.jobId },
             trackUsage: trackLlmUsage,
-            companyProfile
+            companyProfile,
           });
 
         run.stats = stats;
-        run.status = hasFailures
-          ? RUN_STATUS.FAILED
-          : RUN_STATUS.COMPLETED;
+        run.status = hasFailures ? RUN_STATUS.FAILED : RUN_STATUS.COMPLETED;
         run.completedAt = new Date();
         if (!hasFailures) {
           run.error = undefined;
         } else {
           run.error = {
             reason: "partial_failure",
-            message: "One or more assets failed to generate"
+            message: "One or more assets failed to generate",
           };
         }
         run = await persistAssetRun({ firestore, run });
@@ -2061,7 +2104,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         res.json({
           jobId: payload.jobId,
           run: serializeAssetRun(run),
-          assets: records.map(serializeJobAsset)
+          assets: records.map(serializeJobAsset),
         });
       } catch (error) {
         logger.error(
@@ -2072,7 +2115,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         run.completedAt = new Date();
         run.error = {
           reason: "asset_pipeline_failed",
-          message: error?.message ?? "Asset pipeline failed"
+          message: error?.message ?? "Asset pipeline failed",
         };
         await persistAssetRun({ firestore, run });
         throw httpError(500, "Asset generation failed");
@@ -2091,7 +2134,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         throw httpError(400, "jobId query parameter required");
       }
       const payload = assetStatusRequestSchema.parse({
-        jobId: jobIdRaw
+        jobId: jobIdRaw,
       });
 
       const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
@@ -2104,13 +2147,13 @@ export function wizardRouter({ firestore, logger, llmClient }) {
 
       const [assets, run] = await Promise.all([
         loadJobAssets(firestore, payload.jobId),
-        loadLatestAssetRun(firestore, payload.jobId)
+        loadLatestAssetRun(firestore, payload.jobId),
       ]);
 
       res.json({
         jobId: payload.jobId,
         assets: assets.map(serializeJobAsset),
-        run: serializeAssetRun(run)
+        run: serializeAssetRun(run),
       });
     })
   );
@@ -2144,11 +2187,10 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         firestore,
         companyId: parsedJob.companyId ?? null,
         taskType: "channel_recommendations",
-        logger
+        logger,
       });
 
-      const shouldRefresh =
-        !doc || payload.forceRefresh === true;
+      const shouldRefresh = !doc || payload.forceRefresh === true;
 
       let refreshed = false;
 
@@ -2162,12 +2204,12 @@ export function wizardRouter({ firestore, logger, llmClient }) {
                 .map((campaign) => campaign?.channel)
                 .filter((channel) => typeof channel === "string")
             : [],
-          companyContext
+          companyContext,
         });
         await trackLlmUsage(llmResult, {
           userId,
           jobId: payload.jobId,
-          taskType: "channel_recommendations"
+          taskType: "channel_recommendations",
         });
 
         if (llmResult?.recommendations?.length > 0) {
@@ -2179,7 +2221,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             provider: llmResult.provider,
             model: llmResult.model,
             metadata: llmResult.metadata,
-            now
+            now,
           });
           refreshed = true;
         } else if (llmResult?.error) {
@@ -2190,7 +2232,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             reason: llmResult.error.reason ?? "unknown_error",
             message: llmResult.error.message ?? null,
             rawPreview: llmResult.error.rawPreview ?? null,
-            now
+            now,
           });
           refreshed = true;
         } else {
@@ -2201,7 +2243,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             reason: "no_recommendations",
             message: "LLM returned no channel recommendations",
             rawPreview: null,
-            now
+            now,
           });
           refreshed = true;
         }
@@ -2217,7 +2259,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         recommendations,
         updatedAt: doc?.updatedAt ?? null,
         refreshed,
-        failure: doc?.lastFailure ?? null
+        failure: doc?.lastFailure ?? null,
       });
     })
   );
@@ -2244,7 +2286,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
       const document = await loadHeroImageDocument(firestore, jobIdRaw);
       res.json({
         jobId: jobIdRaw,
-        heroImage: serializeHeroImage(document)
+        heroImage: serializeHeroImage(document),
       });
     })
   );
@@ -2277,7 +2319,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         ) {
           res.json({
             jobId: payload.jobId,
-            heroImage: serializeHeroImage(existing)
+            heroImage: serializeHeroImage(existing),
           });
           return;
         }
@@ -2306,13 +2348,13 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             status: "PROMPTING",
             imageBase64: null,
             imageUrl: null,
-            failure: null
-          }
+            failure: null,
+          },
         });
         logger.info(
           {
             jobId: payload.jobId,
-            heroStatus: document.status
+            heroStatus: document.status,
           },
           "image status set to PROMPTING"
         );
@@ -2324,18 +2366,18 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           firestore,
           companyId: jobCompanyId,
           taskType: "image_prompt_generation",
-          logger
+          logger,
         });
 
         try {
           promptResult = await llmClient.askHeroImagePrompt({
             refinedJob: refinedSnapshot,
-            companyContext: heroCompanyContext
+            companyContext: heroCompanyContext,
           });
           await trackLlmUsage(promptResult, {
             userId,
             jobId: payload.jobId,
-            taskType: "image_prompt_generation"
+            taskType: "image_prompt_generation",
           });
 
           if (promptResult.error) {
@@ -2347,13 +2389,13 @@ export function wizardRouter({ firestore, logger, llmClient }) {
               reason: promptResult.error.reason ?? "prompt_failed",
               message: promptResult.error.message,
               rawPreview: promptResult.error.rawPreview ?? null,
-              now: new Date()
+              now: new Date(),
             });
             logger.error(
               {
                 jobId: payload.jobId,
                 reason: promptResult.error.reason,
-                message: promptResult.error.message
+                message: promptResult.error.message,
               },
               "image prompt generation failed"
             );
@@ -2367,7 +2409,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             {
               jobId: payload.jobId,
               provider: promptResult.provider,
-              model: promptResult.model
+              model: promptResult.model,
             },
             "image prompt generated"
           );
@@ -2382,14 +2424,14 @@ export function wizardRouter({ firestore, logger, llmClient }) {
               prompt: promptResult.prompt,
               promptProvider: promptResult.provider ?? null,
               promptModel: promptResult.model ?? null,
-              promptMetadata: promptResult.metadata ?? null
-            }
+              promptMetadata: promptResult.metadata ?? null,
+            },
           });
           logger.info(
             {
               jobId: payload.jobId,
               promptProvider: promptResult.provider,
-              promptModel: promptResult.model
+              promptModel: promptResult.model,
             },
             "image status set to GENERATING"
           );
@@ -2397,20 +2439,20 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           imageResult = await llmClient.runImageGeneration({
             prompt: promptResult.prompt,
             negativePrompt: promptResult.negativePrompt ?? undefined,
-            style: promptResult.style ?? undefined
+            style: promptResult.style ?? undefined,
           });
           await trackLlmUsage(
             imageResult,
             {
               userId,
               jobId: payload.jobId,
-              taskType: "image_generation"
+              taskType: "image_generation",
             },
             {
               usageType: "image",
               usageMetrics: {
-                units: 1
-              }
+                units: 1,
+              },
             }
           );
 
@@ -2423,13 +2465,13 @@ export function wizardRouter({ firestore, logger, llmClient }) {
               reason: imageResult.error.reason ?? "generation_failed",
               message: imageResult.error.message,
               rawPreview: imageResult.error.rawPreview ?? null,
-              now: new Date()
+              now: new Date(),
             });
             logger.error(
               {
                 jobId: payload.jobId,
                 reason: imageResult.error.reason,
-                message: imageResult.error.message
+                message: imageResult.error.message,
               },
               "image generation failed"
             );
@@ -2443,7 +2485,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             {
               jobId: payload.jobId,
               provider: imageResult.provider,
-              model: imageResult.model
+              model: imageResult.model,
             },
             "image generated successfully"
           );
@@ -2451,7 +2493,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
           logger.error(
             {
               jobId: payload.jobId,
-              err: error
+              err: error,
             },
             "image pipeline threw"
           );
@@ -2459,11 +2501,13 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         }
 
         const compression = await compressBase64Image(imageResult.imageBase64, {
-          maxBytes: 900000
+          maxBytes: 900000,
         });
         const storedBase64 = compression.base64;
         const storedMimeType = compression.mimeType ?? "image/png";
-        const storedUrl = storedBase64 ? imageResult.imageUrl ?? null : imageResult.imageUrl ?? null;
+        const storedUrl = storedBase64
+          ? (imageResult.imageUrl ?? null)
+          : (imageResult.imageUrl ?? null);
 
         document = await upsertHeroImageDocument({
           firestore,
@@ -2476,27 +2520,27 @@ export function wizardRouter({ firestore, logger, llmClient }) {
             imageMimeType: storedBase64 ? storedMimeType : null,
             imageProvider: imageResult.provider ?? null,
             imageModel: imageResult.model ?? null,
-            imageMetadata: imageResult.metadata ?? null
-          }
+            imageMetadata: imageResult.metadata ?? null,
+          },
         });
         logger.info(
           {
             jobId: payload.jobId,
             imageProvider: imageResult.provider,
-            imageModel: imageResult.model
+            imageModel: imageResult.model,
           },
           "image status set to READY"
         );
 
         res.json({
           jobId: payload.jobId,
-          heroImage: serializeHeroImage(document)
+          heroImage: serializeHeroImage(document),
         });
       } catch (error) {
         logger.error(
           {
             jobId: payload.jobId,
-            err: error
+            err: error,
           },
           "image route failed"
         );
@@ -2535,7 +2579,7 @@ export function wizardRouter({ firestore, logger, llmClient }) {
         includeOptional: Boolean(parsedJob.stateMachine?.optionalComplete),
         updatedAt: parsedJob.updatedAt ?? parsedJob.createdAt ?? null,
         status: parsedJob.status ?? null,
-        companyId: parsedJob.companyId ?? null
+        companyId: parsedJob.companyId ?? null,
       });
     })
   );
