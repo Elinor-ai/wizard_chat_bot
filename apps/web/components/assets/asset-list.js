@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -16,6 +16,7 @@ import {
 import { clsx } from "../../lib/cn";
 import { WizardApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
+import { AssetPreviewModal } from "./asset-preview-modal";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
@@ -97,12 +98,16 @@ function buildJobGroups(assets) {
         jobId: asset.jobId,
         jobTitle: asset.jobTitle ?? "Untitled role",
         companyId: asset.companyId ?? null,
+        companyName: asset.companyName ?? null,
         logoUrl: asset.logoUrl ?? null,
         latestUpdatedAt: updatedAt,
         assets: [asset]
       });
     } else {
       existing.assets.push(asset);
+      if (!existing.companyName && asset.companyName) {
+        existing.companyName = asset.companyName;
+      }
       if (updatedAt && (!existing.latestUpdatedAt || updatedAt > existing.latestUpdatedAt)) {
         existing.latestUpdatedAt = updatedAt;
       }
@@ -255,7 +260,7 @@ function CompanySidebar({
   );
 }
 
-function JobGroupCard({ group }) {
+function JobGroupCard({ group, onPreview }) {
   const [isOpen, setIsOpen] = useState(false);
   const initials = getInitials(group.jobTitle);
   const assetCount = group.assets.length;
@@ -286,7 +291,9 @@ function JobGroupCard({ group }) {
           </div>
           <div>
             <p className="text-lg font-semibold text-neutral-900">{group.jobTitle}</p>
-            <p className="text-sm text-neutral-500">{lastUpdatedLabel}</p>
+            <p className="text-sm text-neutral-500">
+              {group.companyName ? `${group.companyName} • ${lastUpdatedLabel}` : lastUpdatedLabel}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -311,9 +318,9 @@ function JobGroupCard({ group }) {
             transition={{ duration: 0.25, ease: "easeInOut" }}
             className="overflow-hidden border-t border-neutral-100"
           >
-            <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 xl:grid-cols-3">
               {group.assets.map((asset) => (
-                <AssetCard key={asset.id} asset={asset} />
+                <AssetCard key={asset.id} asset={asset} onPreview={onPreview} />
               ))}
               <GenerateMoreCard jobTitle={group.jobTitle} />
             </div>
@@ -324,7 +331,7 @@ function JobGroupCard({ group }) {
   );
 }
 
-function AssetCard({ asset }) {
+function AssetCard({ asset, onPreview }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const normalizedType = asset.artifactType?.toLowerCase?.() ?? "text";
@@ -368,6 +375,9 @@ function AssetCard({ asset }) {
   const updatedLabel = asset.updatedAt
     ? `Updated ${normalizeDate(asset.updatedAt)?.toLocaleDateString()}`
     : null;
+  const handlePreviewClick = useCallback(() => {
+    onPreview?.(asset);
+  }, [asset, onPreview]);
 
   return (
     <div className="relative flex min-h-[220px] flex-col rounded-3xl border border-neutral-100 bg-white p-4 shadow-sm shadow-neutral-200/70 transition hover:-translate-y-0.5 hover:shadow-md">
@@ -415,9 +425,13 @@ function AssetCard({ asset }) {
         </div>
       </div>
 
-      <div className="mt-3 flex-1">
+      <button
+        type="button"
+        onClick={handlePreviewClick}
+        className="mt-3 flex flex-1 flex-col rounded-2xl border border-dashed border-transparent text-left transition hover:border-primary-200 hover:bg-primary-50/20"
+      >
         {normalizedType === "text" ? (
-          <p className="line-clamp-5 text-sm text-neutral-600">{textSnippet}</p>
+          <p className="line-clamp-5 px-3 py-3 text-sm text-neutral-600">{textSnippet}</p>
         ) : (
           <div className="flex h-40 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-neutral-200 bg-neutral-50">
             {mediaUrl ? (
@@ -431,7 +445,7 @@ function AssetCard({ asset }) {
             )}
           </div>
         )}
-      </div>
+      </button>
 
       <div className="mt-4 flex items-center justify-between text-xs text-neutral-500">
         <span className="rounded-full bg-neutral-100 px-2 py-1 font-medium capitalize text-neutral-700">
@@ -460,6 +474,7 @@ export function AssetList() {
   const { user } = useUser();
   const authToken = user?.authToken ?? null;
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+  const [previewAsset, setPreviewAsset] = useState(null);
 
   const assetsQuery = useQuery({
     queryKey: ["assets", authToken],
@@ -534,6 +549,14 @@ export function AssetList() {
     return assets.filter((asset) => getCompanyKeyFromAsset(asset) === selectedCompanyId);
   }, [assets, selectedCompanyId]);
 
+  const handleOpenPreview = useCallback((asset) => {
+    setPreviewAsset(asset);
+  }, []);
+
+  const handleClosePreview = useCallback(() => {
+    setPreviewAsset(null);
+  }, []);
+
   const groupedAssets = useMemo(() => {
     const groups = buildJobGroups(filteredAssets);
     return groups.sort((a, b) => {
@@ -607,12 +630,19 @@ export function AssetList() {
           ) : (
             <div className="mt-6 space-y-4">
               {groupedAssets.map((group) => (
-                <JobGroupCard key={group.jobId} group={group} />
+                <JobGroupCard key={group.jobId} group={group} onPreview={handleOpenPreview} />
               ))}
             </div>
           )}
         </div>
       </div>
+      <AssetPreviewModal
+        isOpen={Boolean(previewAsset)}
+        onClose={handleClosePreview}
+        asset={previewAsset}
+        companyName={previewAsset?.companyName ?? null}
+        logoUrl={previewAsset?.logoUrl ?? null}
+      />
     </section>
   );
 }
