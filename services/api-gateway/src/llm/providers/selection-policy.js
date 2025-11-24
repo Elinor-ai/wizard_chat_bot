@@ -5,8 +5,7 @@ const KNOWN_PROVIDERS = [
   "gemini",
   "dall-e",
   "imagen",
-  "stable_diffusion",
-  "banana"
+  "stable_diffusion"
 ];
 
 export function parseProviderSpec(spec, { defaultProvider, defaultModel }) {

@@ -17,6 +17,10 @@ import { videosRouter } from "./routes/videos.js";
 import { companiesRouter } from "./routes/companies.js";
 import { startCompanyIntelWorker } from "./services/company-intel.js";
 import { subscriptionsRouter } from "./routes/subscriptions.js";
+import {
+  getBaseUsdPerCredit,
+  listSubscriptionPlans
+} from "./config/subscription-plans.js";
 
 const corsConfig = {
   origin: "http://localhost:3000",
@@ -77,6 +81,21 @@ export function createApp({ logger, firestore, llmClient }) {
   app.use("/dashboard", authMiddleware, dashboardRouter({ firestore, logger }));
   app.use("/users", authMiddleware, usersRouter({ firestore, logger }));
   app.use("/companies", authMiddleware, companiesRouter({ firestore, logger }));
+  const publicSubscriptionsRouter = express.Router();
+  publicSubscriptionsRouter.get("/plans", (req, res, next) => {
+    try {
+      const plans = listSubscriptionPlans();
+      res.json({
+        plans,
+        currency: "USD",
+        usdPerCredit: getBaseUsdPerCredit()
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.use("/subscriptions", publicSubscriptionsRouter);
+
   app.use("/subscriptions", authMiddleware, subscriptionsRouter({ firestore, logger }));
 
   app.use(notFound);

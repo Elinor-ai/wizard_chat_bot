@@ -1209,7 +1209,6 @@ export default function RefineJobPage() {
   const [channelUpdatedAt, setChannelUpdatedAt] = useState(null);
   const [channelFailure, setChannelFailure] = useState(null);
   const [isFetchingChannels, setIsFetchingChannels] = useState(false);
-  const [isRegeneratingChannels, setIsRegeneratingChannels] = useState(false);
   const [jobAssets, setJobAssets] = useState([]);
   const [assetRun, setAssetRun] = useState(null);
   const [assetError, setAssetError] = useState(null);
@@ -1358,7 +1357,7 @@ export default function RefineJobPage() {
   const isStepTransitioning = useMemo(() => {
     if (
       currentStep === "channels" &&
-      (isFinalizing || isRegeneratingChannels || isFetchingChannels)
+      (isFinalizing || isFetchingChannels)
     ) {
       return true;
     }
@@ -1369,7 +1368,6 @@ export default function RefineJobPage() {
   }, [
     currentStep,
     isFinalizing,
-    isRegeneratingChannels,
     isFetchingChannels,
     isGeneratingAssets
   ]);
@@ -1564,7 +1562,7 @@ export default function RefineJobPage() {
     if (isFinalizing) {
       return "Preparing channel recommendations…";
     }
-    if (currentStep === "channels" && (isRegeneratingChannels || isFetchingChannels)) {
+    if (currentStep === "channels" && isFetchingChannels) {
       return "Refreshing channel recommendations…";
     }
     if (isGeneratingAssets) {
@@ -1574,7 +1572,6 @@ export default function RefineJobPage() {
   }, [
     isFinalizing,
     currentStep,
-    isRegeneratingChannels,
     isFetchingChannels,
     isGeneratingAssets
   ]);
@@ -1779,21 +1776,16 @@ useEffect(() => {
   };
 
   const loadChannelRecommendations = useCallback(
-    async ({ forceRefresh = false } = {}) => {
+    async () => {
       if (!user?.authToken || !jobId) return;
-      if (isRegeneratingChannels || (isFetchingChannels && !forceRefresh)) {
+      if (isFetchingChannels) {
         return;
       }
-      if (forceRefresh) {
-        setIsRegeneratingChannels(true);
-      } else {
-        setIsFetchingChannels(true);
-      }
+      setIsFetchingChannels(true);
       try {
         const response = await fetchChannelRecommendations({
           authToken: user.authToken,
           jobId,
-          forceRefresh,
         });
         const recommendations = response.recommendations ?? [];
         setChannelRecommendations(recommendations);
@@ -1802,29 +1794,20 @@ useEffect(() => {
         syncSelectedChannels(recommendations);
       } catch (error) {
         setChannelFailure({
-          reason: forceRefresh ? "refresh_failed" : "load_failed",
+          reason: "load_failed",
           message: error.message,
         });
       } finally {
-        if (forceRefresh) {
-          setIsRegeneratingChannels(false);
-        } else {
-          setIsFetchingChannels(false);
-        }
+        setIsFetchingChannels(false);
       }
     },
     [
       user?.authToken,
       jobId,
       syncSelectedChannels,
-      isRegeneratingChannels,
       isFetchingChannels,
     ]
   );
-
-  const handleRegenerateChannels = useCallback(() => {
-    loadChannelRecommendations({ forceRefresh: true });
-  }, [loadChannelRecommendations]);
 
   useEffect(() => {
     if (currentStep === "refine") {
@@ -1834,7 +1817,6 @@ useEffect(() => {
     if (
       currentStep === "channels" &&
       channelRecommendations.length === 0 &&
-      !isRegeneratingChannels &&
       !isFetchingChannels &&
       !channelFailure &&
       finalJobSource &&
@@ -1846,7 +1828,6 @@ useEffect(() => {
   }, [
     currentStep,
     channelRecommendations.length,
-    isRegeneratingChannels,
     isFetchingChannels,
     channelFailure,
     finalJobSource,
@@ -2134,39 +2115,13 @@ useEffect(() => {
 
           {currentStep === "channels" ? (
             <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-neutral-900">
-                    Channel recommendations
-                  </h2>
-                  <p className="text-sm text-neutral-600">
-                    We suggest these channels based on the final job profile. Regenerate
-                    anytime after further edits.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleRegenerateChannels}
-                    disabled={
-                      isRegeneratingChannels ||
-                      isFetchingChannels ||
-                      !finalJobSource
-                    }
-                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isRegeneratingChannels
-                      ? "Refreshing…"
-                      : "Regenerate channels"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigateToStep("refine")}
-                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
-                  >
-                    Back to refinement
-                  </button>
-                </div>
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-neutral-900">
+                  Channel recommendations
+                </h2>
+                <p className="text-sm text-neutral-600">
+                  We suggest these channels based on the final job profile. Make edits in the previous step to refresh them.
+                </p>
               </div>
               <ChannelRecommendationList
                 recommendations={channelRecommendations}
@@ -2181,23 +2136,32 @@ useEffect(() => {
                 onToggle={setShouldGenerateHeroImage}
               />
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4">
-                <p className="text-xs text-neutral-500">
-                  {selectedChannels.length > 0
-                    ? `${selectedChannels.length} channel${selectedChannels.length > 1 ? "s" : ""} selected.`
-                    : "Select at least one channel to continue."}
-                </p>
                 <button
                   type="button"
-                  onClick={handleGenerateAssets}
-                  disabled={
-                    isGeneratingAssets ||
-                    selectedChannels.length === 0 ||
-                    !finalJobSource
-                  }
-                  className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                  onClick={() => navigateToStep("refine")}
+                  className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
                 >
-                  {isGeneratingAssets ? "Generating assets…" : "Generate creative assets"}
+                  Back to refinement
                 </button>
+                <div className="flex flex-col items-end gap-1 text-xs text-neutral-500">
+                  <p>
+                    {selectedChannels.length > 0
+                      ? `${selectedChannels.length} channel${selectedChannels.length > 1 ? "s" : ""} selected.`
+                      : "Select at least one channel to continue."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleGenerateAssets}
+                    disabled={
+                      isGeneratingAssets ||
+                      selectedChannels.length === 0 ||
+                      !finalJobSource
+                    }
+                    className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                  >
+                    {isGeneratingAssets ? "Generating assets…" : "Generate creative assets"}
+                  </button>
+                </div>
               </div>
               {assetError ? (
                 <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
@@ -2209,24 +2173,13 @@ useEffect(() => {
 
           {currentStep === "assets" ? (
             <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-neutral-900">
-                    Publishing assets
-                  </h2>
-                  <p className="text-sm text-neutral-600">
-                    Monitor generation status and copy snippets for each channel.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => navigateToStep("channels")}
-                    className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
-                  >
-                    Back to channels
-                  </button>
-                </div>
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-neutral-900">
+                  Publishing assets
+                </h2>
+                <p className="text-sm text-neutral-600">
+                  Monitor generation status and copy snippets for each channel.
+                </p>
               </div>
               {assetRun ? (
                 <div className="rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
@@ -2242,6 +2195,15 @@ useEffect(() => {
                   ) : null}
                 </div>
               ) : null}
+              <div className="flex justify-start">
+                <button
+                  type="button"
+                  onClick={() => navigateToStep("channels")}
+                  className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
+                >
+                  Back to channels
+                </button>
+              </div>
               <AssetPreviewGrid assets={assetsWithHero} logoUrl={jobLogoUrl} />
             </section>
           ) : null}
