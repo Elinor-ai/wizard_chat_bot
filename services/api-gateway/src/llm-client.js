@@ -8,9 +8,18 @@ import { TASK_REGISTRY } from "./llm/tasks.js";
 import { DalleImageAdapter } from "./llm/providers/dalle-image-adapter.js";
 import { ImagenImageAdapter } from "./llm/providers/imagen-image-adapter.js";
 import { StableDiffusionAdapter } from "./llm/providers/stable-diffusion-adapter.js";
-import { BananaImageAdapter } from "./llm/providers/banana-image-adapter.js";
 
 loadEnv();
+
+if (
+  process.env.IMAGE_GENERATION_PROVIDER &&
+  process.env.IMAGE_GENERATION_PROVIDER.trim().toLowerCase().startsWith("gemini")
+) {
+  const trimmed = process.env.IMAGE_GENERATION_PROVIDER.trim();
+  process.env.IMAGE_GENERATION_PROVIDER = `imagen${trimmed.slice(
+    "gemini".length
+  )}`;
+}
 
 const DEFAULT_OPENAI_CHAT_MODEL =
   process.env.OPENAI_CHAT_MODEL ?? process.env.LLM_CHAT_MODEL ?? "gpt-4o-mini";
@@ -66,29 +75,32 @@ const [DEFAULT_COPILOT_PROVIDER] = DEFAULT_COPILOT_SPEC.split(":");
 const DEFAULT_DALLE_IMAGE_MODEL =
   process.env.DALLE_IMAGE_MODEL ?? "gpt-image-1";
 const DEFAULT_IMAGEN_IMAGE_MODEL =
-  process.env.IMAGEN_IMAGE_MODEL ?? "imagen-2.0";
+  process.env.IMAGEN_IMAGE_MODEL ?? "imagen-3.0-fast-generate-001";
+const GEMINI_IMAGE_MODEL_ALIASES = {
+  nano: process.env.GEMINI_IMAGE_NANO_MODEL ?? DEFAULT_GEMINI_IMAGE_FAST_MODEL,
+  "nano-pro":
+    process.env.GEMINI_IMAGE_NANO_PRO_MODEL ?? DEFAULT_GEMINI_IMAGE_PRO_MODEL,
+};
 const RAW_IMAGE_GENERATION_PROVIDER =
   process.env.IMAGE_GENERATION_PROVIDER ?? "dall-e";
-const IMAGE_GENERATION_PROVIDER = RAW_IMAGE_GENERATION_PROVIDER.replace("-", "_");
-
-const BANANA_API_KEY = process.env.BANANA_API_KEY ?? null;
-const BANANA_API_URL = process.env.BANANA_API_URL ?? "https://api.banana.dev/v4/";
-const BANANA_MODEL_NANO = process.env.BANANA_MODEL_NANO ?? null;
-const BANANA_MODEL_NANO_PRO = process.env.BANANA_MODEL_NANO_PRO ?? null;
-const DEFAULT_BANANA_IMAGE_MODEL =
-  process.env.BANANA_IMAGE_MODEL ??
-  (BANANA_MODEL_NANO ? "nano" : BANANA_MODEL_NANO_PRO ? "nano-pro" : "nano");
+const NORMALIZED_IMAGE_PROVIDER = RAW_IMAGE_GENERATION_PROVIDER.replace("-", "_");
+const IMAGE_GENERATION_PROVIDER =
+  NORMALIZED_IMAGE_PROVIDER === "gemini" ? "imagen" : NORMALIZED_IMAGE_PROVIDER;
 
 const DEFAULT_STABLE_DIFFUSION_MODEL =
   process.env.STABLE_DIFFUSION_MODEL ?? "sd3";
+const DEFAULT_GEMINI_IMAGE_FAST_MODEL =
+  process.env.GEMINI_IMAGE_FAST_MODEL ?? "imagen-3.0-fast-generate-001";
+const DEFAULT_GEMINI_IMAGE_PRO_MODEL =
+  process.env.GEMINI_IMAGE_PRO_MODEL ?? "imagen-3.0-generate-001";
+const DEFAULT_GEMINI_IMAGE_MODEL =
+  process.env.GEMINI_IMAGE_MODEL ?? DEFAULT_GEMINI_IMAGE_FAST_MODEL;
 const DEFAULT_IMAGE_GEN_MODEL =
   IMAGE_GENERATION_PROVIDER === "imagen"
-    ? DEFAULT_IMAGEN_IMAGE_MODEL
+    ? (process.env.IMAGEN_IMAGE_MODEL ?? DEFAULT_GEMINI_IMAGE_MODEL)
     : IMAGE_GENERATION_PROVIDER === "stable_diffusion"
       ? DEFAULT_STABLE_DIFFUSION_MODEL
-      : IMAGE_GENERATION_PROVIDER === "banana"
-        ? DEFAULT_BANANA_IMAGE_MODEL
-        : DEFAULT_DALLE_IMAGE_MODEL;
+      : DEFAULT_DALLE_IMAGE_MODEL;
 const DALL_E_API_KEY =
   process.env.DALL_E_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
 const IMAGEN_API_KEY =
@@ -184,9 +196,8 @@ const providerSelectionConfig = {
     defaultSpec: `${IMAGE_GENERATION_PROVIDER}:${DEFAULT_IMAGE_GEN_MODEL}`,
     providerDefaults: {
       "dall-e": DEFAULT_DALLE_IMAGE_MODEL,
-      imagen: DEFAULT_IMAGEN_IMAGE_MODEL,
+      imagen: process.env.IMAGEN_IMAGE_MODEL ?? DEFAULT_GEMINI_IMAGE_MODEL,
       stable_diffusion: DEFAULT_STABLE_DIFFUSION_MODEL,
-      banana: DEFAULT_BANANA_IMAGE_MODEL,
     },
   },
   hero_image_caption: {
@@ -250,17 +261,10 @@ const adapters = {
   }),
   imagen: new ImagenImageAdapter({
     apiKey: IMAGEN_API_KEY,
+    modelAliases: GEMINI_IMAGE_MODEL_ALIASES,
   }),
   stable_diffusion: new StableDiffusionAdapter({
     apiKey: STABLE_DIFFUSION_API_KEY,
-  }),
-  banana: new BananaImageAdapter({
-    apiKey: BANANA_API_KEY,
-    apiUrl: BANANA_API_URL,
-    modelKeyMap: {
-      nano: BANANA_MODEL_NANO,
-      "nano-pro": BANANA_MODEL_NANO_PRO,
-    },
   }),
 };
 

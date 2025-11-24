@@ -1,15 +1,32 @@
+function normalizeAliases(map = {}) {
+  return Object.entries(map).reduce((acc, [key, value]) => {
+    if (key && value) {
+      acc[key.trim().toLowerCase()] = value;
+    }
+    return acc;
+  }, {});
+}
+
 export class ImagenImageAdapter {
-  constructor({ apiKey, apiUrl }) {
+  constructor({ apiKey, apiUrl, modelAliases = {} } = {}) {
     this.apiKey = apiKey;
     this.apiUrl =
       apiUrl ??
       "https://generativelanguage.googleapis.com/v1beta/models/imagegeneration:generate";
+    this.modelAliases = normalizeAliases(modelAliases);
   }
 
   ensureKey() {
     if (!this.apiKey) {
       throw new Error("IMAGEN_API_KEY missing");
     }
+  }
+
+  resolveModel(model) {
+    if (model && this.modelAliases[model.trim().toLowerCase()]) {
+      return this.modelAliases[model.trim().toLowerCase()];
+    }
+    return model ?? this.modelAliases.nano ?? "imagen-3.0-fast-generate-001";
   }
 
   parsePayload(payload) {
@@ -31,6 +48,7 @@ export class ImagenImageAdapter {
       throw new Error("Image generation payload missing prompt");
     }
 
+    const resolvedModel = this.resolveModel(model);
     const url = `${this.apiUrl}?key=${this.apiKey}`;
     const response = await fetch(url, {
       method: "POST",
@@ -38,7 +56,7 @@ export class ImagenImageAdapter {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: model || "imagen-2.0",
+        model: resolvedModel,
         prompt: {
           text: prompt
         },
