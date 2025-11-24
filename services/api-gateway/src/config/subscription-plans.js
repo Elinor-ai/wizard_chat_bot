@@ -6,8 +6,8 @@ const PLAN_DEFINITIONS = [
     name: "Starter Boost",
     headline: "Kick off hiring",
     description: "Perfect for testing the platform with 1-2 priority roles.",
-    credits: 50000,
-    bonusCredits: 5000,
+    credits: 12500,
+    bonusCredits: 1250,
     margin: 1.6,
     bestFor: "Individual hiring managers",
     perks: [
@@ -21,8 +21,8 @@ const PLAN_DEFINITIONS = [
     name: "Growth Lab",
     headline: "Scale new markets",
     description: "Fund recurring LLM usage for multi-role hiring pods.",
-    credits: 150000,
-    bonusCredits: 30000,
+    credits: 37500,
+    bonusCredits: 7500,
     margin: 1.45,
     bestFor: "Talent teams supporting 3-5 live searches",
     perks: [
@@ -37,8 +37,8 @@ const PLAN_DEFINITIONS = [
     name: "Scale Partner",
     headline: "Always-on recruiting",
     description: "Best value package for companies automating hiring ops.",
-    credits: 400000,
-    bonusCredits: 120000,
+    credits: 100000,
+    bonusCredits: 30000,
     margin: 1.35,
     bestFor: "Agencies and talent teams running global campaigns",
     perks: [

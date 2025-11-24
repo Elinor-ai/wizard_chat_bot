@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { clsx } from "../../../../../lib/cn";
 import { useUser } from "../../../../../components/user-context";
 import {
@@ -53,6 +53,17 @@ const FLOW_STEPS = [
     description: "Produce campaign-ready copy and creative briefs."
   }
 ];
+
+const DEFAULT_FLOW_STEP = FLOW_STEPS[0].id;
+const FLOW_STEP_IDS = new Set(FLOW_STEPS.map((step) => step.id));
+
+function normalizeFlowStepId(value) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return DEFAULT_FLOW_STEP;
+  }
+  const candidate = value.trim().toLowerCase();
+  return FLOW_STEP_IDS.has(candidate) ? candidate : DEFAULT_FLOW_STEP;
+}
 
 const STEP_INDEX = FLOW_STEPS.reduce((acc, step, index) => {
   acc[step.id] = index;
@@ -1181,6 +1192,9 @@ export default function RefineJobPage() {
   const params = useParams();
   const { user } = useUser();
   const jobId = Array.isArray(params?.jobId) ? params.jobId[0] : params?.jobId;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
 
   const [isRefining, setIsRefining] = useState(true);
   const [refineError, setRefineError] = useState(null);
@@ -1203,7 +1217,9 @@ export default function RefineJobPage() {
   const [shouldPollAssets, setShouldPollAssets] = useState(false);
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [finalJobSource, setFinalJobSource] = useState(null);
-  const [currentStep, setCurrentStep] = useState("refine");
+  const [currentStep, setCurrentStep] = useState(() =>
+    normalizeFlowStepId(searchParams?.get("step"))
+  );
   const [jobLogoUrl, setJobLogoUrl] = useState("");
   const [copilotConversation, setCopilotConversation] = useState([]);
   const [isCopilotChatting, setIsCopilotChatting] = useState(false);
@@ -1308,6 +1324,8 @@ export default function RefineJobPage() {
   );
 
   const hasManualStepChangeRef = useRef(false);
+  const hasSyncedInitialQueryStepRef = useRef(false);
+  const lastUrlStepRef = useRef(null);
 
   useEffect(() => {
     jobLogoUrlRef.current = normalizeLogoUrl(jobLogoUrl);
@@ -1315,6 +1333,8 @@ export default function RefineJobPage() {
 
   useEffect(() => {
     hasManualStepChangeRef.current = false;
+    hasSyncedInitialQueryStepRef.current = false;
+    lastUrlStepRef.current = null;
   }, [jobId]);
 
   const maxEnabledIndex = useMemo(() => {
@@ -1435,6 +1455,30 @@ export default function RefineJobPage() {
     heroImageStatus,
     handleHeroImageRequest
   ]);
+
+  const syncStepQuery = useCallback(
+    (stepId, { replace = false } = {}) => {
+      if (!pathname) {
+        return false;
+      }
+      const normalized = normalizeFlowStepId(stepId);
+      const currentParam = searchParams?.get("step");
+      if (currentParam === normalized) {
+        return false;
+      }
+      const params = new URLSearchParams(searchParams?.toString());
+      params.set("step", normalized);
+      const query = params.toString();
+      const href = query ? `${pathname}?${query}` : pathname;
+      if (replace) {
+        router.replace(href, { scroll: false });
+      } else {
+        router.push(href, { scroll: false });
+      }
+      return true;
+    },
+    [pathname, router, searchParams]
+  );
   const handleGenerateAssets = async () => {
     if (!user?.authToken || !jobId || selectedChannels.length === 0 || !finalJobSource) {
       return;
@@ -1465,18 +1509,28 @@ export default function RefineJobPage() {
   };
 
   const navigateToStep = useCallback(
-    (stepId, { force = false } = {}) => {
-      const targetIndex = STEP_INDEX[stepId];
+    (
+      stepId,
+      { force = false, markManual = true, replaceHistory = false } = {}
+    ) => {
+      const normalized = normalizeFlowStepId(stepId);
+      const targetIndex = STEP_INDEX[normalized];
       if (targetIndex === undefined) {
         return;
       }
       if (!force && targetIndex > maxEnabledIndex) {
         return;
       }
-      hasManualStepChangeRef.current = true;
-      setCurrentStep(stepId);
+      if (markManual) {
+        hasManualStepChangeRef.current = true;
+      }
+      setCurrentStep((prev) => (prev === normalized ? prev : normalized));
+      const didSyncUrl = syncStepQuery(normalized, { replace: replaceHistory });
+      if (didSyncUrl) {
+        lastUrlStepRef.current = normalized;
+      }
     },
-    [maxEnabledIndex]
+    [maxEnabledIndex, syncStepQuery]
   );
 
   const handleStepChange = useCallback(
@@ -1485,6 +1539,26 @@ export default function RefineJobPage() {
     },
     [navigateToStep]
   );
+
+  useEffect(() => {
+    const nextStepFromQuery = normalizeFlowStepId(searchParams?.get("step"));
+    setCurrentStep((prev) => (prev === nextStepFromQuery ? prev : nextStepFromQuery));
+
+    if (!hasSyncedInitialQueryStepRef.current) {
+      hasSyncedInitialQueryStepRef.current = true;
+      if (searchParams && searchParams.has("step")) {
+        hasManualStepChangeRef.current = true;
+      }
+      return;
+    }
+
+    if (lastUrlStepRef.current === nextStepFromQuery) {
+      lastUrlStepRef.current = null;
+      return;
+    }
+
+    hasManualStepChangeRef.current = true;
+  }, [searchParams]);
 
   const blockingSpinnerLabel = useMemo(() => {
     if (isFinalizing) {
@@ -1511,7 +1585,11 @@ export default function RefineJobPage() {
       const fallbackIndex = Math.min(maxEnabledIndex, FLOW_STEPS.length - 1);
       const fallbackStep = FLOW_STEPS[fallbackIndex]?.id ?? FLOW_STEPS[0].id;
       if (fallbackStep && fallbackStep !== currentStep) {
-        setCurrentStep(fallbackStep);
+        navigateToStep(fallbackStep, {
+          force: true,
+          markManual: false,
+          replaceHistory: true
+        });
       }
       return;
     }
@@ -1522,10 +1600,14 @@ export default function RefineJobPage() {
     ) {
       const targetStep = FLOW_STEPS[maxEnabledIndex]?.id;
       if (targetStep && targetStep !== currentStep) {
-        setCurrentStep(targetStep);
+        navigateToStep(targetStep, {
+          force: true,
+          markManual: false,
+          replaceHistory: true
+        });
       }
     }
-  }, [currentStep, maxEnabledIndex, isStepTransitioning]);
+  }, [currentStep, maxEnabledIndex, isStepTransitioning, navigateToStep]);
 
   useEffect(() => {
     if (!user?.authToken || !jobId) return undefined;

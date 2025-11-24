@@ -1864,7 +1864,7 @@ useEffect(() => {
       return;
     }
 
-    router.push(`/wizard/${targetJobId}/refine`);
+    router.push(`/wizard/${targetJobId}/publish`);
   }, [handleSubmit, router, showToast, user?.id, wizardState.jobId]);
 
   const handleAddOptional = useCallback(async () => {
@@ -1949,7 +1949,7 @@ useEffect(() => {
       return;
     }
 
-    router.push(`/wizard/${targetJobId}/refine`);
+    router.push(`/wizard/${targetJobId}/publish`);
   }, [
     allRequiredStepsCompleteInState,
     dispatch,

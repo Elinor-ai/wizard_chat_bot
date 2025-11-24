@@ -173,7 +173,9 @@ function extractLedger(jobs = [], purchases = []) {
         workflow: reservation.reason ?? "workflow",
         amount: Number(reservation.amount ?? 0),
         status: reservation.status ?? "pending",
-        occurredAt: reservation.at ?? job.updatedAt ?? job.createdAt
+        occurredAt: reservation.at ?? job.updatedAt ?? job.createdAt,
+        purchaseAmountUsd: null,
+        currency: null
       });
     });
 
@@ -185,7 +187,9 @@ function extractLedger(jobs = [], purchases = []) {
         workflow: charge.reason ?? "workflow",
         amount: Number(charge.amount ?? 0),
         status: "settled",
-        occurredAt: charge.at ?? job.updatedAt ?? job.createdAt
+        occurredAt: charge.at ?? job.updatedAt ?? job.createdAt,
+        purchaseAmountUsd: null,
+        currency: null
       });
     });
   });
@@ -198,7 +202,9 @@ function extractLedger(jobs = [], purchases = []) {
       workflow: purchase.planName ?? "Subscription top-up",
       amount: Number(purchase.totalCredits ?? 0),
       status: "settled",
-      occurredAt: purchase.createdAt ?? purchase.updatedAt ?? new Date()
+      occurredAt: purchase.createdAt ?? purchase.updatedAt ?? new Date(),
+      purchaseAmountUsd: Number(purchase.priceUsd ?? 0),
+      currency: purchase.currency ?? "USD"
     });
   });
 

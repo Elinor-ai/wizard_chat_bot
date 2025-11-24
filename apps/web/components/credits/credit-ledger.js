@@ -4,13 +4,20 @@ import { useQuery } from "@tanstack/react-query";
 import { DashboardApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
 
-function formatAmount(value) {
+function formatCredits(value) {
   const formatted = new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(Math.abs(value));
   return value >= 0 ? `+${formatted}` : `-${formatted}`;
+}
+
+function formatCurrency(value, currency = "USD") {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2
+  }).format(value);
 }
 
 export function CreditLedger() {
@@ -71,6 +78,7 @@ export function CreditLedger() {
                 <th className="px-4 py-3">Timestamp</th>
                 <th className="px-4 py-3">Workflow</th>
                 <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Credits</th>
                 <th className="px-4 py-3">Amount</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Txn ID</th>
@@ -88,7 +96,16 @@ export function CreditLedger() {
                   </td>
                   <td className="px-4 py-4 capitalize">{entry.type.toLowerCase()}</td>
                   <td className="px-4 py-4 font-semibold text-neutral-800">
-                    {formatAmount(entry.amount)}
+                    {formatCredits(entry.amount)} credits
+                  </td>
+                  <td className="px-4 py-4 font-semibold text-neutral-800">
+                    {typeof entry.purchaseAmountUsd === "number" &&
+                    entry.purchaseAmountUsd !== 0
+                      ? formatCurrency(
+                          entry.purchaseAmountUsd,
+                          entry.currency ?? "USD"
+                        )
+                      : "—"}
                   </td>
                   <td className="px-4 py-4 capitalize">{entry.status}</td>
                   <td className="px-4 py-4 text-xs text-neutral-400">{entry.id}</td>

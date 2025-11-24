@@ -601,6 +601,8 @@ const dashboardLedgerEntrySchema = z.object({
   workflow: z.string(),
   amount: z.number(),
   status: z.string(),
+  purchaseAmountUsd: z.number().optional().nullable(),
+  currency: z.string().optional().nullable(),
   occurredAt: z
     .union([z.string(), z.instanceof(Date)])
     .transform((value) =>
