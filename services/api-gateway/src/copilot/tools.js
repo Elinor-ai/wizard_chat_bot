@@ -293,6 +293,61 @@ export const COPILOT_TOOLS = [
   }
   },
   {
+    name: "update_job_fields",
+    description:
+      "Persist multiple job field updates in one call. Use when the user clearly requests several changes at once.",
+    schema: z.object({
+      updates: z
+        .array(
+          z.object({
+            fieldId: z.enum(ALLOWED_INTAKE_KEYS),
+            value: z.unknown().optional(),
+            mode: z.enum(["set", "clear"]).optional()
+          })
+        )
+        .min(1)
+    }),
+    schemaDescription:
+      "Input: { \"updates\": [{ fieldId, value?, mode?: 'set' | 'clear' }] }. Mode 'clear' empties the field.",
+    async execute(context, input) {
+      const now = new Date();
+      const job = context.cache.job ?? (context.cache.job = await loadJob(context));
+      const nextState = {};
+
+      for (const update of input.updates) {
+        if (!editableFields.has(update.fieldId)) {
+          throw new Error(`Field ${update.fieldId} is not editable`);
+        }
+        if (update.mode === "clear") {
+          nextState[update.fieldId] = "";
+        } else {
+          nextState[update.fieldId] = normalizeFieldValue(
+            update.fieldId,
+            update.value
+          );
+        }
+      }
+
+      const mergedJob = mergeIntakeIntoJob(job, nextState, { now });
+      const progress = computeRequiredProgress(mergedJob);
+      const finalized = applyRequiredProgress(mergedJob, progress, now);
+
+      context.cache.job = finalized;
+      await context.firestore.saveDocument(JOB_COLLECTION, job.id, finalized);
+
+      return {
+        status: "updated",
+        updatedFields: Object.keys(nextState),
+        jobSnapshot: buildJobSnapshot(finalized),
+        action: {
+          type: "field_batch_update",
+          fields: nextState,
+          jobSnapshot: buildJobSnapshot(finalized)
+        }
+      };
+    }
+  },
+  {
     name: "get_refined_job_snapshot",
     description:
       "Return the refined job snapshot created during the polishing step.",
@@ -372,6 +427,72 @@ export const COPILOT_TOOLS = [
           type: "refined_field_update",
           fieldId: input.fieldId,
           value: refined[input.fieldId]
+        },
+        metadata: {
+          updatedAt: saved.updatedAt
+        }
+      };
+    }
+  },
+  {
+    name: "update_refined_job_fields",
+    description:
+      "Update multiple fields inside the refined job snapshot in one call.",
+    schema: z.object({
+      updates: z
+        .array(
+          z.object({
+            fieldId: z.enum(ALLOWED_INTAKE_KEYS),
+            value: z.unknown().optional(),
+            mode: z.enum(["set", "clear"]).optional()
+          })
+        )
+        .min(1)
+    }),
+    schemaDescription:
+      "Input: { \"updates\": [{ fieldId, value?, mode?: 'set' | 'clear' }] }. Mode 'clear' empties the field.",
+    async execute(context, input) {
+      const now = new Date();
+      const job =
+        context.cache.job ?? (context.cache.job = await loadJob(context));
+      const document =
+        (await loadRefinementDocument(context)) ?? {
+          refinedJob: buildJobSnapshot(job),
+          summary: null
+        };
+      const refined = {
+        ...(document.refinedJob ?? buildJobSnapshot(job))
+      };
+
+      for (const update of input.updates) {
+        if (update.mode === "clear") {
+          setDeep(refined, update.fieldId, "");
+        } else {
+          const normalizedValue = normalizeFieldValue(update.fieldId, update.value);
+          setDeep(refined, update.fieldId, normalizedValue);
+        }
+      }
+
+      const saved = await saveRefinementDocument({
+        firestore: context.firestore,
+        jobId: context.jobId,
+        document,
+        refinedJob: refined,
+        summary: document.summary,
+        now
+      });
+
+      return {
+        status: "updated",
+        updatedFields: input.updates.map((u) => u.fieldId),
+        refinedJob: refined,
+        action: {
+          type: "refined_field_batch_update",
+          fields: input.updates.map((u) => ({
+            fieldId: u.fieldId,
+            mode: u.mode ?? "set"
+          })),
+          refinedJob: refined
         },
         metadata: {
           updatedAt: saved.updatedAt

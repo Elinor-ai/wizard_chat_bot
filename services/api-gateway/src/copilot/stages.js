@@ -14,7 +14,7 @@ export const COPILOT_STAGE_CONFIG = {
     ],
     instructions:
       "You are embedded inside the job-intake wizard. Answer questions about the form, and use update_job_field sparingly when the user explicitly authorizes it.",
-    toolNames: ["get_job_snapshot", "get_current_suggestions", "update_job_field"]
+    toolNames: ["get_job_snapshot", "get_current_suggestions", "update_job_field", "update_job_fields"]
   },
   refine: {
     id: "refine",
@@ -32,7 +32,9 @@ export const COPILOT_STAGE_CONFIG = {
       "get_job_snapshot",
       "get_refined_job_snapshot",
       "update_job_field",
-      "update_refined_job_field"
+      "update_job_fields",
+      "update_refined_job_field",
+      "update_refined_job_fields"
     ]
   },
   assets: {
@@ -50,7 +52,9 @@ export const COPILOT_STAGE_CONFIG = {
       "get_job_snapshot",
       "get_refined_job_snapshot",
       "update_job_field",
+      "update_job_fields",
       "update_refined_job_field",
+      "update_refined_job_fields",
       "get_asset_details",
       "update_asset_content"
     ]
@@ -71,7 +75,9 @@ export const COPILOT_STAGE_CONFIG = {
       "get_job_snapshot",
       "get_refined_job_snapshot",
       "update_job_field",
+      "update_job_fields",
       "update_refined_job_field",
+      "update_refined_job_fields",
       "get_channel_recommendations",
       "set_channel_recommendations"
     ]
