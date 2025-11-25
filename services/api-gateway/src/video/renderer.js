@@ -40,6 +40,7 @@ export function createRenderer(options = {}) {
   const unified = new UnifiedVideoRenderer({
     veoApiKey: options.veoApiKey,
     soraApiToken: options.soraApiToken,
+    logger: options.logger,
   });
 
   const assetBaseSetting =
@@ -80,17 +81,24 @@ export function createRenderer(options = {}) {
   }
 
   return {
-    async render({ manifest, provider }) {
+    async render({ manifest, provider, jobId, itemId, ownerUserId }) {
       const requestedAt = new Date().toISOString();
       const request = {
         prompt: buildPrompt(manifest),
         duration: calculateDuration(manifest),
         aspectRatio: manifest?.spec?.aspectRatio,
       };
+      const renderContext = {
+        jobId: jobId ?? manifest?.job?.id ?? manifest?.jobId ?? null,
+        itemId: itemId ?? null,
+        ownerUserId: ownerUserId ?? null,
+      };
       try {
         // 1. קבלת ה-URL (שהוא כרגע נתיב יחסי)
-        let videoUrl = await unified.renderVideo(provider, request);
-        videoUrl = toAbsoluteUrl(videoUrl);
+        let videoUrl = await unified.renderVideo(provider, request, renderContext);
+        if (!/^https?:\/\//i.test(String(videoUrl ?? ""))) {
+          videoUrl = toAbsoluteUrl(videoUrl);
+        }
 
         // 3. יצירת האובייקט וולידציה
         return VideoRenderTaskSchema.parse({

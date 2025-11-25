@@ -153,13 +153,26 @@ export function videosRouter({ firestore, llmClient, logger }) {
       if (!job) {
         throw httpError(404, "Job not found");
       }
-      const item = await service.createItem({
+      const { item, renderQueued } = await service.createItem({
         job,
         channelId: payload.channelId,
         recommendedMedium: payload.recommendedMedium,
         ownerUserId: userId
       });
-      res.status(201).json({ item: buildDetailResponse(item) });
+      if (!item) {
+        throw httpError(500, "Failed to create video item");
+      }
+      const responseBody = {
+        item: buildDetailResponse(item)
+      };
+      if (renderQueued) {
+        responseBody.renderStatus = {
+          assetId: item.id,
+          status: "PROCESSING"
+        };
+        return res.status(202).json(responseBody);
+      }
+      res.status(201).json(responseBody);
     })
   );
 

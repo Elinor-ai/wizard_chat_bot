@@ -970,6 +970,28 @@ export const WizardApi = {
     return jobAssetResponseSchema.parse(data);
   },
 
+  async fetchGlobalAssets(options = {}) {
+    const params = new URLSearchParams();
+    const jobId = typeof options.jobId === "string" ? options.jobId.trim() : "";
+    if (jobId) {
+      params.set("jobId", jobId);
+    }
+    const query = params.toString();
+    const response = await fetch(`${API_BASE_URL}/assets${query ? `?${query}` : ""}`, {
+      method: "GET",
+      headers: {
+        ...authHeaders(options.authToken)
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load global assets");
+    }
+
+    const data = await response.json();
+    return data.assets ?? [];
+  },
+
   async generateJobAssets(payload, options = {}) {
     const response = await fetch(`${API_BASE_URL}/wizard/assets/generate`, {
       method: "POST",

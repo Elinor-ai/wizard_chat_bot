@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -17,9 +18,6 @@ import { clsx } from "../../lib/cn";
 import { WizardApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
 import { AssetPreviewModal } from "./asset-preview-modal";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 const assetTypeTokens = {
   text: {
@@ -39,24 +37,6 @@ const assetTypeTokens = {
     accent: "bg-neutral-100 text-neutral-500 border-neutral-200"
   }
 };
-
-async function fetchAssets({ authToken, signal }) {
-  if (!authToken) return [];
-  const response = await fetch(`${API_BASE_URL}/assets`, {
-    headers: {
-      Authorization: `Bearer ${authToken}`
-    },
-    signal
-  });
-
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.error?.message ?? "Unable to load assets");
-  }
-
-  const data = await response.json();
-  return data.assets ?? [];
-}
 
 function formatDisplayName(value) {
   if (!value) return "Asset";
@@ -143,6 +123,12 @@ function deriveMediaUrl(content) {
   }
   if (typeof content.thumbnailUrl === "string" && content.thumbnailUrl) {
     return content.thumbnailUrl;
+  }
+  if (typeof content.posterUrl === "string" && content.posterUrl) {
+    return content.posterUrl;
+  }
+  if (typeof content.videoUrl === "string" && content.videoUrl) {
+    return content.posterUrl ?? content.thumbnailUrl ?? null;
   }
   return null;
 }
@@ -473,16 +459,16 @@ function GenerateMoreCard({ jobTitle }) {
 export function AssetList() {
   const { user } = useUser();
   const authToken = user?.authToken ?? null;
+  const searchParams = useSearchParams();
+  const jobIdFilter = useMemo(() => {
+    if (!searchParams) return null;
+    const value = searchParams.get("jobId");
+    if (!value) return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }, [searchParams]);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [previewAsset, setPreviewAsset] = useState(null);
-
-  const assetsQuery = useQuery({
-    queryKey: ["assets", authToken],
-    queryFn: ({ signal }) => fetchAssets({ authToken, signal }),
-    enabled: Boolean(authToken),
-    staleTime: 30_000,
-    gcTime: 5 * 60 * 1000
-  });
 
   const companiesQuery = useQuery({
     queryKey: ["companies", "asset-list", authToken],
@@ -490,6 +476,20 @@ export function AssetList() {
     enabled: Boolean(authToken),
     staleTime: 5 * 60 * 1000
   });
+
+  const canFetchAssets =
+    Boolean(authToken) &&
+    (companiesQuery.status === "success" || companiesQuery.status === "error");
+
+  const assetsQuery = useQuery({
+    queryKey: ["assets", "global", authToken, jobIdFilter],
+    queryFn: () =>
+      WizardApi.fetchGlobalAssets({ authToken, jobId: jobIdFilter ?? undefined }),
+    enabled: canFetchAssets,
+    staleTime: 30_000,
+    gcTime: 5 * 60 * 1000
+  });
+  const { refetch: refetchAssets } = assetsQuery;
 
   const companies = useMemo(() => {
     const records = companiesQuery.data?.companies ?? [];
@@ -510,6 +510,12 @@ export function AssetList() {
       setSelectedCompanyId(null);
     }
   }, [authToken]);
+
+  useEffect(() => {
+    if (jobIdFilter) {
+      setSelectedCompanyId(null);
+    }
+  }, [jobIdFilter]);
 
   const assets = assetsQuery.data ?? [];
 
@@ -557,6 +563,15 @@ export function AssetList() {
     setPreviewAsset(null);
   }, []);
 
+  const handleRefreshAssets = useCallback(() => {
+    if (!canFetchAssets) {
+      return Promise.resolve();
+    }
+    return refetchAssets({ throwOnError: false });
+  }, [canFetchAssets, refetchAssets]);
+
+  const refreshDisabled = !canFetchAssets || assetsQuery.isFetching;
+
   const groupedAssets = useMemo(() => {
     const groups = buildJobGroups(filteredAssets);
     return groups.sort((a, b) => {
@@ -596,7 +611,15 @@ export function AssetList() {
                 Asset library
               </p>
               <h2 className="text-2xl font-bold text-neutral-900">Job assets</h2>
-              {selectedCompanyId ? (
+              {jobIdFilter ? (
+                <p className="text-sm text-neutral-500">
+                  Showing assets for job{" "}
+                  <span className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-xs text-neutral-700">
+                    {jobIdFilter}
+                  </span>
+                  . Use refresh to capture background renders.
+                </p>
+              ) : selectedCompanyId ? (
                 <p className="text-sm text-neutral-500">
                   Showing assets for{" "}
                   {
@@ -608,8 +631,18 @@ export function AssetList() {
                 <p className="text-sm text-neutral-500">View outputs grouped by job.</p>
               )}
             </div>
-            <div className="text-sm text-neutral-500">
-              {filteredAssets.length} total asset{filteredAssets.length === 1 ? "" : "s"}
+            <div className="flex flex-col items-start gap-2 text-sm text-neutral-500 sm:items-end">
+              <span>
+                {filteredAssets.length} total asset{filteredAssets.length === 1 ? "" : "s"}
+              </span>
+              <button
+                type="button"
+                onClick={handleRefreshAssets}
+                disabled={refreshDisabled}
+                className="inline-flex items-center justify-center rounded-full border border-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-700 transition hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {assetsQuery.isFetching ? "Refreshing…" : "Refresh assets"}
+              </button>
             </div>
           </header>
 
@@ -623,9 +656,11 @@ export function AssetList() {
             <p className="mt-6 text-sm text-neutral-500">Loading assets…</p>
           ) : groupedAssets.length === 0 ? (
             <div className="mt-6 rounded-3xl border border-dashed border-neutral-200 bg-neutral-50 px-6 py-10 text-center text-sm text-neutral-500">
-              {selectedCompanyId
-                ? "No assets exist for this company yet. Run the wizard to generate the first batch."
-                : "Submit a job through the wizard to generate your first job description asset."}
+              {jobIdFilter
+                ? "No assets exist for this job yet. Use Refresh Assets after the render completes to pull the latest data from the server."
+                : selectedCompanyId
+                  ? "No assets exist for this company yet. Run the wizard to generate the first batch."
+                  : "Submit a job through the wizard to generate your first job description asset."}
             </div>
           ) : (
             <div className="mt-6 space-y-4">
