@@ -17,6 +17,17 @@ const BASE_INSTRUCTIONS =
 
 export function buildCopilotAgentPrompt(context = {}) {
   const stageConfig = context.stageConfig ?? {};
+  const channelMetadata = stageConfig.stageMetadata ?? {};
+  const allowedChannels = Array.isArray(channelMetadata.channelCatalog)
+    ? channelMetadata.channelCatalog
+    : [];
+  const allowedChannelIds = Array.isArray(channelMetadata.channelIds)
+    ? channelMetadata.channelIds
+    : [];
+  const channelDirective =
+    allowedChannels.length > 0
+      ? "When recommending or adding channels, choose only from allowedChannels (id -> name). Map user-friendly names to the listed ids (e.g. TikTok -> TIKTOK_LEAD). Do not invent ids."
+      : null;
   const payload = {
     stage: stageConfig.id ?? "wizard",
     role: stageConfig.role ?? BASE_ROLE,
@@ -40,10 +51,12 @@ export function buildCopilotAgentPrompt(context = {}) {
     passiveSuggestions: context.suggestions ?? [],
     userMessage: context.userMessage ?? "",
     stageMetadata: stageConfig.stageMetadata ?? null,
+    allowedChannels,
+    allowedChannelIds,
     companyContext: context.companyContext ?? null,
     instructions: stageConfig.instructions
-      ? `${stageConfig.instructions} ${BASE_INSTRUCTIONS}`
-      : BASE_INSTRUCTIONS
+      ? `${stageConfig.instructions} ${channelDirective ?? ""} ${BASE_INSTRUCTIONS}`.trim()
+      : [channelDirective, BASE_INSTRUCTIONS].filter(Boolean).join(" ")
   };
 
   const serialized = JSON.stringify(payload, null, 2);

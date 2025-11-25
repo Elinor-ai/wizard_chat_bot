@@ -297,6 +297,17 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         actions: agentResult.actions ?? [],
         updatedJobSnapshot
       };
+      logger.info(
+        {
+          jobId: payload.jobId,
+          userId,
+          actionCount: Array.isArray(agentResult.actions) ? agentResult.actions.length : 0,
+          actions: agentResult.actions ?? [],
+          updatedSnapshotKeys: Object.keys(updatedJobSnapshot ?? {}),
+          stage: payload.stage
+        },
+        "copilot.chat.response_payload"
+      );
       res.json(responsePayload);
       logger.info(
         {

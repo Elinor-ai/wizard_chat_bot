@@ -5,7 +5,10 @@ import {
   JobRefinementSchema,
   JobChannelRecommendationSchema,
   JobAssetRecordSchema,
-  ChannelRecommendationSchema
+  AssetFormatEnum,
+  ChannelRecommendationSchema,
+  ChannelIdEnum,
+  CHANNEL_CATALOG
 } from "@wizard/core";
 import {
   ALLOWED_INTAKE_KEYS,
@@ -29,6 +32,99 @@ const enumFieldMap = {
   employmentType: ["full_time", "part_time", "contract", "temporary", "seasonal", "intern"],
   seniorityLevel: ["entry", "mid", "senior", "lead", "executive"]
 };
+
+const CHANNEL_ID_SET = new Set(ChannelIdEnum.options);
+const CHANNEL_NAME_MAP = CHANNEL_CATALOG.reduce((map, channel) => {
+  const cleaned = channel.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!map.has(cleaned)) {
+    map.set(cleaned, channel.id);
+  }
+  return map;
+}, new Map());
+const CHANNEL_ALIAS_MAP = new Map([
+  ["TIKTOK", "TIKTOK_LEAD"],
+  ["TIKTOK_ADS", "TIKTOK_LEAD"],
+  ["TIKTOKLEAD", "TIKTOK_LEAD"],
+  ["TIK TOK", "TIKTOK_LEAD"]
+]);
+
+function cleanChannelKey(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizeChannelId(input) {
+  if (!input) {
+    return { id: null, suggestion: null };
+  }
+  const raw = String(input).trim();
+  const upper = raw.toUpperCase();
+  const normalized = upper.replace(/[\s-]+/g, "_");
+  const alias =
+    CHANNEL_ALIAS_MAP.get(upper) ??
+    CHANNEL_ALIAS_MAP.get(normalized) ??
+    CHANNEL_ALIAS_MAP.get(cleanChannelKey(raw));
+  if (CHANNEL_ID_SET.has(upper)) {
+    return { id: upper, suggestion: null };
+  }
+  if (CHANNEL_ID_SET.has(normalized)) {
+    return { id: normalized, suggestion: null };
+  }
+  if (alias && CHANNEL_ID_SET.has(alias)) {
+    return { id: alias, suggestion: null };
+  }
+  const cleanedName = cleanChannelKey(raw);
+  if (CHANNEL_NAME_MAP.has(cleanedName)) {
+    return { id: CHANNEL_NAME_MAP.get(cleanedName), suggestion: null };
+  }
+  let suggestion = null;
+  for (const [nameKey, channelId] of CHANNEL_NAME_MAP.entries()) {
+    if (nameKey.includes(cleanedName) || cleanedName.includes(nameKey)) {
+      suggestion = channelId;
+      break;
+    }
+  }
+  if (!suggestion) {
+    for (const id of CHANNEL_ID_SET.values()) {
+      const cleanedId = cleanChannelKey(id);
+      if (cleanedId.includes(cleanedName) || cleanedName.includes(cleanedId)) {
+        suggestion = id;
+        break;
+      }
+    }
+  }
+  return { id: null, suggestion };
+}
+
+const FORMAT_ID_SET = new Set(AssetFormatEnum.options);
+
+function normalizeFormatId(input) {
+  if (!input) {
+    return { id: null, suggestion: null };
+  }
+  const raw = String(input).trim();
+  const upper = raw.toUpperCase();
+  const normalized = upper.replace(/[^A-Z0-9]+/g, "_");
+  if (FORMAT_ID_SET.has(upper)) {
+    return { id: upper, suggestion: null };
+  }
+  if (FORMAT_ID_SET.has(normalized)) {
+    return { id: normalized, suggestion: null };
+  }
+  let suggestion = null;
+  for (const candidate of FORMAT_ID_SET.values()) {
+    const cleanedCandidate = candidate.replace(/[^A-Z0-9]+/g, "");
+    const cleanedInput = normalized.replace(/[^A-Z0-9]+/g, "");
+    if (cleanedCandidate.includes(cleanedInput) || cleanedInput.includes(cleanedCandidate)) {
+      suggestion = candidate;
+      break;
+    }
+  }
+  return { id: null, suggestion };
+}
+
+function buildAssetId(jobId, channelId, formatId) {
+  return `${jobId}:${channelId}:${formatId}`;
+}
 
 function normalizeArrayValue(value) {
   if (Array.isArray(value)) {
@@ -190,10 +286,45 @@ async function loadAssetRecord({ firestore, assetId }) {
   return parsed.data;
 }
 
+async function loadJobAssets({ firestore, jobId }) {
+  const docs = await firestore.queryDocuments(
+    JOB_ASSET_COLLECTION,
+    "jobId",
+    "==",
+    jobId
+  );
+  return docs
+    .map((doc) => {
+      const parsed = JobAssetRecordSchema.safeParse(doc);
+      return parsed.success ? parsed.data : null;
+    })
+    .filter(Boolean);
+}
+
 async function saveAssetRecord({ firestore, assetId, record }) {
   const payload = JobAssetRecordSchema.parse(record);
   await firestore.saveDocument(JOB_ASSET_COLLECTION, assetId, payload);
   return payload;
+}
+
+function resolveAssetId(context, input) {
+  if (input.assetId && typeof input.assetId === "string" && input.assetId.trim().length > 0) {
+    return input.assetId.trim();
+  }
+  if (input.channelId && input.formatId) {
+    const { id: channelId, suggestion: channelSuggestion } = normalizeChannelId(input.channelId);
+    if (!channelId) {
+      const hint = channelSuggestion ? ` Did you mean "${channelSuggestion}"?` : "";
+      throw new Error(`Invalid channelId "${input.channelId}".${hint}`);
+    }
+    const { id: formatId, suggestion: formatSuggestion } = normalizeFormatId(input.formatId);
+    if (!formatId) {
+      const hint = formatSuggestion ? ` Did you mean "${formatSuggestion}"?` : "";
+      throw new Error(`Invalid formatId "${input.formatId}".${hint}`);
+    }
+    return buildAssetId(context.jobId, channelId, formatId);
+  }
+  throw new Error("assetId is required (or provide both channelId and formatId)");
 }
 
 export const COPILOT_TOOLS = [
@@ -528,10 +659,23 @@ export const COPILOT_TOOLS = [
       "Input: { \"recommendations\": [{ channel, reason, expectedCPA? }], \"provider\"?: string, \"model\"?: string }.",
     async execute(context, input) {
       const existing = await loadChannelRecommendations(context);
+      const normalized = input.recommendations.map((entry) => {
+        const { id, suggestion } = normalizeChannelId(entry.channel);
+        if (!id) {
+          const suggestionText = suggestion ? ` Did you mean "${suggestion}"?` : "";
+          throw new Error(
+            `Invalid channel id "${entry.channel}".${suggestionText} Valid ids: ${ChannelIdEnum.options.join(", ")}`
+          );
+        }
+        return {
+          ...entry,
+          channel: id
+        };
+      });
       const saved = await saveChannelRecommendations({
         firestore: context.firestore,
         jobId: context.jobId,
-        recommendations: input.recommendations,
+        recommendations: normalized,
         provider: input.provider,
         model: input.model,
         metadata: existing?.metadata,
@@ -548,17 +692,70 @@ export const COPILOT_TOOLS = [
     }
   },
   {
+    name: "list_job_assets",
+    description:
+      "List available assets for this job with their ids, channels, formats, status, and titles.",
+    schema: z
+      .object({
+        channelId: z.string().optional(),
+        formatId: z.string().optional()
+      })
+      .default({}),
+    schemaDescription:
+      "Input: { \"channelId\"?: string, \"formatId\"?: string }. Filters by channel/format when provided.",
+    async execute(context, input = {}) {
+      const assets = await loadJobAssets({ firestore: context.firestore, jobId: context.jobId });
+      const normalizedChannel = input.channelId ? normalizeChannelId(input.channelId) : null;
+      if (normalizedChannel && !normalizedChannel.id) {
+        const hint = normalizedChannel.suggestion ? ` Did you mean "${normalizedChannel.suggestion}"?` : "";
+        throw new Error(`Invalid channelId "${input.channelId}".${hint}`);
+      }
+      const normalizedFormat = input.formatId ? normalizeFormatId(input.formatId) : null;
+      if (normalizedFormat && !normalizedFormat.id) {
+        const hint = normalizedFormat.suggestion ? ` Did you mean "${normalizedFormat.suggestion}"?` : "";
+        throw new Error(`Invalid formatId "${input.formatId}".${hint}`);
+      }
+      const filtered = assets.filter((asset) => {
+        if (normalizedChannel?.id && asset.channelId !== normalizedChannel.id) return false;
+        if (normalizedFormat?.id && asset.formatId !== normalizedFormat.id) return false;
+        return true;
+      });
+      return {
+        jobId: context.jobId,
+        assets: filtered.map((asset) => ({
+          id: asset.id,
+          channelId: asset.channelId,
+          formatId: asset.formatId,
+          status: asset.status,
+          title: asset.content?.title ?? null,
+          updatedAt: asset.updatedAt ?? asset.createdAt ?? null
+        }))
+      };
+    }
+  },
+  {
     name: "get_asset_details",
     description:
       "Fetch the latest version of a generated asset so you can review or reference it.",
-    schema: z.object({
-      assetId: z.string()
-    }),
-    schemaDescription: "Input: { \"assetId\": string }.",
+    schema: z
+      .object({
+        assetId: z.string().optional(),
+        channelId: z.string().optional(),
+        formatId: z.string().optional()
+      })
+      .refine(
+        (val) =>
+          (val.assetId && val.assetId.trim().length > 0) ||
+          (val.channelId && val.formatId),
+        { message: "Provide assetId or both channelId and formatId." }
+      ),
+    schemaDescription:
+      "Input: { \"assetId\"?: string, \"channelId\"?: string, \"formatId\"?: string }. Provide assetId or both channelId + formatId.",
     async execute(context, input) {
+      const assetId = resolveAssetId(context, input);
       const record = await loadAssetRecord({
         firestore: context.firestore,
-        assetId: input.assetId
+        assetId
       });
       return { asset: record };
     }
@@ -567,40 +764,50 @@ export const COPILOT_TOOLS = [
     name: "update_asset_content",
     description:
       "Update the editable content of a generated asset (title, body, bullets, etc.).",
-    schema: z.object({
-      assetId: z.string(),
-      content: z
-        .object({
-          title: z.string().optional(),
-          subtitle: z.string().optional(),
-          body: z.string().optional(),
-          bullets: z.array(z.string()).optional(),
-          callToAction: z.string().optional(),
-          notes: z.string().optional(),
-          hashtags: z.array(z.string()).optional(),
-          imagePrompt: z.string().optional(),
-          script: z
-            .array(
-              z.object({
-                beat: z.string(),
-                details: z.string().optional(),
-                visual: z.string().optional()
-              })
-            )
-            .optional(),
-          raw: z.unknown().optional()
-        })
-        .partial()
-        .refine((val) => Object.keys(val).length > 0, {
-          message: "At least one content field must be provided."
-        })
-    }),
+    schema: z
+      .object({
+        assetId: z.string().optional(),
+        channelId: z.string().optional(),
+        formatId: z.string().optional(),
+        content: z
+          .object({
+            title: z.string().optional(),
+            subtitle: z.string().optional(),
+            body: z.string().optional(),
+            bullets: z.array(z.string()).optional(),
+            callToAction: z.string().optional(),
+            notes: z.string().optional(),
+            hashtags: z.array(z.string()).optional(),
+            imagePrompt: z.string().optional(),
+            script: z
+              .array(
+                z.object({
+                  beat: z.string(),
+                  details: z.string().optional(),
+                  visual: z.string().optional()
+                })
+              )
+              .optional(),
+            raw: z.unknown().optional()
+          })
+          .partial()
+          .refine((val) => Object.keys(val).length > 0, {
+            message: "At least one content field must be provided."
+          })
+      })
+      .refine(
+        (val) =>
+          (val.assetId && val.assetId.trim().length > 0) ||
+          (val.channelId && val.formatId),
+        { message: "Provide assetId or both channelId and formatId." }
+      ),
     schemaDescription:
-      "Input: { \"assetId\": string, \"content\": { title?, body?, bullets?, ... } }. Only include the fields you want to update.",
+      "Input: { \"assetId\"?: string, \"channelId\"?: string, \"formatId\"?: string, \"content\": { title?, body?, bullets?, ... } }. Provide assetId or channelId+formatId. Only include the fields you want to update.",
     async execute(context, input) {
+      const assetId = resolveAssetId(context, input);
       const record = await loadAssetRecord({
         firestore: context.firestore,
-        assetId: input.assetId
+        assetId
       });
       const mergedContent = {
         ...(record.content ?? {}),
@@ -614,7 +821,7 @@ export const COPILOT_TOOLS = [
       };
       const saved = await saveAssetRecord({
         firestore: context.firestore,
-        assetId: input.assetId,
+        assetId,
         record: updated
       });
       return {
@@ -622,7 +829,7 @@ export const COPILOT_TOOLS = [
         asset: saved,
         action: {
           type: "asset_update",
-          assetId: input.assetId,
+          assetId,
           content: mergedContent
         }
       };

@@ -2183,6 +2183,13 @@ useEffect(() => {
           stage,
           contextId,
         });
+        // eslint-disable-next-line no-console
+        console.info("copilot:send:response", {
+          clientMessageId,
+          updatedSnapshotKeys: Object.keys(response.updatedJobSnapshot ?? {}),
+          actions: response.actions ?? [],
+          messageCount: Array.isArray(response.messages) ? response.messages.length : 0,
+        });
         const normalizedMessages = applyClientMessageIds(response.messages ?? []);
         const version = deriveConversationVersion(normalizedMessages);
         debug("copilot:send:success", {
