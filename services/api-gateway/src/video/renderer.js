@@ -44,10 +44,13 @@ export function createRenderer(options = {}) {
   });
 
   const assetBaseSetting =
-    process.env.VIDEO_RENDER_PUBLIC_BASE_URL ?? "http://localhost:4000/video-assets";
+    process.env.VIDEO_RENDER_PUBLIC_BASE_URL ??
+    "http://localhost:4000/video-assets";
   const assetBaseUrl = new URL(assetBaseSetting, "http://localhost");
   const basePath =
-    assetBaseUrl.pathname === "/" ? "" : assetBaseUrl.pathname.replace(/\/$/, "");
+    assetBaseUrl.pathname === "/"
+      ? ""
+      : assetBaseUrl.pathname.replace(/\/$/, "");
 
   function toAbsoluteUrl(rawUrl) {
     if (!rawUrl) {
@@ -94,16 +97,14 @@ export function createRenderer(options = {}) {
         ownerUserId: ownerUserId ?? null,
       };
       try {
-<<<<<<< HEAD
-        let videoUrl = await unified.renderVideo(provider, request);
-        videoUrl = toAbsoluteUrl(videoUrl);
-=======
-        // 1. קבלת ה-URL (שהוא כרגע נתיב יחסי)
-        let videoUrl = await unified.renderVideo(provider, request, renderContext);
+        let videoUrl = await unified.renderVideo(
+          provider,
+          request,
+          renderContext
+        );
         if (!/^https?:\/\//i.test(String(videoUrl ?? ""))) {
           videoUrl = toAbsoluteUrl(videoUrl);
         }
->>>>>>> ewfactoring-assets
 
         return VideoRenderTaskSchema.parse({
           id: uuid(),
