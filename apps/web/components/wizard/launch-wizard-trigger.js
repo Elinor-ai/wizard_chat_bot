@@ -314,6 +314,7 @@ export function WizardLaunchTrigger({ children }) {
           prev?.id === updatedCompany.id ? updatedCompany : prev
         );
         const ready = isCompanyIntelReady(updatedCompany);
+        const failed = updatedCompany.enrichmentStatus === "FAILED";
         setIntelModalMode(ready ? "ready" : "searching");
         setIntelModalShowApproval(ready && !updatedCompany.profileConfirmed);
         if (ready && intelJobsFetchedFor !== updatedCompany.id) {
@@ -323,6 +324,9 @@ export function WizardLaunchTrigger({ children }) {
           }
           setIntelJobsPreview(jobs);
           setIntelJobsFetchedFor(updatedCompany.id);
+        }
+        if ((ready || failed) && intelPollingCompanyId) {
+          setIntelPollingCompanyId(null);
         }
         if (ready && updatedCompany.profileConfirmed && !navigationGuardRef.current) {
           handleProfileConfirmationSuccess(updatedCompany);

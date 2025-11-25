@@ -59,6 +59,7 @@ export function buildCompanyIntelPrompt(context = {}) {
     domain,
     companySnapshot: snapshot,
     missingTargets: gaps,
+    websiteContext: context.websiteContext ?? "",
     guidance: [
       "Only output values for fields listed in missingTargets.* unless you have definitive proof that an existing value is wrong. Call out corrections via evidence.sources.",
       "Always attempt job discovery; return an empty array when nothing reliable is found.",

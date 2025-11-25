@@ -15,11 +15,10 @@ import { usersRouter } from "./routes/users.js";
 import { requireAuth } from "./middleware/require-auth.js";
 import { videosRouter } from "./routes/videos.js";
 import { companiesRouter } from "./routes/companies.js";
-import { startCompanyIntelWorker } from "./services/company-intel.js";
 import { subscriptionsRouter } from "./routes/subscriptions.js";
 import {
   getBaseUsdPerCredit,
-  listSubscriptionPlans
+  listSubscriptionPlans,
 } from "./config/subscription-plans.js";
 
 const corsConfig = {
@@ -30,7 +29,6 @@ const corsConfig = {
 
 export function createApp({ logger, firestore, llmClient }) {
   const app = express();
-  startCompanyIntelWorker({ firestore, llmClient, logger });
 
   app.use(cors(corsConfig));
   app.options("*", cors(corsConfig));
@@ -80,7 +78,11 @@ export function createApp({ logger, firestore, llmClient }) {
   );
   app.use("/dashboard", authMiddleware, dashboardRouter({ firestore, logger }));
   app.use("/users", authMiddleware, usersRouter({ firestore, logger }));
-  app.use("/companies", authMiddleware, companiesRouter({ firestore, logger }));
+  app.use(
+    "/companies",
+    authMiddleware,
+    companiesRouter({ firestore, logger, llmClient })
+  );
   const publicSubscriptionsRouter = express.Router();
   publicSubscriptionsRouter.get("/plans", (req, res, next) => {
     try {
@@ -88,7 +90,7 @@ export function createApp({ logger, firestore, llmClient }) {
       res.json({
         plans,
         currency: "USD",
-        usdPerCredit: getBaseUsdPerCredit()
+        usdPerCredit: getBaseUsdPerCredit(),
       });
     } catch (error) {
       next(error);
@@ -96,7 +98,11 @@ export function createApp({ logger, firestore, llmClient }) {
   });
   app.use("/subscriptions", publicSubscriptionsRouter);
 
-  app.use("/subscriptions", authMiddleware, subscriptionsRouter({ firestore, logger }));
+  app.use(
+    "/subscriptions",
+    authMiddleware,
+    subscriptionsRouter({ firestore, logger })
+  );
 
   app.use(notFound);
   app.use(errorHandler(logger));

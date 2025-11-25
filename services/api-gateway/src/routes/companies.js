@@ -12,7 +12,8 @@ import {
   extractEmailDomain,
   isGenericEmailDomain,
   ensureCompanyEnrichmentQueued,
-  ensureCompanyForDomain
+  ensureCompanyForDomain,
+  runCompanyEnrichmentOnce
 } from "../services/company-intel.js";
 
 const PLACEHOLDER_URL_PATTERNS = [/example\.com/i, /sample/i, /placeholder/i, /dummy/i];
@@ -320,7 +321,7 @@ const createCompanySchema = z.object({
   hqCity: z.string().optional()
 });
 
-export function companiesRouter({ firestore, logger }) {
+export function companiesRouter({ firestore, logger, llmClient }) {
   const router = Router();
 
   router.get(
@@ -454,6 +455,20 @@ export function companiesRouter({ firestore, logger }) {
         company: refreshed,
         hasDiscoveredJobs: refreshed.jobDiscoveryStatus === "FOUND_JOBS"
       });
+
+      if (refreshed.enrichmentStatus === CompanyEnrichmentStatusEnum.enum.PENDING) {
+        runCompanyEnrichmentOnce({
+          firestore,
+          logger,
+          llmClient,
+          company: refreshed
+        }).catch((err) => {
+          logger.error(
+            { companyId: refreshed.id, err },
+            "Background enrichment trigger failed after confirm-name"
+          );
+        });
+      }
     })
   );
 
@@ -528,6 +543,18 @@ export function companiesRouter({ firestore, logger }) {
         company: refreshed,
         hasDiscoveredJobs: refreshed.jobDiscoveryStatus === "FOUND_JOBS"
       });
+
+      runCompanyEnrichmentOnce({
+        firestore,
+        logger,
+        llmClient,
+        company: refreshed
+      }).catch((err) => {
+        logger.error(
+          { companyId: refreshed.id, err },
+          "Background enrichment trigger failed after profile revision"
+        );
+      });
     })
   );
 
@@ -569,7 +596,6 @@ export function companiesRouter({ firestore, logger }) {
       const savedCompany = CompanySchema.parse(
         await firestore.saveCompanyDocument(company.id, companyUpdates)
       );
-      await ensureCompanyEnrichmentQueued({ firestore, logger, company: savedCompany });
 
       const userDoc = await firestore.getDocument("users", user.id);
       if (!userDoc) {
@@ -593,7 +619,21 @@ export function companiesRouter({ firestore, logger }) {
         updatedAt: new Date()
       });
 
+      await ensureCompanyEnrichmentQueued({ firestore, logger, company: savedCompany });
+
       res.status(201).json({ company: savedCompany });
+
+      runCompanyEnrichmentOnce({
+        firestore,
+        logger,
+        llmClient,
+        company: savedCompany
+      }).catch((err) => {
+        logger.error(
+          { companyId: savedCompany.id, err },
+          "Background enrichment trigger failed after company creation"
+        );
+      });
     })
   );
 

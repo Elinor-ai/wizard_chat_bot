@@ -4,9 +4,14 @@ import {
   CompanyEnrichmentStatusEnum,
   CompanyJobDiscoveryStatusEnum,
   CompanyTypeEnum,
-  JobSchema
+  EmploymentTypeEnum,
+  ExperienceLevelEnum,
+  JobSchema,
+  WorkModelEnum
 } from "@wizard/core";
 import { recordLlmUsageFromResult } from "./llm-usage-ledger.js";
+import { load as loadHtml } from "cheerio";
+import { htmlToText } from "html-to-text";
 const GENERIC_EMAIL_DOMAINS = new Set([
   "gmail.com",
   "googlemail.com",
@@ -46,7 +51,6 @@ const TRUSTED_JOB_HOSTS = [
 const JOB_URL_RED_FLAGS = ["example", "sample", "placeholder", "dummy", "lorem", "acme"];
 const hasFetchSupport = typeof fetch === "function";
 const ALLOW_WEB_FETCH = hasFetchSupport && process.env.ENABLE_COMPANY_INTEL_FETCH === "true";
-const ENRICHMENT_LOCK_TTL_MS = 5 * 60 * 1000;
 const BRANDFETCH_API_URL = "https://api.brandfetch.io/v2/brands";
 const BRANDFETCH_API_TOKEN = "mrzkuqeDHxVfPF2xEOGgtPCPRP6jpIyCpMd0XJ1Gvf4=";
 const BRAND_SOURCE = "brandfetch";
@@ -68,6 +72,78 @@ const LINKEDIN_HIRING_PHRASES = [
 ];
 const LINKEDIN_HIRING_REGEX = new RegExp(LINKEDIN_HIRING_PHRASES.join("|"), "gi");
 const DISCOVERED_JOB_OWNER_FALLBACK = "system_company_intel";
+const STUCK_ENRICHMENT_THRESHOLD_MS = 10 * 60 * 1000;
+
+function cleanText(raw) {
+  if (!raw || typeof raw !== "string") {
+    return "";
+  }
+  return htmlToText(raw, {
+    wordwrap: false,
+    selectors: [
+      { selector: "a", options: { ignoreHref: true } },
+      { selector: "img", format: "skip" }
+    ]
+  })
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchWebsiteHtml(url, logger) {
+  if (!ALLOW_WEB_FETCH || !url) {
+    return null;
+  }
+  try {
+    const response = await fetch(url, { method: "GET" });
+    if (!response.ok) {
+      logger?.debug?.({ url, status: response.status }, "Website HTML fetch skipped");
+      return null;
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/html")) {
+      return null;
+    }
+    return await response.text();
+  } catch (error) {
+    logger?.debug?.({ url, err: error }, "Website HTML fetch failed");
+    return null;
+  }
+}
+
+function flattenJsonLdEntries(entry) {
+  if (!entry) return [];
+  if (Array.isArray(entry)) {
+    return entry.flatMap((child) => flattenJsonLdEntries(child));
+  }
+  if (entry["@graph"]) {
+    return flattenJsonLdEntries(entry["@graph"]);
+  }
+  return [entry];
+}
+
+function extractJsonLd($) {
+  const jobPostings = [];
+  const organizations = [];
+  $('script[type="application/ld+json"]').each((_, element) => {
+    const scriptContent = $(element).contents().text();
+    if (!scriptContent) return;
+    try {
+      const parsed = JSON.parse(scriptContent);
+      const items = flattenJsonLdEntries(parsed);
+      items.forEach((item) => {
+        const type = Array.isArray(item?.["@type"]) ? item["@type"] : [item?.["@type"]];
+        if (type.some((entry) => String(entry).toLowerCase() === "jobposting")) {
+          jobPostings.push(item);
+        } else if (type.some((entry) => String(entry).toLowerCase() === "organization")) {
+          organizations.push(item);
+        }
+      });
+    } catch {
+      // ignore malformed JSON-LD
+    }
+  });
+  return { jobPostings, organizations };
+}
 
 function toTitleCase(value) {
   if (!value) return "";
@@ -679,14 +755,92 @@ async function tryDiscoverCareerPath(websiteUrl) {
   return null;
 }
 
-export async function discoverCareerPage({ domain, websiteUrl, searchResults = [] }) {
+function extractCareerLinkFromWebsite({ $, html, baseUrl }) {
+  const root = $ ?? (html ? loadHtml(html) : null);
+  if (!root) return null;
+  const keywords = /(career|jobs|join)/i;
+  const selectors = ["header nav a", "nav a", "footer a", "a"];
+  for (const selector of selectors) {
+    const anchors = root(selector).toArray();
+    for (const anchor of anchors) {
+      const node = root(anchor);
+      const text = node.text() ?? "";
+      const href = node.attr("href") ?? "";
+      if (!href) continue;
+      if (keywords.test(text) || keywords.test(href)) {
+        const resolved = resolveRelativeUrl(baseUrl, href);
+        if (resolved) {
+          return resolved;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function extractMetaTags($, baseUrl) {
+  if (!$) {
+    return { description: null, siteImage: null, siteTitle: null };
+  }
+  const pick = (selectors, attr = "content") => {
+    for (const selector of selectors) {
+      const node = $(selector).first();
+      if (node && node.length > 0) {
+        const value = attr === "text" ? node.text() : node.attr(attr);
+        if (value && value.trim()) {
+          return value.trim();
+        }
+      }
+    }
+    return null;
+  };
+  const description = pick(
+    ['meta[name="description"]', 'meta[property="og:description"]']
+  );
+  const siteImageRaw = pick(['meta[property="og:image"]', 'meta[name="twitter:image"]']);
+  const siteTitle =
+    pick(['meta[property="og:title"]', 'meta[name="twitter:title"]']) ??
+    pick(["title"], "text");
+  return {
+    description: description ? cleanText(description) : null,
+    siteImage: siteImageRaw
+      ? resolveRelativeUrl(baseUrl, siteImageRaw) ??
+        normalizeUrl(siteImageRaw) ??
+        siteImageRaw
+      : null,
+    siteTitle: siteTitle ? cleanText(siteTitle) : null
+  };
+}
+
+export async function discoverCareerPage({
+  domain,
+  websiteUrl,
+  searchResults = [],
+  websiteHtml,
+  websiteCheerio
+}) {
   const fromSearch = searchResults.find((result) =>
     /career|jobs|join/i.test(result?.url ?? "")
   );
   if (fromSearch?.url) {
     return fromSearch.url;
   }
-  return tryDiscoverCareerPath(websiteUrl ?? (domain ? `https://${domain}` : null));
+  const base = websiteUrl ?? (domain ? `https://${domain}` : null);
+  if (websiteCheerio) {
+    const discovered = extractCareerLinkFromWebsite({
+      $: websiteCheerio,
+      baseUrl: base
+    });
+    if (discovered) {
+      return discovered;
+    }
+  } else if (websiteHtml) {
+    const discovered = extractCareerLinkFromWebsite({ html: websiteHtml, baseUrl: base });
+    if (discovered) {
+      return discovered;
+    }
+  }
+  return tryDiscoverCareerPath(base);
 }
 
 function resolveRelativeUrl(baseUrl, target) {
@@ -754,6 +908,123 @@ function determineJobSource(url, company) {
   } catch {
     return "other";
   }
+}
+
+function normalizeJobEnum(value, enumShape) {
+  if (!value) return undefined;
+  const source = Array.isArray(value) ? value[0] : value;
+  if (typeof source !== "string") {
+    return undefined;
+  }
+  const normalized = source.toLowerCase().replace(/[\s-]+/g, "_");
+  return enumShape.options.find((option) => option === normalized);
+}
+
+function deriveLocationFromLd(jobLocation) {
+  if (!jobLocation) return "";
+  const location = Array.isArray(jobLocation) ? jobLocation[0] : jobLocation;
+  if (typeof location === "string") {
+    return location;
+  }
+  const address = location?.address ?? location?.addressLocality ?? {};
+  if (typeof address === "string") {
+    return address;
+  }
+  const parts = [
+    address?.addressLocality ?? location?.addressLocality,
+    address?.addressRegion ?? location?.addressRegion,
+    address?.addressCountry ?? location?.addressCountry
+  ]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean);
+  return parts.join(", ");
+}
+
+function buildJobFromJsonLd({ posting, company, baseUrl }) {
+  if (!posting) return null;
+  const title = posting.title ?? posting.name;
+  const url =
+    posting.url ??
+    posting.applicationUrl ??
+    posting.canonicalUrl ??
+    (posting.hiringOrganization?.sameAs ?? null);
+  const employmentType = normalizeJobEnum(posting.employmentType, EmploymentTypeEnum);
+  const workModel = normalizeJobEnum(posting.workLocationType ?? posting.workModel, WorkModelEnum);
+  const seniority = normalizeJobEnum(posting.seniorityLevel, ExperienceLevelEnum);
+  const salary = posting.baseSalary?.value ?? posting.salary;
+  const salaryText =
+    typeof salary === "object"
+      ? `${salary?.value ?? ""} ${salary?.currency ?? ""}`.trim()
+      : typeof salary === "string"
+        ? salary
+        : null;
+  if (!title || !url) {
+    return null;
+  }
+  const resolvedUrl = resolveRelativeUrl(baseUrl, url);
+  const description = cleanText(posting.description ?? posting.responsibilities ?? "");
+  return buildCandidateJobPayload({
+    company,
+    title,
+    url: resolvedUrl,
+    source: determineJobSource(url, company),
+    location: deriveLocationFromLd(posting.jobLocation ?? posting.jobLocationType),
+    description,
+    postedAt: posting.datePosted ?? posting.validThrough ?? null,
+    employmentType,
+    workModel,
+    seniorityLevel: seniority,
+    salary: salaryText || null,
+    currency: posting.baseSalary?.currency ?? null,
+    evidenceSources: ["json-ld"]
+  });
+}
+
+function extractJobAnchorsWithCheerio({ $, baseUrl, company }) {
+  if (!$) return [];
+  const jobs = [];
+  const seen = new Set();
+  const selectors = ["main a", "section a", "article a", "div a", "li a"];
+  $(selectors.join(",")).each((_, element) => {
+    const node = $(element);
+    const href = node.attr("href");
+    if (!href) return;
+    const url = resolveRelativeUrl(baseUrl, href);
+    if (!url) return;
+    const rawText = cleanText(node.text());
+    if (!rawText) return;
+    const linkTextMatches = /job|role|opening|apply|career/i.test(rawText);
+    const hrefMatches = /job|career|apply|opening/i.test(href);
+    if (!linkTextMatches && !hrefMatches) {
+      return;
+    }
+    const container = node.closest("[class*=job], article, li, div, section").first();
+    const context = container.length > 0 ? container : node.parent();
+    const description = cleanText(context.html() ?? node.html() ?? rawText);
+    const location =
+      cleanText(
+        (context.find('[class*="location"], [data-location], .job-location').first().text() ??
+          "")
+      ) || "";
+    const key = `${url}|${rawText}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    const job = buildCandidateJobPayload({
+      company,
+      title: rawText,
+      url,
+      source: determineJobSource(url, company),
+      location,
+      description,
+      evidenceSources: ["career-page-dom"]
+    });
+    if (job) {
+      jobs.push(job);
+    }
+  });
+  return jobs;
 }
 
 function dedupeJobs(jobs = []) {
@@ -1046,7 +1317,25 @@ async function discoverJobsFromCareerPage({ careerPageUrl, company, logger }) {
       return [];
     }
     const body = await response.text();
-    return extractJobAnchorsFromHtml({ html: body, baseUrl: careerPageUrl, company });
+    const $ = loadHtml(body);
+    const structured = extractJsonLd($);
+    const jsonLdJobs = Array.isArray(structured.jobPostings)
+      ? structured.jobPostings
+          .map((posting) =>
+            buildJobFromJsonLd({
+              posting,
+              company,
+              baseUrl: careerPageUrl
+            })
+          )
+          .filter(Boolean)
+      : [];
+    const anchorJobs = extractJobAnchorsWithCheerio({
+      $,
+      baseUrl: careerPageUrl,
+      company
+    });
+    return [...jsonLdJobs, ...anchorJobs];
   } catch (error) {
     logger?.debug?.({ careerPageUrl, err: error }, "Failed to crawl career page");
     return [];
@@ -1381,142 +1670,6 @@ export async function ensureCompanyEnrichmentQueued({ firestore, logger, company
   await enqueueCompanyEnrichment({ firestore, logger, company });
 }
 
-export function startCompanyIntelWorker({ firestore, llmClient, logger }) {
-  if (!firestore || !llmClient || !logger) {
-    throw new Error("firestore, llmClient, and logger are required to start worker");
-  }
-  if (startCompanyIntelWorker.started) {
-    return;
-  }
-  startCompanyIntelWorker.started = true;
-  processCompanyIntelJobs({ firestore, llmClient, logger });
-}
-
-startCompanyIntelWorker.started = false;
-
-async function processCompanyIntelJobs({ firestore, llmClient, logger }) {
-  while (true) {
-    try {
-      const claimedCompany = await claimNextCompanyForEnrichment({ firestore });
-      if (!claimedCompany) {
-        await delay(8000);
-        continue;
-      }
-
-      logger.info(
-        { companyId: claimedCompany.id },
-        "Processing company enrichment run"
-      );
-
-      const company = await firestore.getDocument("companies", claimedCompany.id);
-      if (!company) {
-        logger.warn(
-          { companyId: claimedCompany.id },
-          "Company document missing for enrichment run"
-        );
-        continue;
-      }
-
-      if (company.nameConfirmed === false) {
-        await markEnrichmentFailed({
-          firestore,
-          companyId: company.id,
-          reason: "name_not_confirmed",
-          message: "Company name must be confirmed before enrichment can run"
-        });
-        continue;
-      }
-
-      const startTime = new Date();
-      const attempts = (company.enrichmentAttempts ?? 0) + 1;
-      await firestore.saveCompanyDocument(company.id, {
-        enrichmentStartedAt: startTime,
-        enrichmentLockedAt: startTime,
-        enrichmentAttempts: attempts,
-        enrichmentError: null,
-        updatedAt: startTime
-      });
-
-      const refreshedCompany =
-        (await firestore.getDocument("companies", company.id)) ?? company;
-
-      try {
-        await runCompanyEnrichmentOnce({
-          firestore,
-          logger,
-          llmClient,
-          company: refreshedCompany
-        });
-        logger.info(
-          { companyId: company.id },
-          "Company enrichment run completed"
-        );
-      } catch (error) {
-        logger.warn(
-          { companyId: company.id, err: error },
-          "Company enrichment run failed"
-        );
-        await markEnrichmentFailed({
-          firestore,
-          companyId: company.id,
-          reason: "enrichment_failed",
-          message: error?.message ?? "Enrichment pipeline failed"
-        });
-      }
-    } catch (error) {
-      logger.error({ err: error }, "Company intel worker loop error");
-      await delay(8000);
-    }
-  }
-}
-
-async function claimNextCompanyForEnrichment({ firestore }) {
-  const pending = await firestore.listCollection("companies", [
-    { field: "enrichmentStatus", operator: "==", value: CompanyEnrichmentStatusEnum.enum.PENDING }
-  ]);
-  if (!pending || pending.length === 0) {
-    return null;
-  }
-  const available = pending.filter(isLockAvailable);
-  if (available.length === 0) {
-    return null;
-  }
-  const nextCompany = available.sort((a, b) => {
-    const aTime = resolveSortTime(a);
-    const bTime = resolveSortTime(b);
-    return aTime - bTime;
-  })[0];
-  const lockTime = new Date();
-  await firestore.saveCompanyDocument(nextCompany.id, {
-    enrichmentLockedAt: lockTime,
-    updatedAt: lockTime
-  });
-  return { ...nextCompany, enrichmentLockedAt: lockTime };
-}
-
-function resolveSortTime(company) {
-  const fallback = company.updatedAt ?? 0;
-  const source = company.enrichmentQueuedAt ?? fallback;
-  const value = source instanceof Date ? source : new Date(source);
-  const time = value.getTime();
-  return Number.isNaN(time) ? 0 : time;
-}
-
-function isLockAvailable(company) {
-  if (!company.enrichmentLockedAt) {
-    return true;
-  }
-  const lockSource =
-    company.enrichmentLockedAt instanceof Date
-      ? company.enrichmentLockedAt
-      : new Date(company.enrichmentLockedAt);
-  const lockTime = lockSource.getTime();
-  if (Number.isNaN(lockTime)) {
-    return true;
-  }
-  return Date.now() - lockTime > ENRICHMENT_LOCK_TTL_MS;
-}
-
 async function markEnrichmentFailed({ firestore, companyId, reason, message }) {
   if (!companyId) {
     return;
@@ -1536,30 +1689,96 @@ async function markEnrichmentFailed({ firestore, companyId, reason, message }) {
   });
 }
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, company }) {
   if (!company?.id) {
     throw new Error("Company context required for enrichment");
   }
 
   const normalizedDomain = company.primaryDomain?.toLowerCase();
-  if (normalizedDomain && !isGenericEmailDomain(normalizedDomain)) {
-    const brandfetchData = await fetchBrandfetchData(normalizedDomain, logger);
-    if (brandfetchData) {
-      const brandPatch = applyBrandfetchToCompany(company, brandfetchData);
-      if (brandPatch) {
-        const brandSources = new Set(company.sourcesUsed ?? []);
-        brandSources.add(BRAND_SOURCE);
-        brandPatch.sourcesUsed = Array.from(brandSources);
-        brandPatch.updatedAt = new Date();
-        const refreshed = await firestore.saveCompanyDocument(company.id, brandPatch);
-        company = {
-          ...company,
-          ...refreshed
-        };
+  const websiteCandidate =
+    company.website ?? (normalizedDomain ? `https://${normalizedDomain}` : null);
+  let currentWebsiteBase = websiteCandidate;
+  const tasks = [
+    normalizedDomain && !isGenericEmailDomain(normalizedDomain)
+      ? fetchBrandfetchData(normalizedDomain, logger)
+      : Promise.resolve(null),
+    searchCompanyOnWeb({
+      domain: company.primaryDomain,
+      name: company.name,
+      location: company.hqCountry ?? company.locationHint ?? "",
+      logger
+    }),
+    fetchWebsiteHtml(websiteCandidate, logger)
+  ];
+  const [brandResult, searchResult, websiteResult] = await Promise.allSettled(tasks);
+  const brandfetchData = brandResult.status === "fulfilled" ? brandResult.value : null;
+  if (brandResult.status === "rejected") {
+    logger?.debug?.(
+      { companyId: company.id, err: brandResult.reason },
+      "Brandfetch lookup rejected"
+    );
+  }
+  const searchResults =
+    searchResult.status === "fulfilled" && Array.isArray(searchResult.value)
+      ? searchResult.value
+      : [];
+  if (searchResult.status === "rejected") {
+    logger?.debug?.(
+      { companyId: company.id, err: searchResult.reason },
+      "Web search failed"
+    );
+  }
+  let websiteHtml =
+    websiteResult.status === "fulfilled" ? websiteResult.value : null;
+  let websiteCheerio = null;
+  let websiteContext = "";
+  let metaTags = null;
+  const hydrateWebsiteArtifacts = (html, base) => {
+    websiteHtml = html ?? websiteHtml;
+    if (!html) {
+      websiteCheerio = null;
+      websiteContext = "";
+      metaTags = null;
+      return;
+    }
+    websiteCheerio = loadHtml(html);
+    websiteContext = cleanText(html);
+    metaTags = extractMetaTags(websiteCheerio, base ?? currentWebsiteBase);
+  };
+  if (websiteResult.status === "rejected") {
+    logger?.debug?.(
+      { companyId: company.id, err: websiteResult.reason },
+      "Website HTML fetch failed"
+    );
+  }
+  if (websiteHtml) {
+    hydrateWebsiteArtifacts(websiteHtml, currentWebsiteBase);
+  }
+
+  if (brandfetchData) {
+    const brandPatch = applyBrandfetchToCompany(company, brandfetchData);
+    if (brandPatch) {
+      const brandSources = new Set(company.sourcesUsed ?? []);
+      brandSources.add(BRAND_SOURCE);
+      brandPatch.sourcesUsed = Array.from(brandSources);
+      brandPatch.updatedAt = new Date();
+      const refreshed = await firestore.saveCompanyDocument(company.id, brandPatch);
+      company = {
+        ...company,
+        ...refreshed
+      };
+      if (refreshed.website && refreshed.website !== currentWebsiteBase) {
+        currentWebsiteBase = refreshed.website;
+        const refreshedHtml = await fetchWebsiteHtml(refreshed.website, logger);
+        if (refreshedHtml) {
+          hydrateWebsiteArtifacts(refreshedHtml, currentWebsiteBase);
+        }
+      } else if (!websiteHtml && refreshed.website) {
+        currentWebsiteBase = refreshed.website;
+        const refreshedHtml = await fetchWebsiteHtml(refreshed.website, logger);
+        if (refreshedHtml) {
+          hydrateWebsiteArtifacts(refreshedHtml, currentWebsiteBase);
+        }
       }
     }
   }
@@ -1567,17 +1786,11 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
   const gaps = computeCompanyGaps(company);
   logger?.info?.({ companyId: company.id, gaps }, "company.intel.gaps");
 
-  const searchResults = await searchCompanyOnWeb({
-    domain: company.primaryDomain,
-    name: company.name,
-    location: company.hqCountry ?? company.locationHint ?? "",
-    logger
-  });
-
   const intelResult = await llmClient.askCompanyIntel({
     domain: company.primaryDomain,
     companySnapshot: company,
-    gaps
+    gaps,
+    websiteContext: websiteContext ?? ""
   });
   await recordLlmUsageFromResult({
     firestore,
@@ -1613,11 +1826,28 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
     normalizeUrl(profile.website) ??
     normalizeUrl(company.website) ??
     (company.primaryDomain ? `https://${company.primaryDomain}` : null);
+  if (
+    normalizedWebsite &&
+    (!websiteHtml || normalizedWebsite !== currentWebsiteBase)
+  ) {
+    currentWebsiteBase = normalizedWebsite;
+    const fetched = await fetchWebsiteHtml(normalizedWebsite, logger);
+    if (fetched) {
+      hydrateWebsiteArtifacts(fetched, currentWebsiteBase);
+    } else if (websiteCheerio) {
+      metaTags = extractMetaTags(websiteCheerio, currentWebsiteBase);
+    }
+  } else if (websiteCheerio && normalizedWebsite && normalizedWebsite !== currentWebsiteBase) {
+    currentWebsiteBase = normalizedWebsite;
+    metaTags = extractMetaTags(websiteCheerio, currentWebsiteBase);
+  }
   const careerPageUrl =
     (await discoverCareerPage({
       domain: company.primaryDomain,
       websiteUrl: normalizedWebsite,
-      searchResults
+      searchResults,
+      websiteHtml,
+      websiteCheerio
     })) ?? company.careerPageUrl ?? null;
   const now = new Date();
   const sourcesUsed = new Set(company.sourcesUsed ?? []);
@@ -1672,6 +1902,29 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
     sourcesUsed: Array.from(sourcesUsed),
     updatedAt: now
   };
+
+  if (metaTags?.description && !hasValue(company.description)) {
+    patch.description = metaTags.description;
+    updateFieldEvidence({
+      company,
+      evidence: fieldEvidence,
+      field: "description",
+      value: metaTags.description,
+      sources: ["meta-tags"]
+    });
+  }
+  if (metaTags?.siteImage && !hasValue(company.brand?.bannerUrl)) {
+    const brandPatch = ensureBrandShape(patch.brand ?? company.brand ?? {});
+    brandPatch.bannerUrl = metaTags.siteImage;
+    patch.brand = brandPatch;
+    updateFieldEvidence({
+      company,
+      evidence: fieldEvidence,
+      field: "brand.bannerUrl",
+      value: metaTags.siteImage,
+      sources: ["meta-tags"]
+    });
+  }
 
   const websiteFromProfile = normalizeUrl(profile.website);
   if (normalizedWebsite && hasGap("core", "website")) {
@@ -1874,6 +2127,54 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
   return { jobs };
 }
 
+export async function retryStuckEnrichments({ firestore, logger, llmClient }) {
+  if (!firestore || !logger || !llmClient) {
+    throw new Error("firestore, logger, and llmClient are required");
+  }
+  const pending = await firestore.listCollection("companies", [
+    { field: "enrichmentStatus", operator: "==", value: CompanyEnrichmentStatusEnum.enum.PENDING }
+  ]);
+  if (!pending || pending.length === 0) {
+    return { processed: 0 };
+  }
+  const cutoff = Date.now() - STUCK_ENRICHMENT_THRESHOLD_MS;
+  const stuckCompanies = pending.filter((company) => {
+    const queuedAtRaw = company.enrichmentQueuedAt ?? company.updatedAt ?? null;
+    const queuedAt =
+      queuedAtRaw instanceof Date ? queuedAtRaw : queuedAtRaw ? new Date(queuedAtRaw) : null;
+    if (!queuedAt) {
+      return true;
+    }
+    const time = queuedAt.getTime();
+    return Number.isNaN(time) ? true : time <= cutoff;
+  });
+
+  for (const record of stuckCompanies) {
+    try {
+      if (record.nameConfirmed === false) {
+        logger.warn(
+          { companyId: record.id },
+          "Skipping stuck enrichment retry because name is not confirmed"
+        );
+        continue;
+      }
+      const fresh = (await firestore.getDocument("companies", record.id)) ?? record;
+      await runCompanyEnrichmentOnce({
+        firestore,
+        logger,
+        llmClient,
+        company: fresh
+      });
+    } catch (error) {
+      logger.warn(
+        { companyId: record.id, err: error },
+        "retryStuckEnrichments failed for company"
+      );
+    }
+  }
+  return { processed: stuckCompanies.length };
+}
+
 export async function discoverJobsForCompany({
   company,
   logger,
@@ -1973,7 +2274,7 @@ export async function saveDiscoveredJobs({ firestore, logger, company, jobs }) {
         externalSource: job.source ?? null,
         externalUrl: job.url ?? null,
         sourceUrl: job.url ?? null,
-        companyJobId: job.externalId ?? null,
+        companyJobId: job.externalId ?? undefined,
         discoveredAt: job.discoveredAt ?? now,
         originalPostedAt: job.postedAt ?? null,
         importedAt: now,
@@ -2046,7 +2347,7 @@ function normalizeIntelJob(job, company) {
     description: sanitizeString(job.description) ?? "",
     postedAt: job.postedAt ?? null,
     discoveredAt: job.discoveredAt ?? new Date(),
-    externalId: sanitizeString(job.externalId) || null,
+    externalId: sanitizeString(job.externalId) || undefined,
     evidenceSources: Array.isArray(job.sourceEvidence) ? job.sourceEvidence : [],
     industry: sanitizeString(job.industry),
     seniorityLevel: sanitizeString(job.seniorityLevel),
@@ -2129,7 +2430,7 @@ function buildCandidateJobPayload({
   description = "",
   postedAt = null,
   discoveredAt = new Date(),
-  externalId = null,
+  externalId = undefined,
   evidenceSources = [],
   industry = null,
   seniorityLevel = null,
@@ -2158,7 +2459,7 @@ function buildCandidateJobPayload({
     location: location?.trim() ?? "",
     description: description?.trim() ?? "",
     source,
-    externalId,
+    externalId: typeof externalId === "string" && externalId.trim().length > 0 ? externalId.trim() : undefined,
     postedAt: coerceDate(postedAt),
     discoveredAt: coerceDate(discoveredAt) ?? new Date(),
     isActive: true,

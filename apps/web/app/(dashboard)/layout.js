@@ -16,12 +16,14 @@ import {
   PanelLeftClose,
   PanelRightOpen,
   Settings,
-  ImageDown
+  ImageDown,
 } from "lucide-react";
 import { GiBearFace } from "react-icons/gi";
 import { clsx } from "../../lib/cn";
 import { useUser } from "../../components/user-context";
 import { WizardLaunchTrigger } from "../../components/wizard/launch-wizard-trigger";
+import { CompanyOnboardingGuard } from "../../components/company-intel/company-onboarding-guard";
+import { CompanyEnrichmentStatusPill } from "../../components/company-intel/company-enrichment-status-pill";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", Icon: LayoutDashboard },
@@ -393,7 +395,11 @@ export default function DashboardLayout({ children }) {
         ...session.user,
         authToken: session.accessToken ?? user?.authToken ?? null,
       };
-      if (!user || user.id !== mergedUser.id || user.authToken !== mergedUser.authToken) {
+      if (
+        !user ||
+        user.id !== mergedUser.id ||
+        user.authToken !== mergedUser.authToken
+      ) {
         setUser(mergedUser);
       }
     } else if (status === "unauthenticated" && user) {
@@ -543,212 +549,228 @@ export default function DashboardLayout({ children }) {
   }, [showUserMenu]);
 
   return (
-    <div className="flex min-h-screen bg-neutral-100">
-      <aside
-        ref={sidebarContainerRef}
-        className={clsx(
-          "fixed inset-y-0 left-0 z-40 flex -translate-x-full flex-col border-r border-neutral-200 bg-white px-6 py-8 shadow-xl transition-[transform,width] duration-200 md:sticky md:top-0 md:self-start md:z-auto md:flex md:translate-x-0 md:shadow-none md:h-screen",
-          isSidebarCollapsed ? "md:px-3" : "md:px-6",
-          isMobileMenuOpen ? "translate-x-0" : ""
-        )}
-        style={{
-          "--sb-w-open": `${SIDEBAR_WIDTH_EXPANDED}px`,
-          "--sb-w-closed": `${SIDEBAR_WIDTH_COLLAPSED}px`,
-          width: computedSidebarWidth,
-          transitionDuration: "180ms",
-        }}
-      >
-        <div className="sticky top-0 z-10 flex items-center justify-between bg-white pb-4">
-          <div className="flex items-center gap-36">
-            {isSidebarCollapsed ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setSidebarOpen(true);
-                  setIsMobileMenuOpen(false);
-                }}
-                aria-label="Open sidebar"
-                title="Open sidebar"
-                aria-expanded={sidebarOpen}
-                aria-controls={sidebarNavId}
-                className="group relative inline-flex h-9 w-9 items-center justify-center p-1.5 text-primary-600 transition duration-200 hover:text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 focus:ring-offset-white"
-              >
-                <GiBearFace className="h-6 w-6 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
-                <PanelRightOpen className="absolute inset-0 m-auto h-6 w-6 opacity-0 transition-all duration-150 group-hover:rotate-6 group-hover:opacity-100 group-focus-visible:rotate-6 group-focus-visible:opacity-100" />
-              </button>
-            ) : (
-              <>
-                <div
-                  className="inline-flex h-9 w-9 items-center justify-center text-primary-600"
-                  aria-hidden="true"
-                  title="Wizard Console"
-                >
-                  <GiBearFace className="h-6 w-6" />
-                </div>
+    <>
+      {user ? (
+        <>
+          <CompanyOnboardingGuard />
+          <CompanyEnrichmentStatusPill />
+        </>
+      ) : null}
+      <div className="flex min-h-screen bg-neutral-100">
+        <aside
+          ref={sidebarContainerRef}
+          className={clsx(
+            "fixed inset-y-0 left-0 z-40 flex -translate-x-full flex-col border-r border-neutral-200 bg-white px-6 py-8 shadow-xl transition-[transform,width] duration-200 md:sticky md:top-0 md:self-start md:z-auto md:flex md:translate-x-0 md:shadow-none md:h-screen",
+            isSidebarCollapsed ? "md:px-3" : "md:px-6",
+            isMobileMenuOpen ? "translate-x-0" : ""
+          )}
+          style={{
+            "--sb-w-open": `${SIDEBAR_WIDTH_EXPANDED}px`,
+            "--sb-w-closed": `${SIDEBAR_WIDTH_COLLAPSED}px`,
+            width: computedSidebarWidth,
+            transitionDuration: "180ms",
+          }}
+        >
+          <div className="sticky top-0 z-10 flex items-center justify-between bg-white pb-4">
+            <div className="flex items-center gap-36">
+              {isSidebarCollapsed ? (
                 <button
                   type="button"
                   onClick={() => {
-                    setSidebarOpen(false);
+                    setSidebarOpen(true);
                     setIsMobileMenuOpen(false);
                   }}
-                  aria-label="Collapse sidebar"
-                  title="Collapse sidebar"
+                  aria-label="Open sidebar"
+                  title="Open sidebar"
                   aria-expanded={sidebarOpen}
                   aria-controls={sidebarNavId}
-                  className="group hidden h-9 w-9 items-center justify-center p-1.5 text-primary-600 transition duration-200 hover:text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 focus:ring-offset-white md:flex"
+                  className="group relative inline-flex h-9 w-9 items-center justify-center p-1.5 text-primary-600 transition duration-200 hover:text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 focus:ring-offset-white"
                 >
-                  <PanelLeftClose className="h-6 w-6 transition-transform duration-200 group-hover:-rotate-12 group-focus-visible:-rotate-12" />
+                  <GiBearFace className="h-6 w-6 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
+                  <PanelRightOpen className="absolute inset-0 m-auto h-6 w-6 opacity-0 transition-all duration-150 group-hover:rotate-6 group-hover:opacity-100 group-focus-visible:rotate-6 group-focus-visible:opacity-100" />
                 </button>
-              </>
-            )}
+              ) : (
+                <>
+                  <div
+                    className="inline-flex h-9 w-9 items-center justify-center text-primary-600"
+                    aria-hidden="true"
+                    title="Wizard Console"
+                  >
+                    <GiBearFace className="h-6 w-6" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSidebarOpen(false);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    aria-label="Collapse sidebar"
+                    title="Collapse sidebar"
+                    aria-expanded={sidebarOpen}
+                    aria-controls={sidebarNavId}
+                    className="group hidden h-9 w-9 items-center justify-center p-1.5 text-primary-600 transition duration-200 hover:text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 focus:ring-offset-white md:flex"
+                  >
+                    <PanelLeftClose className="h-6 w-6 transition-transform duration-200 group-hover:-rotate-12 group-focus-visible:-rotate-12" />
+                  </button>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(false)}
+              aria-label="Close navigation"
+              className="inline-flex rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-primary-200 hover:text-primary-600 md:hidden"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsMobileMenuOpen(false)}
-            aria-label="Close navigation"
-            className="inline-flex rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-primary-200 hover:text-primary-600 md:hidden"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-        </div>
 
-        <div className="mt-8 flex flex-1 flex-col overflow-hidden">
-          <nav
-            id={sidebarNavId}
-            className="flex-1 space-y-2 overflow-y-auto pr-1 text-sm font-medium text-neutral-600"
-          >
-            {navItems.map((item) => (
-              item.href === "/wizard" ? (
-                <WizardLaunchTrigger key={item.href}>
-                  {({ onClick }) => (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClick();
-                        setIsMobileMenuOpen(false);
-                      }}
-                      className={clsx(
-                        "flex w-full items-center gap-3 rounded-xl py-2 text-left transition hover:bg-primary-50 hover:text-primary-600",
-                        isSidebarCollapsed ? "justify-center px-2" : "px-3",
-                        pathname === item.href ? "bg-primary-50 text-primary-600" : ""
-                      )}
-                    >
-                      <item.Icon className="h-5 w-5" />
-                      <span
+          <div className="mt-8 flex flex-1 flex-col overflow-hidden">
+            <nav
+              id={sidebarNavId}
+              className="flex-1 space-y-2 overflow-y-auto pr-1 text-sm font-medium text-neutral-600"
+            >
+              {navItems.map((item) =>
+                item.href === "/wizard" ? (
+                  <WizardLaunchTrigger key={item.href}>
+                    {({ onClick }) => (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClick();
+                          setIsMobileMenuOpen(false);
+                        }}
                         className={clsx(
-                          "transition-opacity	duration-150",
-                          isSidebarCollapsed ? "hidden" : "block"
+                          "flex w-full items-center gap-3 rounded-xl py-2 text-left transition hover:bg-primary-50 hover:text-primary-600",
+                          isSidebarCollapsed ? "justify-center px-2" : "px-3",
+                          pathname === item.href
+                            ? "bg-primary-50 text-primary-600"
+                            : ""
                         )}
                       >
-                        {item.label}
-                      </span>
-                    </button>
-                  )}
-                </WizardLaunchTrigger>
-              ) : (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={clsx(
-                    "flex items-center gap-3 rounded-xl py-2 transition hover:bg-primary-50 hover:text-primary-600",
-                    isSidebarCollapsed ? "justify-center px-2" : "px-3",
-                    pathname === item.href ? "bg-primary-50 text-primary-600" : ""
-                  )}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  <item.Icon className="h-5 w-5" />
-                  <span
-                    className={clsx(
-                      "transition-opacity duration-150",
-                      isSidebarCollapsed ? "hidden" : "block"
+                        <item.Icon className="h-5 w-5" />
+                        <span
+                          className={clsx(
+                            "transition-opacity duration-150",
+                            isSidebarCollapsed ? "hidden" : "block"
+                          )}
+                        >
+                          {item.label}
+                        </span>
+                      </button>
                     )}
+                  </WizardLaunchTrigger>
+                ) : (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={clsx(
+                      "flex items-center gap-3 rounded-xl py-2 transition hover:bg-primary-50 hover:text-primary-600",
+                      isSidebarCollapsed ? "justify-center px-2" : "px-3",
+                      pathname === item.href
+                        ? "bg-primary-50 text-primary-600"
+                        : ""
+                    )}
+                    onClick={() => setIsMobileMenuOpen(false)}
                   >
-                    {item.label}
-                  </span>
-                </Link>
-              )
-            ))}
-          </nav>
+                    <item.Icon className="h-5 w-5" />
+                    <span
+                      className={clsx(
+                        "transition-opacity duration-150",
+                        isSidebarCollapsed ? "hidden" : "block"
+                      )}
+                    >
+                      {item.label}
+                    </span>
+                  </Link>
+                )
+              )}
+            </nav>
 
-          {displayUser ? (
-            <div className="mt-4 border-t border-neutral-100 pt-4">
-              <div
-                className={clsx(
-                  "relative",
-                  isSidebarCollapsed ? "flex justify-center" : ""
-                )}
-              >
-                <button
-                  ref={sidebarButtonRef}
-                  type="button"
-                  onClick={() => {
-                    setShowSidebarUserMenu((prev) => !prev);
-                    setShowUserMenu(false);
-                  }}
+            {displayUser ? (
+              <div className="mt-4 border-t border-neutral-100 pt-4">
+                <div
                   className={clsx(
-                    "flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-primary-50",
-                    isSidebarCollapsed ? "justify-center px-0" : "justify-start"
+                    "relative",
+                    isSidebarCollapsed ? "flex justify-center" : ""
                   )}
-                  aria-haspopup="menu"
-                  aria-expanded={showSidebarUserMenu}
-                  aria-controls={showSidebarUserMenu ? sidebarMenuId : undefined}
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
-                    {displayUser.profile?.name?.[0]?.toUpperCase() ||
-                      displayUser.auth?.email?.[0]?.toUpperCase() ||
-                      "U"}
-                  </div>
-                  {!isSidebarCollapsed ? (
-                    <>
-                      <span>
-                        {displayUser.profile?.name || displayUser.auth?.email}
-                      </span>
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </>
-                  ) : null}
-                </button>
-                <AccountMenuPopup
-                  anchorRef={sidebarButtonRef}
-                  open={showSidebarUserMenu}
-                  onClose={closeAllUserMenus}
-                  menuId={sidebarMenuId}
-                  boundaryRef={sidebarContainerRef}
-                >
-                  <AccountMenuContent
-                    displayUser={displayUser}
+                  <button
+                    ref={sidebarButtonRef}
+                    type="button"
+                    onClick={() => {
+                      setShowSidebarUserMenu((prev) => !prev);
+                      setShowUserMenu(false);
+                    }}
+                    className={clsx(
+                      "flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-primary-50",
+                      isSidebarCollapsed
+                        ? "justify-center px-0"
+                        : "justify-start"
+                    )}
+                    aria-haspopup="menu"
+                    aria-expanded={showSidebarUserMenu}
+                    aria-controls={
+                      showSidebarUserMenu ? sidebarMenuId : undefined
+                    }
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
+                      {displayUser.profile?.name?.[0]?.toUpperCase() ||
+                        displayUser.auth?.email?.[0]?.toUpperCase() ||
+                        "U"}
+                    </div>
+                    {!isSidebarCollapsed ? (
+                      <>
+                        <span>
+                          {displayUser.profile?.name || displayUser.auth?.email}
+                        </span>
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 9l-7 7-7-7"
+                          />
+                        </svg>
+                      </>
+                    ) : null}
+                  </button>
+                  <AccountMenuPopup
+                    anchorRef={sidebarButtonRef}
+                    open={showSidebarUserMenu}
                     onClose={closeAllUserMenus}
-                    handleSignOut={handleSignOut}
-                  />
-                </AccountMenuPopup>
+                    menuId={sidebarMenuId}
+                    boundaryRef={sidebarContainerRef}
+                  >
+                    <AccountMenuContent
+                      displayUser={displayUser}
+                      onClose={closeAllUserMenus}
+                      handleSignOut={handleSignOut}
+                    />
+                  </AccountMenuPopup>
+                </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
+        </aside>
+
+        {isMobileMenuOpen ? (
+          <div
+            role="presentation"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="fixed inset-0 z-30 bg-black/30 md:hidden"
+          />
+        ) : null}
+
+        <div className="flex flex-1 flex-col">
+          <main className="flex-1 px-4 py-6 md:px-10">{children}</main>
         </div>
-      </aside>
-
-      {isMobileMenuOpen ? (
-        <div
-          role="presentation"
-          onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 z-30 bg-black/30 md:hidden"
-        />
-      ) : null}
-
-      <div className="flex flex-1 flex-col">
-        <main className="flex-1 px-4 py-6 md:px-10">{children}</main>
       </div>
-    </div>
+    </>
   );
 }
