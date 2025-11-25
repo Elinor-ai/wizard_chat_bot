@@ -9,10 +9,8 @@ function normalizeAliases(map = {}) {
 
 export class ImagenImageAdapter {
   constructor({ apiKey, apiUrl, modelAliases = {} } = {}) {
-    this.apiKey = apiKey;
-    this.apiUrl =
-      apiUrl ??
-      "https://generativelanguage.googleapis.com/v1beta/models/imagegeneration:generate";
+    this.apiKey = apiKey ?? process.env.IMAGEN_API_KEY ?? process.env.GEMINI_API_KEY ?? null;
+    this.apiUrl = apiUrl ?? "https://generativelanguage.googleapis.com/v1beta/models";
     this.modelAliases = normalizeAliases(modelAliases);
   }
 
@@ -20,13 +18,6 @@ export class ImagenImageAdapter {
     if (!this.apiKey) {
       throw new Error("IMAGEN_API_KEY missing");
     }
-  }
-
-  resolveModel(model) {
-    if (model && this.modelAliases[model.trim().toLowerCase()]) {
-      return this.modelAliases[model.trim().toLowerCase()];
-    }
-    return model ?? this.modelAliases.nano ?? "imagen-3.0-fast-generate-001";
   }
 
   parsePayload(payload) {
@@ -40,6 +31,13 @@ export class ImagenImageAdapter {
     }
   }
 
+  resolveModel(model) {
+    if (model && this.modelAliases[model.trim().toLowerCase()]) {
+      return this.modelAliases[model.trim().toLowerCase()];
+    }
+    return model ?? this.modelAliases.nano ?? "imagen-4.0-generate-preview-06-06";
+  }
+
   async invoke({ user, model }) {
     this.ensureKey();
     const payload = this.parsePayload(user);
@@ -49,20 +47,26 @@ export class ImagenImageAdapter {
     }
 
     const resolvedModel = this.resolveModel(model);
-    const url = `${this.apiUrl}?key=${this.apiKey}`;
+    const url = `${this.apiUrl}/${encodeURIComponent(resolvedModel)}:predict?key=${this.apiKey}`;
+
+    const body = {
+      instances: [
+        {
+          prompt
+        }
+      ],
+      parameters: {
+        sampleCount: 1,
+        aspectRatio: String(payload.aspect_ratio ?? "1:1")
+      }
+    };
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model: resolvedModel,
-        prompt: {
-          text: prompt
-        },
-        negative_prompt: payload.negative_prompt ?? undefined,
-        aspect_ratio: payload.aspect_ratio ?? "1:1"
-      })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -71,17 +75,23 @@ export class ImagenImageAdapter {
     }
 
     const data = await response.json();
-    const firstImage = data?.candidates?.[0]?.image;
-    if (!firstImage) {
-      throw new Error("Imagen response missing candidates");
+    const prediction = data?.predictions?.[0] ?? {};
+    const base64 =
+      prediction.bytesBase64Encoded ??
+      prediction.image?.base64 ??
+      prediction?.images?.[0]?.base64 ??
+      null;
+
+    if (!base64) {
+      throw new Error("Imagen response missing image data");
     }
 
     return {
       json: {
-        imageBase64: firstImage.base64 ?? null,
+        imageBase64: base64,
         imageUrl: null,
         metadata: {
-          finishReason: data?.candidates?.[0]?.finishReason ?? null
+          model: resolvedModel
         }
       }
     };

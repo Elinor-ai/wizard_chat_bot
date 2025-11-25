@@ -53,10 +53,8 @@ export class UnifiedVideoRenderer {
       await sleep(this.pollIntervalMs);
 
       try {
-        // בדיקת סטטוס
         status = await client.checkStatus(status.id ?? start.id);
 
-        // לוג קריטי - בוא נראה מה חוזר מהקלאיינט
         if (status.status === "completed" || status.status === "failed") {
           console.log(
             `[Renderer] Status update from ${key}:`,
@@ -66,7 +64,6 @@ export class UnifiedVideoRenderer {
 
         if (status.status === "completed") {
           if (!status.videoUrl) {
-            // אם זה הושלם אבל אין URL, זו שגיאה
             throw new VideoRendererError(
               "Provider completed without a video URL",
               {
@@ -89,8 +86,6 @@ export class UnifiedVideoRenderer {
           });
         }
       } catch (err) {
-        // תופס שגיאות שקרו תוך כדי הבדיקה כדי לא להקריס את הכל
-        // אם השגיאה היא כבר מסוג VideoRendererError, זרוק אותה הלאה
         if (err instanceof VideoRendererError) throw err;
 
         console.error(`[Renderer] Error during polling:`, err);

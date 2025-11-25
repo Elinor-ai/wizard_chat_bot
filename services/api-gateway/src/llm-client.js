@@ -75,7 +75,7 @@ const [DEFAULT_COPILOT_PROVIDER] = DEFAULT_COPILOT_SPEC.split(":");
 const DEFAULT_DALLE_IMAGE_MODEL =
   process.env.DALLE_IMAGE_MODEL ?? "gpt-image-1";
 const DEFAULT_IMAGEN_IMAGE_MODEL =
-  process.env.IMAGEN_IMAGE_MODEL ?? "imagen-3.0-fast-generate-001";
+  process.env.IMAGEN_IMAGE_MODEL ?? "imagen-4.0-generate-preview-06-06";
 const RAW_IMAGE_GENERATION_PROVIDER =
   process.env.IMAGE_GENERATION_PROVIDER ?? "dall-e";
 const NORMALIZED_IMAGE_PROVIDER = RAW_IMAGE_GENERATION_PROVIDER.replace("-", "_");
