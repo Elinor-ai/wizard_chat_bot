@@ -18,6 +18,42 @@ function useEscape(handler, enabled) {
   }, [enabled, handler]);
 }
 
+function VideoPreview({ asset }) {
+  const videoUrl = asset?.content?.videoUrl ?? null;
+  const poster = asset?.content?.posterUrl ?? asset?.content?.thumbnailUrl ?? null;
+  const caption = asset?.content?.caption ?? asset?.summary ?? "";
+  return (
+    <article className="w-full max-w-3xl rounded-3xl border border-neutral-200 bg-black/80 p-6 shadow-xl">
+      <div className="rounded-2xl bg-black p-4 shadow-inner shadow-black/40">
+        {videoUrl ? (
+          <video
+            className="w-full rounded-2xl"
+            src={videoUrl}
+            poster={poster || undefined}
+            controls
+            playsInline
+          >
+            <p className="text-sm text-white">
+              Your browser does not support HTML video. Download from{" "}
+              <a href={videoUrl} className="underline">
+                {videoUrl}
+              </a>
+              .
+            </p>
+          </video>
+        ) : (
+          <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed border-white/20 text-sm text-white/70">
+            Video file unavailable for this asset.
+          </div>
+        )}
+      </div>
+      {caption ? (
+        <p className="mt-4 whitespace-pre-wrap text-sm text-white/80">{caption}</p>
+      ) : null}
+    </article>
+  );
+}
+
 function LinkedInPreview({ asset, logoUrl, companyName }) {
   const body =
     asset?.content?.body ??
@@ -179,9 +215,13 @@ function GenericPreview({ asset, companyName }) {
 }
 
 function resolvePreviewComponent(asset) {
+  const artifactType = asset?.artifactType?.toLowerCase?.() ?? "";
   const format = asset?.formatId?.toUpperCase?.() ?? "";
   const channel = asset?.channelId?.toUpperCase?.() ?? "";
 
+  if (artifactType === "video" || format.includes("VIDEO") || channel.includes("VIDEO")) {
+    return VideoPreview;
+  }
   if (["FACEBOOK_JOBS_US", "META_FB_IG_LEAD", "FACEBOOK_FEED_AD"].some((key) => format.includes(key) || channel.includes("FACEBOOK") || channel.includes("META"))) {
     return FacebookPreview;
   }

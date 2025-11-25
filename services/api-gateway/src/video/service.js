@@ -21,6 +21,7 @@ const INITIAL_RENDER_STATE = Object.freeze({
   lastFetchAt: null,
   hash: null,
 });
+const ASYNC_RENDER_PROVIDERS = new Set(["sora"]);
 
 function deriveChannelName(channelId) {
   return CHANNEL_CATALOG_MAP[channelId]?.name ?? channelId;
@@ -95,6 +96,18 @@ function normalizeProviderValue(value) {
   if (normalized === "sora") return "sora";
   if (normalized === "veo") return "veo";
   return null;
+}
+
+function isAsyncRenderProvider(provider) {
+  const normalized = normalizeProviderValue(provider);
+  return Boolean(normalized) && ASYNC_RENDER_PROVIDERS.has(normalized);
+}
+
+function scheduleBackgroundWork(task) {
+  if (typeof setImmediate === "function") {
+    return setImmediate(task);
+  }
+  return setTimeout(task, 0);
 }
 
 function resolveStoredProvider(raw) {
@@ -238,12 +251,20 @@ export function createVideoLibraryService({
     await saveItem(itemId, baseItem);
     incrementMetric(logger, "video_manifests_created", 1, { ownerUserId });
 
+    const provider =
+      normalizeProviderValue(baseItem.provider) ?? DEFAULT_RENDER_PROVIDER;
+
     if (AUTO_RENDER) {
+      if (isAsyncRenderProvider(provider)) {
+        const queued = await enqueueAsyncRender({ ownerUserId, itemId });
+        return { item: queued, renderQueued: true };
+      }
       const outcome = await triggerRender({ ownerUserId, itemId });
-      return outcome?.item ?? null;
+      return { item: outcome?.item ?? null, renderQueued: false };
     }
 
-    return getItem({ ownerUserId, itemId });
+    const item = await getItem({ ownerUserId, itemId });
+    return { item, renderQueued: false };
   }
 
   async function updateItem(item, updates, auditEntry) {
@@ -307,9 +328,56 @@ export function createVideoLibraryService({
     );
     const updated = await updateItem(existing, updates, auditEntry);
     if (AUTO_RENDER) {
+      const provider = resolveRenderProvider(updated);
+      if (isAsyncRenderProvider(provider)) {
+        return enqueueAsyncRender({ ownerUserId, itemId });
+      }
       const outcome = await triggerRender({ ownerUserId, itemId });
       return outcome?.item ?? null;
     }
+    return updated;
+  }
+
+  async function enqueueAsyncRender({ ownerUserId, itemId }) {
+    const existing = await getItem({ ownerUserId, itemId });
+    if (!existing) {
+      return null;
+    }
+    const provider = resolveRenderProvider(existing);
+    const renderTask = {
+      id: existing.renderTask?.id ?? uuid(),
+      manifestVersion: existing.activeManifest.version,
+      mode: "file",
+      status: "pending",
+      renderer: provider,
+      requestedAt: new Date().toISOString(),
+      completedAt: null,
+      result: null,
+      error: null,
+    };
+    const auditEntry = createAuditEntry(
+      "render_enqueued",
+      "Render queued for asynchronous processing",
+      {
+        provider,
+      }
+    );
+    const updated = await updateItem(
+      existing,
+      {
+        renderTask,
+        status: VideoLibraryStatusEnum.enum.generating,
+      },
+      auditEntry
+    );
+    scheduleBackgroundWork(() => {
+      triggerRender({ ownerUserId, itemId }).catch((error) => {
+        logger.error(
+          { err: error, itemId, ownerUserId, provider },
+          "Asynchronous video render failed"
+        );
+      });
+    });
     return updated;
   }
 
@@ -323,6 +391,9 @@ export function createVideoLibraryService({
     const renderTask = await renderer.render({
       manifest: existing.activeManifest,
       provider,
+      jobId: existing.jobId,
+      itemId: existing.id,
+      ownerUserId,
     });
     const veo = { ...INITIAL_RENDER_STATE, status: "ready" };
     let status = existing.status;

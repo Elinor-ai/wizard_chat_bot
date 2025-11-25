@@ -1,6 +1,7 @@
 import { VeoClient } from "./clients/veo-client.js";
 import { SoraClient } from "./clients/sora-client.js";
 import { VideoRendererError } from "./contracts.js";
+import { persistRemoteVideo } from "../storage.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -10,15 +11,14 @@ export class UnifiedVideoRenderer {
   constructor(options = {}) {
     const veoKey = options.veoApiKey ?? process.env.GEMINI_API_KEY ?? null;
     const soraToken =
-      options.soraApiToken ??
-      process.env.SORA_API_TOKEN ??
-      "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";
+      options.soraApiToken ?? process.env.SORA_API_TOKEN ?? null;
     this.clients = {
       veo: new VeoClient({ apiKey: veoKey }),
       sora: new SoraClient({ apiToken: soraToken }),
     };
     this.pollIntervalMs = Number(process.env.RENDER_POLL_INTERVAL_MS ?? 2000);
     this.pollTimeoutMs = Number(process.env.RENDER_POLL_TIMEOUT_MS ?? 240000);
+    this.logger = options.logger ?? console;
   }
 
   selectClient(provider) {
@@ -32,9 +32,9 @@ export class UnifiedVideoRenderer {
     return { client, key };
   }
 
-  async renderVideo(provider, request) {
+  async renderVideo(provider, request, context = {}) {
     const { client, key } = this.selectClient(provider);
-    console.log(`[Renderer] Starting generation with ${key}...`); // LOG
+    console.log(`[Renderer] Starting generation with ${key}...`);
 
     const start = await client.startGeneration(request);
     if (!start?.id) {
@@ -44,7 +44,7 @@ export class UnifiedVideoRenderer {
       });
     }
 
-    console.log(`[Renderer] Job started. ID: ${start.id}`); // LOG
+    console.log(`[Renderer] Job started. ID: ${start.id}`);
 
     const deadline = Date.now() + this.pollTimeoutMs;
     let status = start;
@@ -72,8 +72,16 @@ export class UnifiedVideoRenderer {
               }
             );
           }
-          console.log(`[Renderer] Success! Video URL: ${status.videoUrl}`);
-          return status.videoUrl;
+          let finalUrl = status.videoUrl;
+          if (key === "sora") {
+            finalUrl = await this.persistSoraVideo({
+              client,
+              videoUrl: status.videoUrl,
+              context,
+            });
+          }
+          console.log(`[Renderer] Success! Video URL: ${finalUrl}`);
+          return finalUrl;
         }
 
         if (status.status === "failed") {
@@ -100,5 +108,37 @@ export class UnifiedVideoRenderer {
       code: "TIMEOUT",
       context: { provider: key },
     });
+  }
+
+  async persistSoraVideo({ client, videoUrl, context }) {
+    try {
+      const headers =
+        client?.apiToken && typeof client.apiToken === "string"
+          ? { Authorization: `Bearer ${client.apiToken}` }
+          : undefined;
+      const persisted = await persistRemoteVideo({
+        sourceUrl: videoUrl,
+        jobId: context.jobId ?? context.itemId ?? context.ownerUserId ?? null,
+        provider: "sora",
+        headers,
+        logger: this.logger,
+      });
+      if (!persisted?.videoUrl) {
+        throw new Error("Video persistence did not return a URL");
+      }
+      return persisted.videoUrl;
+    } catch (error) {
+      this.logger?.error?.(
+        { err: error, provider: "sora", jobId: context.jobId },
+        "Failed to persist Sora video output"
+      );
+      if (error instanceof VideoRendererError) {
+        throw error;
+      }
+      throw new VideoRendererError(error.message ?? "Failed to persist video", {
+        code: "PERSISTENCE_ERROR",
+        context: { provider: "sora" },
+      });
+    }
   }
 }
