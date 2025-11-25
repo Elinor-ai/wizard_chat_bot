@@ -116,10 +116,8 @@ export class VeoClient extends IVideoClient {
 
       const videoData = findVideoDataRecursive(data.response);
 
-      // === הצלחה: שמירה לתיקייה הנכונה ===
       if (videoData && videoData.type === "base64") {
         try {
-          // 1. שימוש בנתיב המוגדר בשרת (tmp/video-renders)
           const outputDir =
             process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders";
           const absOutputDir = path.resolve(outputDir);
@@ -137,7 +135,6 @@ export class VeoClient extends IVideoClient {
 
           fs.writeFileSync(filePath, Buffer.from(base64String, "base64"));
 
-          // 2. החזרת URL שתואם את הגדרת ה-static בשרת (/video-assets)
           const finalUrl = `/video-assets/${fileName}`;
 
           console.log(`✅ SUCCESS! Saved to: ${filePath}`);

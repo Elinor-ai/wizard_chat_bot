@@ -1,8 +1,8 @@
 import { v4 as uuid } from "uuid";
 import { loadEnv } from "@wizard/utils";
 import { VideoRenderTaskSchema } from "@wizard/core";
-import { UnifiedVideoRenderer } from "./renderers/unified-renderer.js"; // ודאי שהנתיב נכון
-import { VideoRendererError } from "./renderers/contracts.js"; // ודאי שהנתיב נכון
+import { UnifiedVideoRenderer } from "./renderers/unified-renderer.js";
+import { VideoRendererError } from "./renderers/contracts.js";
 
 loadEnv();
 
@@ -88,11 +88,9 @@ export function createRenderer(options = {}) {
         aspectRatio: manifest?.spec?.aspectRatio,
       };
       try {
-        // 1. קבלת ה-URL (שהוא כרגע נתיב יחסי)
         let videoUrl = await unified.renderVideo(provider, request);
         videoUrl = toAbsoluteUrl(videoUrl);
 
-        // 3. יצירת האובייקט וולידציה
         return VideoRenderTaskSchema.parse({
           id: uuid(),
           manifestVersion: manifest.version,
@@ -102,7 +100,7 @@ export function createRenderer(options = {}) {
           requestedAt,
           completedAt: new Date().toISOString(),
           result: {
-            videoUrl, // עכשיו זה URL מלא ותקין
+            videoUrl,
           },
         });
       } catch (error) {
