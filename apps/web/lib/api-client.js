@@ -523,18 +523,22 @@ const copilotMessageSchema = z
         : new Date(data.createdAt),
   }));
 
+const copilotActionSchema = z
+  .object({
+    type: z.string(),
+    fieldId: z.string().optional(),
+    value: z.unknown().optional(),
+  })
+  .catchall(z.unknown());
+
 const copilotConversationResponseSchema = z.object({
   jobId: z.string(),
   messages: z.array(copilotMessageSchema).default([]),
-  actions: z
-    .array(
-      z.object({
-        type: z.string(),
-        fieldId: z.string().optional(),
-        value: z.unknown().optional(),
-      })
-    )
-    .optional(),
+  actions: z.array(copilotActionSchema).optional(),
+  updatedJobSnapshot: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .nullable(),
 });
 
 const dashboardSummarySchema = z.object({

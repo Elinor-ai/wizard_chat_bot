@@ -209,6 +209,17 @@ function applyClientMessageIds(messages = []) {
   });
 }
 
+function mergeSnapshot(prev, snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return prev;
+  }
+  const next = deepClone(prev);
+  Object.entries(snapshot).forEach(([fieldId, value]) => {
+    setDeep(next, fieldId, value);
+  });
+  return next;
+}
+
 function JobPreview({ job }) {
   const summary = useMemo(() => normaliseJobDraft(job), [job]);
   const { roleTitle, companyName, location, logoUrl } = summary;
@@ -1912,6 +1923,16 @@ useEffect(() => {
           stage,
         });
         applyConversationUpdate(response.messages ?? []);
+        if (response.updatedJobSnapshot && typeof response.updatedJobSnapshot === "object") {
+          const snapshot = response.updatedJobSnapshot;
+          // eslint-disable-next-line no-console
+          console.info("publish-copilot:apply-updated-snapshot", {
+            keys: Object.keys(snapshot ?? {}),
+            stage
+          });
+          setOriginalDraft((prev) => mergeSnapshot(prev, snapshot));
+          setInitialOriginal((prev) => mergeSnapshot(prev, snapshot));
+        }
         const actions = Array.isArray(response.actions)
           ? response.actions
           : [];
@@ -1924,7 +1945,10 @@ useEffect(() => {
               case "field_update": {
                 const applyField = (setter) => {
                   setter((prev) => {
-                    const next = deepClone(prev);
+                    let next = deepClone(prev);
+                    if (action.jobSnapshot && typeof action.jobSnapshot === "object") {
+                      next = mergeSnapshot(next, action.jobSnapshot);
+                    }
                     setDeep(next, action.fieldId, action.value);
                     return next;
                   });
@@ -1933,16 +1957,63 @@ useEffect(() => {
                 applyField(setInitialOriginal);
                 break;
               }
+              case "field_batch_update": {
+                const applyFields = (setter) => {
+                  setter((prev) => {
+                    let next = mergeSnapshot(prev, action.jobSnapshot);
+                    if (action.fields && typeof action.fields === "object") {
+                      Object.entries(action.fields).forEach(([fieldId, value]) => {
+                        setDeep(next, fieldId, value);
+                      });
+                    }
+                    return next;
+                  });
+                };
+                applyFields(setOriginalDraft);
+                applyFields(setInitialOriginal);
+                break;
+              }
               case "refined_field_update": {
                 const applyField = (setter) => {
                   setter((prev) => {
-                    const next = deepClone(prev);
+                    let next = deepClone(prev);
+                    if (action.refinedJob && typeof action.refinedJob === "object") {
+                      next = mergeSnapshot(next, action.refinedJob);
+                    }
                     setDeep(next, action.fieldId, action.value);
                     return next;
                   });
                 };
                 applyField(setRefinedDraft);
                 applyField(setInitialRefined);
+                break;
+              }
+              case "refined_field_batch_update": {
+                const applyFields = (setter) => {
+                  setter((prev) => {
+                    let next = mergeSnapshot(prev, action.refinedJob);
+                    if (Array.isArray(action.fields)) {
+                      action.fields.forEach((entry) => {
+                        if (entry?.fieldId) {
+                          const incomingValue =
+                            action.refinedJob && action.refinedJob[entry.fieldId];
+                          if (entry.mode === "clear") {
+                            setDeep(next, entry.fieldId, "");
+                          } else if (incomingValue !== undefined) {
+                            setDeep(next, entry.fieldId, incomingValue);
+                          }
+                        }
+                      });
+                    } else if (action.fields && typeof action.fields === "object") {
+                      Object.entries(action.fields).forEach(([fieldId, value]) => {
+                        setDeep(next, fieldId, value);
+                      });
+                    }
+                    return next;
+                  });
+                };
+                applyFields(setRefinedDraft);
+                applyFields(setInitialRefined);
                 break;
               }
               case "channel_recommendations_update": {

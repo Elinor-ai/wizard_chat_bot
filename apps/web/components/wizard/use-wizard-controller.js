@@ -2183,6 +2183,13 @@ useEffect(() => {
           stage,
           contextId,
         });
+        // eslint-disable-next-line no-console
+        console.info("copilot:send:response", {
+          clientMessageId,
+          updatedSnapshotKeys: Object.keys(response.updatedJobSnapshot ?? {}),
+          actions: response.actions ?? [],
+          messageCount: Array.isArray(response.messages) ? response.messages.length : 0,
+        });
         const normalizedMessages = applyClientMessageIds(response.messages ?? []);
         const version = deriveConversationVersion(normalizedMessages);
         debug("copilot:send:success", {
@@ -2202,11 +2209,42 @@ useEffect(() => {
           },
         });
 
+        if (
+          response.updatedJobSnapshot &&
+          typeof response.updatedJobSnapshot === "object"
+        ) {
+          // Debug visibility for snapshot application
+          // eslint-disable-next-line no-console
+          console.info("copilot:apply-updated-snapshot", {
+            keys: Object.keys(response.updatedJobSnapshot),
+            source: "wizard"
+          });
+          Object.entries(response.updatedJobSnapshot).forEach(
+            ([fieldId, value]) => {
+              onFieldChange(fieldId, value, { preserveSuggestionMeta: false });
+            }
+          );
+        }
+
         if (Array.isArray(response.actions)) {
           response.actions.forEach((action) => {
             if (action?.type === "field_update" && action.fieldId) {
               onFieldChange(action.fieldId, action.value, {
                 preserveSuggestionMeta: false,
+              });
+            }
+            if (action?.type === "field_batch_update" && action.fields) {
+              Object.entries(action.fields).forEach(([fieldId, value]) => {
+                onFieldChange(fieldId, value, {
+                  preserveSuggestionMeta: false,
+                });
+              });
+            }
+            if (action?.jobSnapshot && typeof action.jobSnapshot === "object") {
+              Object.entries(action.jobSnapshot).forEach(([fieldId, value]) => {
+                onFieldChange(fieldId, value, {
+                  preserveSuggestionMeta: false,
+                });
               });
             }
           });

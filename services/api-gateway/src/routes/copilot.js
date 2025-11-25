@@ -274,11 +274,40 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         "copilot.chat.appended"
       );
 
+      let updatedJobSnapshot = null;
+      if (Array.isArray(agentResult.actions) && agentResult.actions.length > 0) {
+        const latestJob = await loadJobForUser({
+          firestore,
+          jobId: payload.jobId,
+          userId
+        });
+        updatedJobSnapshot = buildJobSnapshot(latestJob);
+        logger.debug(
+          {
+            jobId: payload.jobId,
+            updatedKeys: Object.keys(updatedJobSnapshot ?? {})
+          },
+          "copilot.chat.updated_snapshot_built"
+        );
+      }
+
       const responsePayload = {
         jobId: payload.jobId,
         messages: serializeMessages(history),
-        actions: agentResult.actions ?? []
+        actions: agentResult.actions ?? [],
+        updatedJobSnapshot
       };
+      logger.info(
+        {
+          jobId: payload.jobId,
+          userId,
+          actionCount: Array.isArray(agentResult.actions) ? agentResult.actions.length : 0,
+          actions: agentResult.actions ?? [],
+          updatedSnapshotKeys: Object.keys(updatedJobSnapshot ?? {}),
+          stage: payload.stage
+        },
+        "copilot.chat.response_payload"
+      );
       res.json(responsePayload);
       logger.info(
         {
@@ -286,7 +315,8 @@ export function copilotRouter({ firestore, llmClient, logger }) {
           userId,
           messageCount: responsePayload.messages.length,
           clientMessageId: payload.clientMessageId ?? null,
-          stage: payload.stage
+          stage: payload.stage,
+          hasUpdatedSnapshot: Boolean(updatedJobSnapshot)
         },
         "copilot.chat.responded"
       );
