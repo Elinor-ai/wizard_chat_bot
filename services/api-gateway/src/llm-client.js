@@ -12,16 +12,11 @@ import { LLM_TASK_CONFIG } from "./config/llm-config.js";
 
 loadEnv();
 
-const OPENAI_API_KEY =
-  process.env.OPENAI_API_KEY ?? process.env.LLM_CHAT_API_KEY ?? null;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? null;
 const OPENAI_API_URL =
   process.env.OPENAI_API_URL ?? "https://api.openai.com/v1/chat/completions";
 
-const GEMINI_API_KEY =
-  process.env.GEMINI_API_KEY ??
-  process.env.LLM_GEMINI_KEY ??
-  process.env.LLM_GEMINI_API_KEY ??
-  null;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? null;
 const GEMINI_API_URL =
   process.env.GEMINI_API_URL ??
   "https://generativelanguage.googleapis.com/v1beta";
@@ -30,8 +25,10 @@ const DALL_E_API_KEY =
   process.env.DALL_E_API_KEY ?? OPENAI_API_KEY;
 const IMAGEN_API_KEY =
   process.env.IMAGEN_API_KEY ?? GEMINI_API_KEY;
-const STABLE_DIFFUSION_API_KEY =
-  process.env.STABLE_DIFFUSION_API_KEY ?? null;
+const STABILITY_API_KEY =
+  process.env.STABILITY_API_KEY ??
+  process.env.STABLE_DIFFUSION_API_KEY ??
+  null;
 
 const providerSelectionConfig = LLM_TASK_CONFIG;
 
@@ -51,7 +48,7 @@ const adapters = {
     apiKey: IMAGEN_API_KEY,
   }),
   stable_diffusion: new StableDiffusionAdapter({
-    apiKey: STABLE_DIFFUSION_API_KEY,
+    apiKey: STABILITY_API_KEY,
   }),
 };
 
