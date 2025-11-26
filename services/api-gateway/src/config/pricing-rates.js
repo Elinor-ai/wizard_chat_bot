@@ -88,6 +88,36 @@ const BASE_RATE_CARD = {
             inputUsdPerMillionTokens: 0.50,
             outputUsdPerMillionTokens: 1.50,
             cachedUsdPerMillionTokens: 0.25
+          },
+          "gemini-3-pro-preview": {
+            promptTokenTiers: [
+              {
+                maxPromptTokens: 200_000,
+                inputUsdPerMillionTokens: 2,
+                outputUsdPerMillionTokens: 12,
+                cachedUsdPerMillionTokens: 0.20
+              },
+              {
+                inputUsdPerMillionTokens: 4,
+                outputUsdPerMillionTokens: 18,
+                cachedUsdPerMillionTokens: 0.40
+              }
+            ]
+          },
+          "gemini-3-pro-image-preview": {
+            promptTokenTiers: [
+              {
+                maxPromptTokens: 200_000,
+                inputUsdPerMillionTokens: 2,
+                outputUsdPerMillionTokens: 12,
+                cachedUsdPerMillionTokens: 0.20
+              },
+              {
+                inputUsdPerMillionTokens: 4,
+                outputUsdPerMillionTokens: 18,
+                cachedUsdPerMillionTokens: 0.40
+              }
+            ]
           }
         }
       },
@@ -109,8 +139,21 @@ const BASE_RATE_CARD = {
             costPerUnitUsd: 0.05
           },
           "gemini-3-pro-image-preview": {
-            // Based on pricing note: ~$0.134 per 1K/2K image output.
-            costPerUnitUsd: 0.134
+            // Default per-image estimate assumes 1K/2K outputs (~1120 tokens per image).
+            costPerUnitUsd: 0.134,
+            promptTokenTiers: [
+              {
+                maxPromptTokens: 200_000,
+                inputUsdPerMillionTokens: 2,
+                outputUsdPerMillionTokens: 120,
+                cachedUsdPerMillionTokens: 0.20
+              },
+              {
+                inputUsdPerMillionTokens: 4,
+                outputUsdPerMillionTokens: 120,
+                cachedUsdPerMillionTokens: 0.40
+              }
+            ]
           }
         },
         default: {
@@ -128,6 +171,48 @@ const BASE_RATE_CARD = {
     }
   }
 };
+
+function normalizePositiveNumber(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) {
+    return null;
+  }
+  return num;
+}
+
+function selectPromptTierRate(rateConfig, promptTokens) {
+  const tiers = rateConfig?.promptTokenTiers;
+  if (!Array.isArray(tiers) || tiers.length === 0) {
+    return null;
+  }
+  const normalizedTokens = normalizePositiveNumber(promptTokens);
+  if (normalizedTokens === null) {
+    return null;
+  }
+  const sorted = [...tiers].sort((a, b) => {
+    const aMax = typeof a.maxPromptTokens === "number" ? a.maxPromptTokens : Infinity;
+    const bMax = typeof b.maxPromptTokens === "number" ? b.maxPromptTokens : Infinity;
+    return aMax - bMax;
+  });
+  for (const tier of sorted) {
+    const max = tier.maxPromptTokens;
+    if (typeof max === "number" && normalizedTokens <= max) {
+      return tier;
+    }
+  }
+  return sorted.find((tier) => typeof tier.maxPromptTokens !== "number") ?? sorted[sorted.length - 1];
+}
+
+function mergePromptTierRates(baseRates, promptTokens) {
+  if (!baseRates || typeof baseRates !== "object") {
+    return baseRates ?? {};
+  }
+  const tier = selectPromptTierRate(baseRates, promptTokens);
+  if (!tier) {
+    return baseRates;
+  }
+  return { ...baseRates, ...tier };
+}
 
 function normalizeProvider(provider) {
   if (!provider || typeof provider !== "string") {
@@ -174,7 +259,7 @@ function resolveProviderPlan(provider) {
   return providerConfig?.planName ?? BASE_RATE_CARD.planName ?? BASE_RATE_CARD_VERSION;
 }
 
-export function resolveTextPricing(provider, model) {
+export function resolveTextPricing(provider, model, pricingContext = {}) {
   const providerConfig = resolveProviderConfig(provider);
   const sectionRates = resolveSectionRate({ providerConfig, section: "text" });
   const resolved =
@@ -182,20 +267,25 @@ export function resolveTextPricing(provider, model) {
       ? resolveModelRate(sectionRates, model)
       : BASE_RATE_CARD.defaults.text;
   const defaults = BASE_RATE_CARD.defaults.text;
+  const promptTokens =
+    pricingContext.promptTokens ??
+    pricingContext.inputTokens ??
+    null;
+  const rateSource = mergePromptTierRates(resolved, promptTokens);
   return {
     version: BASE_RATE_CARD.version,
     currency: BASE_RATE_CARD.currency,
     inputUsdPerMillionTokens:
-      resolved.inputUsdPerMillionTokens ?? defaults.inputUsdPerMillionTokens,
+      rateSource.inputUsdPerMillionTokens ?? defaults.inputUsdPerMillionTokens,
     outputUsdPerMillionTokens:
-      resolved.outputUsdPerMillionTokens ?? defaults.outputUsdPerMillionTokens,
+      rateSource.outputUsdPerMillionTokens ?? defaults.outputUsdPerMillionTokens,
     cachedUsdPerMillionTokens:
-      resolved.cachedUsdPerMillionTokens ?? defaults.cachedUsdPerMillionTokens,
+      rateSource.cachedUsdPerMillionTokens ?? defaults.cachedUsdPerMillionTokens,
     usdPerCredit: resolveUsdPerCredit(provider)
   };
 }
 
-export function resolveImagePricing(provider, model) {
+export function resolveImagePricing(provider, model, pricingContext = {}) {
   const providerConfig = resolveProviderConfig(provider);
   const sectionRates = resolveSectionRate({ providerConfig, section: "image" });
   const resolved =
@@ -203,10 +293,18 @@ export function resolveImagePricing(provider, model) {
       ? resolveModelRate(sectionRates, model)
       : BASE_RATE_CARD.defaults.image;
   const defaults = BASE_RATE_CARD.defaults.image;
+  const promptTokens =
+    pricingContext.promptTokens ??
+    pricingContext.inputTokens ??
+    null;
+  const rateSource = mergePromptTierRates(resolved, promptTokens);
   return {
     version: BASE_RATE_CARD.version,
     currency: BASE_RATE_CARD.currency,
-    costPerUnitUsd: resolved.costPerUnitUsd ?? defaults.costPerUnitUsd,
+    costPerUnitUsd: rateSource.costPerUnitUsd ?? defaults.costPerUnitUsd,
+    inputUsdPerMillionTokens: rateSource.inputUsdPerMillionTokens,
+    outputUsdPerMillionTokens: rateSource.outputUsdPerMillionTokens,
+    cachedUsdPerMillionTokens: rateSource.cachedUsdPerMillionTokens,
     usdPerCredit: resolveUsdPerCredit(provider)
   };
 }

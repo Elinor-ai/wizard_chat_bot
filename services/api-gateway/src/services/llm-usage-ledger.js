@@ -7,6 +7,11 @@ import {
 } from "../config/pricing-rates.js";
 
 const MILLION = 1_000_000;
+const DEBUG_TASKS = new Set([
+  "image_generation",
+  "image_prompt_generation",
+  "hero_image_caption"
+]);
 
 function normalizeTokens(value) {
   if (value === undefined || value === null) {
@@ -77,6 +82,54 @@ async function updateUserUsageCounters({
   }
 }
 
+function maybeLogPricingDebug({
+  logger,
+  usageContext,
+  provider,
+  model,
+  resolvedUsageType,
+  inputTokens,
+  outputTokens,
+  cachedTokens,
+  totalTokens,
+  usageMetrics,
+  pricingPlan,
+  usdPerCredit,
+  inputCostPerMillionUsd,
+  outputCostPerMillionUsd,
+  cachedInputCostPerMillionUsd,
+  imageCostPerUnitUsd,
+  videoCostPerSecondUsd,
+  estimatedCostUsd
+}) {
+  const taskType = usageContext?.taskType;
+  if (!taskType || !DEBUG_TASKS.has(taskType)) {
+    return;
+  }
+  logger?.info?.(
+    {
+      taskType,
+      provider,
+      model,
+      usageType: resolvedUsageType,
+      inputTokens,
+      outputTokens,
+      cachedTokens,
+      totalTokens,
+      usageMetrics,
+      pricingPlan,
+      usdPerCredit,
+      inputCostPerMillionUsd,
+      outputCostPerMillionUsd,
+      cachedInputCostPerMillionUsd,
+      imageCostPerUnitUsd,
+      videoCostPerSecondUsd,
+      estimatedCostUsd
+    },
+    "llm.usage.debug.pricing"
+  );
+}
+
 export async function recordLlmUsage({
   firestore,
   logger,
@@ -115,13 +168,37 @@ export async function recordLlmUsage({
   const pricingPlan = resolveProviderPlanName(provider);
 
   if (resolvedUsageType === "image") {
-    const imagePricing = resolveImagePricing(provider, model);
+    const imagePricing = resolveImagePricing(provider, model, { promptTokens: inputTokens });
     imageCostPerUnitUsd = imagePricing.costPerUnitUsd ?? 0;
+    const inputImageCostPerMillionUsd = imagePricing.inputUsdPerMillionTokens;
+    const outputImageCostPerMillionUsd = imagePricing.outputUsdPerMillionTokens;
+    const cachedImageCostPerMillionUsd =
+      imagePricing.cachedUsdPerMillionTokens ??
+      (typeof inputImageCostPerMillionUsd === "number" ? inputImageCostPerMillionUsd : undefined);
     const units =
       typeof usageMetrics.units === "number" && usageMetrics.units > 0
         ? usageMetrics.units
         : 1;
-    estimatedCostUsd = imageCostPerUnitUsd * units;
+    const hasTokenCounts = inputTokens > 0 || outputTokens > 0 || cachedTokens > 0;
+    const hasTokenRates =
+      typeof inputImageCostPerMillionUsd === "number" ||
+      typeof outputImageCostPerMillionUsd === "number" ||
+      typeof cachedImageCostPerMillionUsd === "number";
+
+    if (hasTokenCounts && hasTokenRates) {
+      inputCostPerMillionUsd = inputImageCostPerMillionUsd;
+      outputCostPerMillionUsd = outputImageCostPerMillionUsd;
+      cachedInputCostPerMillionUsd = cachedImageCostPerMillionUsd;
+      const inputCost =
+        ((inputImageCostPerMillionUsd ?? 0) * inputTokens) / MILLION;
+      const outputCost =
+        ((outputImageCostPerMillionUsd ?? 0) * outputTokens) / MILLION;
+      const cachedCost =
+        ((cachedImageCostPerMillionUsd ?? 0) * cachedTokens) / MILLION;
+      estimatedCostUsd = inputCost + outputCost + cachedCost;
+    } else {
+      estimatedCostUsd = imageCostPerUnitUsd * units;
+    }
   } else if (resolvedUsageType === "video") {
     const videoPricing = resolveVideoPricing(provider, model);
     videoCostPerSecondUsd = videoPricing.costPerSecondUsd ?? 0;
@@ -140,7 +217,7 @@ export async function recordLlmUsage({
       estimatedCostUsd += videoPricing.costPerUnitUsd * perUnit;
     }
   } else {
-    const textPricing = resolveTextPricing(provider, model);
+    const textPricing = resolveTextPricing(provider, model, { promptTokens: inputTokens });
     inputCostPerMillionUsd = textPricing.inputUsdPerMillionTokens ?? 0;
     outputCostPerMillionUsd = textPricing.outputUsdPerMillionTokens ?? 0;
     cachedInputCostPerMillionUsd =
@@ -190,6 +267,27 @@ export async function recordLlmUsage({
     timestamp,
     metadata: sanitizeMetadata(metadata)
   };
+
+  maybeLogPricingDebug({
+    logger,
+    usageContext,
+    provider,
+    model,
+    resolvedUsageType,
+    inputTokens,
+    outputTokens,
+    cachedTokens,
+    totalTokens,
+    usageMetrics,
+    pricingPlan,
+    usdPerCredit,
+    inputCostPerMillionUsd,
+    outputCostPerMillionUsd,
+    cachedInputCostPerMillionUsd,
+    imageCostPerUnitUsd,
+    videoCostPerSecondUsd,
+    estimatedCostUsd: entryPayload.estimatedCostUsd
+  });
 
   try {
     await firestore.recordLlmUsage(entryPayload);

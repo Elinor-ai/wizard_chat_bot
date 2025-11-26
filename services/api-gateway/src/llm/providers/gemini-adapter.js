@@ -6,6 +6,11 @@ import { GoogleGenAI } from "@google/genai";
 import { llmLogger } from "../logger.js";
 
 const require = createRequire(import.meta.url);
+const TOKEN_DEBUG_TASKS = new Set([
+  "image_generation",
+  "image_prompt_generation",
+  "hero_image_caption"
+]);
 
 export class GeminiAdapter {
   constructor({ location = "global" } = {}) {
@@ -38,7 +43,25 @@ export class GeminiAdapter {
     this.clientsByLocation = new Map();
   }
 
- 
+  logUsageTokens({ taskType, model, usage }) {
+    if (!taskType || !TOKEN_DEBUG_TASKS.has(taskType)) {
+      return;
+    }
+    const usageMeta = usage ?? {};
+    llmLogger.info(
+      {
+        provider: "vertex-ai-genai",
+        taskType,
+        model,
+        promptTokens: usageMeta.promptTokenCount ?? null,
+        responseTokens: usageMeta.candidatesTokenCount ?? null,
+        totalTokens: usageMeta.totalTokenCount ?? null,
+        hasUsageMetadata: Boolean(usage)
+      },
+      "GeminiAdapter usage tokens (raw response metadata)"
+    );
+  }
+
   getClientForModel(model) {
     let effectiveLocation = this.defaultLocation || "global";
 
@@ -136,7 +159,14 @@ export class GeminiAdapter {
     try {
       if (taskType === "image_generation" && typeof client?.images?.generate === "function") {
         llmLogger.info(
-          { provider: "vertex-ai-genai", model, promptLength: (contents ?? "").length },
+          {
+            provider: "vertex-ai-genai",
+            model,
+            promptLength: (contents ?? "").length,
+            promptPreview: (contents ?? "").slice(0, 120),
+            size: imagePayload?.size ?? null,
+            aspectRatio: imagePayload?.aspect_ratio ?? null
+          },
           "GeminiAdapter image_generation using images.generate"
         );
         response = await client.images.generate({
@@ -217,7 +247,9 @@ export class GeminiAdapter {
         {
           provider: "vertex-ai-genai",
           model,
-          rawResponse: JSON.stringify(sanitizedResponse)
+          responseKeys: sanitizedResponse && typeof sanitizedResponse === "object"
+            ? Object.keys(sanitizedResponse)
+            : []
         },
         "GeminiAdapter image_generation raw response"
       );
@@ -265,8 +297,10 @@ export class GeminiAdapter {
             model,
             finishReason,
             safetyRatings: candidate?.safetyRatings,
-            predictionsPreview: prediction,
-            rawResponse: JSON.stringify(response)
+            predictionsPreview: sanitizeBase64(prediction),
+            responseKeys,
+            candidateKeys,
+            partKeys
           },
           "Vertex AI image response missing inlineData"
         );
@@ -281,6 +315,7 @@ export class GeminiAdapter {
             finishReason: candidate?.finishReason ?? null,
           }
         : undefined;
+      this.logUsageTokens({ taskType, model, usage });
       return {
         text: null,
         json: { imageBase64 },
@@ -334,6 +369,7 @@ export class GeminiAdapter {
           finishReason: response?.candidates?.[0]?.finishReason ?? null,
         }
       : undefined;
+    this.logUsageTokens({ taskType, model, usage });
 
     return { text, json: jsonPayload, metadata };
   }
