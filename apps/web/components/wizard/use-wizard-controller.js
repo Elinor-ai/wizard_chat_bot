@@ -2188,6 +2188,9 @@ useEffect(() => {
           clientMessageId,
           updatedSnapshotKeys: Object.keys(response.updatedJobSnapshot ?? {}),
           actions: response.actions ?? [],
+          updatedAssets: Array.isArray(response.updatedAssets)
+            ? response.updatedAssets.map((asset) => asset.id)
+            : [],
           messageCount: Array.isArray(response.messages) ? response.messages.length : 0,
         });
         const normalizedMessages = applyClientMessageIds(response.messages ?? []);
@@ -2224,6 +2227,23 @@ useEffect(() => {
               onFieldChange(fieldId, value, { preserveSuggestionMeta: false });
             }
           );
+        }
+
+        if (Array.isArray(response.updatedAssets) && response.updatedAssets.length > 0) {
+          // eslint-disable-next-line no-console
+          console.info("copilot:apply-updated-assets", {
+            count: response.updatedAssets.length,
+            ids: response.updatedAssets.map((asset) => asset?.id).filter(Boolean)
+          });
+          setJobAssets((prev) => {
+            const map = new Map(prev.map((asset) => [asset.id, asset]));
+            response.updatedAssets.forEach((asset) => {
+              if (asset?.id) {
+                map.set(asset.id, { ...map.get(asset.id), ...asset });
+              }
+            });
+            return Array.from(map.values());
+          });
         }
 
         if (Array.isArray(response.actions)) {
