@@ -1,73 +1,67 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { WizardApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
 import { CompanyIntelModal } from "./company-intel-modal";
 
-const POLL_INTERVAL_MS = 3000;
+const REFETCH_INTERVAL_MS = 4000; // Increased to 4s to reduce load
 
 export function CompanyEnrichmentStatusPill() {
   const { user, isHydrated } = useUser();
+  const queryClient = useQueryClient();
   const authToken = user?.authToken ?? null;
-  const [company, setCompany] = useState(null);
-  const [jobs, setJobs] = useState([]);
+
   const [modalOpen, setModalOpen] = useState(false);
-  const [jobsLoading, setJobsLoading] = useState(false);
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [modalError, setModalError] = useState(null);
 
-  // We use a ref to prevent polling from overwriting our optimistic state during approval
   const isApprovingRef = useRef(false);
   const autoOpenRef = useRef({ companyId: null, opened: false });
 
-  // 1. Polling Logic
-  useEffect(() => {
-    if (!authToken || !isHydrated) {
-      setCompany(null);
-      return;
-    }
-    let cancelled = false;
+  // 1. Unified Polling using React Query
+  // This replaces the manual setInterval and prevents duplicate requests
+  const { data: overviewData } = useQuery({
+    queryKey: ["company-intel", "me"],
+    queryFn: () => WizardApi.fetchCompanyOverview({ authToken }),
+    enabled: Boolean(authToken && isHydrated && !isApprovingRef.current),
+    refetchInterval: (data) => {
+      // Smart Polling: Stop if finished or approving
+      if (isApprovingRef.current) return false;
+      if (!data?.company) return false;
+      const { enrichmentStatus, profileConfirmed } = data.company;
 
-    const fetchOverview = async () => {
-      // If we are in the middle of approving, pause polling to avoid flickering
-      if (isApprovingRef.current) return;
+      // Stop polling if confirmed
+      if (profileConfirmed) return false;
 
-      try {
-        const response = await WizardApi.fetchCompanyOverview({ authToken });
-        if (cancelled) return;
+      // Stop polling if failed (no point spamming)
+      if (enrichmentStatus === "FAILED") return false;
 
-        const freshCompany = response?.company ?? null;
+      // Poll if PENDING or READY (waiting for user action)
+      return REFETCH_INTERVAL_MS;
+    },
+    staleTime: 2000, // Cache data for 2s
+  });
 
-        // Update state only if data changed to avoid unnecessary re-renders
-        setCompany((prev) => {
-          if (
-            prev?.id === freshCompany?.id &&
-            prev?.enrichmentStatus === freshCompany?.enrichmentStatus &&
-            prev?.profileConfirmed === freshCompany?.profileConfirmed
-          ) {
-            return prev;
-          }
-          return freshCompany;
-        });
-      } catch (error) {
-        if (cancelled) return;
-        // eslint-disable-next-line no-console
-        console.warn("Failed to fetch company overview", error);
-      }
-    };
+  const company = overviewData?.company ?? null;
 
-    // Initial fetch
-    fetchOverview();
-    const intervalId = setInterval(fetchOverview, POLL_INTERVAL_MS);
+  // 2. Fetch Jobs only when needed (READY state)
+  const { data: jobsData, isLoading: jobsLoading } = useQuery({
+    queryKey: ["company-intel", "jobs", company?.id],
+    queryFn: () => WizardApi.fetchCompanyJobs({ authToken }),
+    enabled: Boolean(
+      authToken &&
+        modalOpen &&
+        company?.enrichmentStatus === "READY" &&
+        !company?.profileConfirmed
+    ),
+    staleTime: 60 * 1000, // Jobs don't change often, cache for 1 min
+  });
 
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-  }, [authToken, isHydrated]);
+  const jobs = jobsData?.jobs ?? [];
 
-  // 2. Auto-Open Logic
+  // 3. Auto-Open Logic
   useEffect(() => {
     if (!company) {
       setModalOpen(false);
@@ -75,24 +69,20 @@ export function CompanyEnrichmentStatusPill() {
       return;
     }
 
-    // Reset auto-open if we switched companies
     if (autoOpenRef.current.companyId !== company.id) {
       autoOpenRef.current = { companyId: company.id, opened: false };
     }
 
-    // If confirmed, force close
     if (company.profileConfirmed === true) {
       setModalOpen(false);
       autoOpenRef.current.opened = false;
       return;
     }
 
-    // If pending, allow auto-open again in future
     if (company.enrichmentStatus === "PENDING") {
       autoOpenRef.current.opened = false;
     }
 
-    // Trigger Auto Open
     if (
       company.enrichmentStatus === "READY" &&
       autoOpenRef.current.opened === false &&
@@ -103,68 +93,36 @@ export function CompanyEnrichmentStatusPill() {
     }
   }, [company, modalOpen]);
 
-  // 3. Fetch Jobs when Modal Opens
-  useEffect(() => {
-    if (
-      !modalOpen ||
-      !authToken ||
-      company?.enrichmentStatus !== "READY" ||
-      company?.profileConfirmed === true
-    ) {
-      return;
-    }
-    let cancelled = false;
-    setJobsLoading(true);
-    WizardApi.fetchCompanyJobs({ authToken })
-      .then((response) => {
-        if (cancelled) return;
-        setJobs(response?.jobs ?? []);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.warn("Failed to fetch discovered jobs", error);
-        setJobs([]);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setJobsLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    modalOpen,
-    authToken,
-    company?.enrichmentStatus,
-    company?.profileConfirmed,
-  ]);
-
   const handleApprove = async () => {
     if (!company) return;
 
-    // Optimistic Update: Hide everything immediately
+    // Optimistic Update
     isApprovingRef.current = true;
     setApprovalLoading(true);
     setModalError(null);
-
-    // Force local state to confirmed so UI unmounts immediately
-    setCompany((prev) => ({ ...prev, profileConfirmed: true }));
     setModalOpen(false);
 
+    // Optimistically update cache to hide UI immediately
+    queryClient.setQueryData(["company-intel", "me"], (old) => {
+      if (!old?.company) return old;
+      return {
+        ...old,
+        company: { ...old.company, profileConfirmed: true },
+      };
+    });
+
     try {
-      const response = await WizardApi.confirmCompanyProfile(
+      await WizardApi.confirmCompanyProfile(
         { approved: true, companyId: company.id },
         { authToken }
       );
-      // Update with server response
-      setCompany(response.company);
+      // Invalidate to ensure fresh data later
+      await queryClient.invalidateQueries(["company-intel", "me"]);
     } catch (error) {
       setModalError(error?.message ?? "Unable to confirm profile");
-      // Revert optimistic update on error
-      setCompany((prev) => ({ ...prev, profileConfirmed: false }));
+      // Revert on error
+      queryClient.invalidateQueries(["company-intel", "me"]);
       setModalOpen(true);
-      isApprovingRef.current = false;
     } finally {
       setApprovalLoading(false);
       isApprovingRef.current = false;
@@ -188,9 +146,11 @@ export function CompanyEnrichmentStatusPill() {
         },
         { authToken }
       );
-      setCompany(response.company);
+
+      // Update cache with new company state (likely PENDING again)
+      queryClient.setQueryData(["company-intel", "me"], response);
+
       setModalOpen(false);
-      // Reset auto-open so it pops up again when the new enrichment finishes
       autoOpenRef.current.opened = false;
     } catch (error) {
       setModalError(error?.message ?? "Unable to submit revisions");
@@ -205,20 +165,13 @@ export function CompanyEnrichmentStatusPill() {
     setModalError(null);
   };
 
-  const showPending =
-    company &&
-    company.profileConfirmed !== true &&
-    company.enrichmentStatus === "PENDING";
-
-  const showReady =
-    company &&
-    company.profileConfirmed !== true &&
-    company.enrichmentStatus === "READY";
-
-  // Guard Clause: If confirmed, render absolutely nothing
+  // Render Logic
   if (!company || company.profileConfirmed === true) {
     return null;
   }
+
+  const showPending = company.enrichmentStatus === "PENDING";
+  const showReady = company.enrichmentStatus === "READY";
 
   const pill = showPending ? (
     <div className="rounded-full bg-white/90 px-4 py-2 shadow-lg shadow-black/10 ring-1 ring-neutral-200 backdrop-blur animate-in slide-in-from-bottom-4 fade-in duration-300">
