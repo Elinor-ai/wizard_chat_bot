@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { WizardApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
 
@@ -8,48 +9,45 @@ const INITIAL_FORM = {
   name: "",
   hqCountry: "",
   hqCity: "",
-  primaryDomain: ""
+  primaryDomain: "",
 };
 
 export function CompanyOnboardingGuard() {
   const { user, isHydrated } = useUser();
+  const queryClient = useQueryClient();
   const authToken = user?.authToken ?? null;
   const [isOpen, setIsOpen] = useState(false);
-  const [company, setCompany] = useState(null);
   const [view, setView] = useState("confirm");
   const [formState, setFormState] = useState(INITIAL_FORM);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
+  // Shared query with the Pill component - dedupes requests!
+  const { data: overviewData } = useQuery({
+    queryKey: ["company-intel", "me"],
+    queryFn: () => WizardApi.fetchCompanyOverview({ authToken }),
+    enabled: Boolean(authToken && isHydrated),
+    staleTime: 2000,
+  });
+
+  const company = overviewData?.company ?? null;
+
+  // Check condition only when data arrives
   useEffect(() => {
-    if (!authToken || !isHydrated) {
-      return;
+    if (company && company.nameConfirmed === false && !isOpen) {
+      setFormState({
+        name: company.name ?? "",
+        hqCountry: company.hqCountry ?? "",
+        hqCity: company.hqCity ?? "",
+        primaryDomain: company.primaryDomain ?? "",
+      });
+      setIsOpen(true);
+      setView("confirm");
+    } else if (company && company.nameConfirmed === true) {
+      // If confirmed externally (e.g. other tab), close this
+      setIsOpen(false);
     }
-    let cancelled = false;
-    (async () => {
-      try {
-        const response = await WizardApi.fetchCompanyOverview({ authToken });
-        if (cancelled) return;
-        if (response?.company && response.company.nameConfirmed === false) {
-          setCompany(response.company);
-          setFormState({
-            name: response.company.name ?? "",
-            hqCountry: response.company.hqCountry ?? "",
-            hqCity: response.company.hqCity ?? "",
-            primaryDomain: response.company.primaryDomain ?? ""
-          });
-          setIsOpen(true);
-          setView("confirm");
-        }
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.warn("Failed to fetch company overview", error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authToken, isHydrated]);
+  }, [company, isOpen]);
 
   const inferredDomain = useMemo(() => {
     if (company?.primaryDomain) {
@@ -72,7 +70,8 @@ export function CompanyOnboardingGuard() {
         { approved: true },
         { authToken }
       );
-      setCompany(response.company);
+      // Update global cache so other components know immediately
+      queryClient.setQueryData(["company-intel", "me"], response);
       setIsOpen(false);
     } catch (error) {
       setErrorMessage(error?.message ?? "Unable to confirm company");
@@ -95,10 +94,12 @@ export function CompanyOnboardingGuard() {
         name: formState.name.trim(),
         hqCountry: formState.hqCountry.trim() || undefined,
         hqCity: formState.hqCity.trim() || undefined,
-        primaryDomain: formState.primaryDomain.trim() || undefined
+        primaryDomain: formState.primaryDomain.trim() || undefined,
       };
-      const response = await WizardApi.confirmCompanyName(payload, { authToken });
-      setCompany(response.company);
+      const response = await WizardApi.confirmCompanyName(payload, {
+        authToken,
+      });
+      queryClient.setQueryData(["company-intel", "me"], response);
       setIsOpen(false);
     } catch (error) {
       setErrorMessage(error?.message ?? "Unable to update company details");
@@ -109,15 +110,24 @@ export function CompanyOnboardingGuard() {
 
   const renderConfirmView = () => (
     <>
-      <h2 className="text-2xl font-semibold text-neutral-900">Is this your company?</h2>
+      <h2 className="text-2xl font-semibold text-neutral-900">
+        Is this your company?
+      </h2>
       <p className="mt-3 text-sm text-neutral-600">
         We detected your email is from{" "}
-        <span className="font-semibold text-neutral-900">{company?.name || "your company"}</span>{" "}
-        ({inferredDomain || "domain unknown"}). Confirm to continue or update details.
+        <span className="font-semibold text-neutral-900">
+          {company?.name || "your company"}
+        </span>{" "}
+        ({inferredDomain || "domain unknown"}). Confirm to continue or update
+        details.
       </p>
       <div className="mt-6 space-y-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-        <p className="text-sm font-medium text-neutral-700">{company?.name || "Unknown name"}</p>
-        <p className="text-xs text-neutral-500">{inferredDomain || "Unknown domain"}</p>
+        <p className="text-sm font-medium text-neutral-700">
+          {company?.name || "Unknown name"}
+        </p>
+        <p className="text-xs text-neutral-500">
+          {inferredDomain || "Unknown domain"}
+        </p>
       </div>
       {errorMessage ? (
         <p className="mt-4 text-sm text-rose-600">{errorMessage}</p>
@@ -149,7 +159,9 @@ export function CompanyOnboardingGuard() {
   const renderEditView = () => (
     <form onSubmit={handleFormSubmit} className="space-y-5">
       <div>
-        <h2 className="text-2xl font-semibold text-neutral-900">Update Company Details</h2>
+        <h2 className="text-2xl font-semibold text-neutral-900">
+          Update Company Details
+        </h2>
         <p className="mt-2 text-sm text-neutral-600">
           We’ll use this to tailor your onboarding experience.
         </p>
@@ -174,7 +186,10 @@ export function CompanyOnboardingGuard() {
             className="rounded-2xl border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
             value={formState.hqCountry}
             onChange={(event) =>
-              setFormState((prev) => ({ ...prev, hqCountry: event.target.value }))
+              setFormState((prev) => ({
+                ...prev,
+                hqCountry: event.target.value,
+              }))
             }
           />
         </label>
@@ -196,7 +211,10 @@ export function CompanyOnboardingGuard() {
             className="rounded-2xl border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
             value={formState.primaryDomain}
             onChange={(event) =>
-              setFormState((prev) => ({ ...prev, primaryDomain: event.target.value }))
+              setFormState((prev) => ({
+                ...prev,
+                primaryDomain: event.target.value,
+              }))
             }
           />
         </label>

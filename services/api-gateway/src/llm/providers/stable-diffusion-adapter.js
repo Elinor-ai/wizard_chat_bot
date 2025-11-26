@@ -1,8 +1,12 @@
 import { llmLogger } from "../logger.js";
 
 export class StableDiffusionAdapter {
-  constructor({ apiKey, apiUrl }) {
-    this.apiKey = apiKey;
+  constructor({ apiKey, apiUrl } = {}) {
+    this.apiKey =
+      apiKey ??
+      process.env.STABILITY_API_KEY ??
+      process.env.STABLE_DIFFUSION_API_KEY ??
+      null;
     this.apiUrl =
       apiUrl ??
       "https://api.stability.ai/v2beta/stable-image/generate/core";
@@ -27,7 +31,7 @@ export class StableDiffusionAdapter {
 
   ensureKey() {
     if (!this.apiKey) {
-      throw new Error("STABLE_DIFFUSION_API_KEY missing");
+      throw new Error("STABILITY_API_KEY missing");
     }
   }
 

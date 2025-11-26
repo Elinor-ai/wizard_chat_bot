@@ -16,7 +16,7 @@ export class ImagenImageAdapter {
 
   ensureKey() {
     if (!this.apiKey) {
-      throw new Error("IMAGEN_API_KEY missing");
+      throw new Error("GEMINI_API_KEY (or IMAGEN_API_KEY) missing");
     }
   }
 

@@ -1,16 +1,72 @@
-import { Buffer } from "node:buffer";
+// services/api-gateway/src/llm/providers/gemini-adapter.js
+
+import path from "node:path";
+import { createRequire } from "node:module";
+import { GoogleGenAI } from "@google/genai";
 import { llmLogger } from "../logger.js";
 
+const require = createRequire(import.meta.url);
+
 export class GeminiAdapter {
-  constructor({ apiKey, apiUrl }) {
-    this.apiKey = apiKey;
-    this.apiUrl = apiUrl?.replace(/\/$/, "") ?? "";
+  constructor({ location = "global" } = {}) {
+    const keyFilename = path.resolve(
+      process.cwd(),
+      "../../config/service-account.json"
+    );
+
+    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      process.env.GOOGLE_APPLICATION_CREDENTIALS = keyFilename;
+    }
+
+    let projectId = null;
+    try {
+      const keyFile = require(keyFilename);
+      projectId = keyFile.project_id;
+      if (!projectId) {
+        throw new Error("Missing project_id in service-account.json");
+      }
+    } catch (error) {
+      throw new Error(
+        `Failed to load service account JSON from ${keyFilename}: ${error.message}`
+      );
+    }
+
+   
+    this.defaultLocation = location || "global";
+    this.projectId = projectId;
+
+    this.clientsByLocation = new Map();
   }
 
-  ensureKey() {
-    if (!this.apiKey) {
-      throw new Error("GEMINI_API_KEY missing");
+ 
+  getClientForModel(model) {
+    let effectiveLocation = this.defaultLocation || "global";
+
+    if (model && model.startsWith("gemini-3-") && effectiveLocation !== "global") {
+      llmLogger.warn(
+        {
+          requestedLocation: this.defaultLocation,
+          forcedLocation: "global",
+          model,
+        },
+        "GeminiAdapter: Overriding location to 'global' for Gemini 3 model"
+      );
+      effectiveLocation = "global";
     }
+
+    if (this.clientsByLocation.has(effectiveLocation)) {
+      return this.clientsByLocation.get(effectiveLocation);
+    }
+
+    const client = new GoogleGenAI({
+      vertexai: true,
+      project: this.projectId,
+      location: effectiveLocation,
+      apiVersion: "v1", 
+    });
+
+    this.clientsByLocation.set(effectiveLocation, client);
+    return client;
   }
 
   buildPrompt(system, user) {
@@ -20,6 +76,17 @@ export class GeminiAdapter {
     return system || user || "";
   }
 
+  /**
+   * invoke – נקודת החיבור עם ה-LLM Orchestrator
+   *
+   * params:
+   *   model        - string, למשל "gemini-3-pro-preview" או "gemini-2.5-pro"
+   *   system       - system prompt (אופציונלי)
+   *   user         - user prompt
+   *   mode         - "text" | "json"
+   *   temperature  - מספר, ברירת מחדל 0.2
+   *   maxTokens    - מספר, ברירת מחדל 800
+   */
   async invoke({
     model,
     system,
@@ -28,111 +95,98 @@ export class GeminiAdapter {
     temperature = 0.2,
     maxTokens = 800,
   }) {
-    this.ensureKey();
+    const userText = (user || "").trim();
+    const systemText = (system || "").trim();
 
-    const prompt = this.buildPrompt(system, user).trim();
-    if (!prompt) {
-      throw new Error("Gemini adapter requires a user prompt");
+    if (!userText && !systemText) {
+      throw new Error("Gemini adapter requires at least a user or system prompt");
     }
 
-    const endpoint = `${this.apiUrl}/models/${model}:generateContent?key=${this.apiKey}`;
-    const payload = {
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: prompt }],
-        },
-      ],
-      generationConfig: {
-        temperature,
-        maxOutputTokens: maxTokens,
-        ...(mode === "json" ? { responseMimeType: "application/json" } : {}),
-      },
+    const client = this.getClientForModel(model);
+
+    // ב-GenAI SDK אפשר להעביר פשוט string ב-contents
+    const contents = userText || systemText;
+
+    const config = {
+      temperature,
+      maxOutputTokens: maxTokens,
     };
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(
-        `Gemini request failed: ${response.status} ${JSON.stringify(data)}`
-      );
+    // אם יש system – נשים אותו בשדה המובנה
+    if (systemText) {
+      config.systemInstruction = systemText;
     }
 
-    const candidate = data?.candidates?.[0] ?? null;
-    const parts = candidate?.content?.parts ?? [];
-    let jsonPayload = null;
-    const text = parts
-      .map((part) => {
-        if (typeof part?.text === "string") {
-          return part.text;
-        }
-        if (part?.inlineData?.data) {
-          try {
-            return Buffer.from(part.inlineData.data, "base64").toString("utf8");
-          } catch (_error) {
-            return "";
-          }
-        }
-        if (part?.functionCall?.args) {
-          try {
-            return JSON.stringify(part.functionCall.args);
-          } catch (_error) {
-            return "";
-          }
-        }
-        if (part?.jsonValue) {
-          try {
-            if (jsonPayload === null) {
-              jsonPayload = part.jsonValue;
-            }
-            return JSON.stringify(part.jsonValue);
-          } catch (_error) {
-            return "";
-          }
-        }
-        return "";
-      })
-      .join("")
-      .trim();
+    if (mode === "json") {
+      config.responseMimeType = "application/json";
+    }
+
+    let response;
+    try {
+      response = await client.models.generateContent({
+        model,
+        contents,
+        config,
+      });
+    } catch (error) {
+      llmLogger.error(
+        {
+          err: error,
+          model,
+          project: this.projectId,
+          location: this.defaultLocation,
+        },
+        "Google GenAI SDK execution failed"
+      );
+      throw error;
+    }
+
+    const text = (response?.text || "").trim();
 
     if (!text) {
-      const finishReason = candidate?.finishReason ?? data?.finishReason ?? null;
+      const finishReason =
+        response?.candidates?.[0]?.finishReason ?? null;
       llmLogger.warn(
         {
-          provider: "gemini",
+          provider: "vertex-ai-genai",
+          model,
           finishReason,
-          candidateSummary: candidate ? Object.keys(candidate) : null,
+          safetyRatings: response?.candidates?.[0]?.safetyRatings,
         },
-        "Gemini response missing textual content"
+        "Vertex AI (GenAI SDK) response missing textual content"
       );
-      throw new Error("Gemini response missing content");
+      throw new Error(
+        `Vertex AI response missing content. Reason: ${finishReason}`
+      );
     }
 
-    if (mode === "json" && jsonPayload === null) {
+    let jsonPayload = null;
+    if (mode === "json") {
       try {
-        jsonPayload = JSON.parse(text);
-      } catch (_error) {
-        // Parser will retry via parseJsonContent later.
+        let jsonStr = text.trim();
+        // להוריד ```json ``` אם קיים
+        const fenceRegex = /^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/;
+        const match = jsonStr.match(fenceRegex);
+        if (match && match[1]) {
+          jsonStr = match[1].trim();
+        }
+        jsonPayload = JSON.parse(jsonStr);
+      } catch (e) {
+        llmLogger.warn(
+          { model, textPreview: text.slice(0, 200) },
+          "Failed to parse JSON from Gemini response"
+        );
+        // נשאיר json=null, והקורא יכול להחליט מה לעשות
       }
     }
 
-    const metadata = data?.usageMetadata
+    const usage = response?.usageMetadata;
+    const metadata = usage
       ? {
-          promptTokens:
-            data.usageMetadata.promptTokenCount ??
-            data.usageMetadata.promptTokens ??
-            null,
-          responseTokens:
-            data.usageMetadata.candidatesTokenCount ??
-            data.usageMetadata.responseTokenCount ??
-            null,
-          totalTokens: data.usageMetadata.totalTokenCount ?? null,
-          finishReason: data.finishReason ?? candidate?.finishReason ?? null,
+          promptTokens: usage.promptTokenCount ?? null,
+          responseTokens: usage.candidatesTokenCount ?? null,
+          totalTokens: usage.totalTokenCount ?? null,
+          finishReason: response?.candidates?.[0]?.finishReason ?? null,
         }
       : undefined;
 
