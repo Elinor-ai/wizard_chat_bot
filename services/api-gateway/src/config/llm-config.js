@@ -1,5 +1,6 @@
 const GEMINI_DEFAULT_MODEL = "gemini-3-pro-preview";
 const IMAGEN_DEFAULT_MODEL = "imagegeneration@006";
+const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
 
 const GEMINI_TASKS = [
   "suggest",
@@ -25,8 +26,14 @@ const config = GEMINI_TASKS.reduce((acc, task) => {
 }, {});
 
 config.image_generation = {
-  provider: "imagen",
-  model: IMAGEN_DEFAULT_MODEL
+  provider: "gemini",
+  model: GEMINI_IMAGE_MODEL
+};
+
+// Override prompt generation for images to use the same Gemini image model
+config.image_prompt_generation = {
+  provider: "gemini",
+  model: GEMINI_IMAGE_MODEL
 };
 
 export const LLM_TASK_CONFIG = Object.freeze(config);

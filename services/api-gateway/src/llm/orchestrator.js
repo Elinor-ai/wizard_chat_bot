@@ -62,6 +62,7 @@ export class LlmOrchestrator {
         mode: task.mode ?? "text",
         temperature: task.temperature ?? 0.2,
         maxTokens: this.resolveValue(task.maxTokens, selection.provider),
+        taskType: taskName,
       };
 
       llmLogger.info(

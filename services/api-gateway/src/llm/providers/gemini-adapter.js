@@ -76,17 +76,7 @@ export class GeminiAdapter {
     return system || user || "";
   }
 
-  /**
-   * invoke – נקודת החיבור עם ה-LLM Orchestrator
-   *
-   * params:
-   *   model        - string, למשל "gemini-3-pro-preview" או "gemini-2.5-pro"
-   *   system       - system prompt (אופציונלי)
-   *   user         - user prompt
-   *   mode         - "text" | "json"
-   *   temperature  - מספר, ברירת מחדל 0.2
-   *   maxTokens    - מספר, ברירת מחדל 800
-   */
+
   async invoke({
     model,
     system,
@@ -94,6 +84,7 @@ export class GeminiAdapter {
     mode = "text",
     temperature = 0.2,
     maxTokens = 800,
+    taskType = null,
   }) {
     const userText = (user || "").trim();
     const systemText = (system || "").trim();
@@ -104,30 +95,63 @@ export class GeminiAdapter {
 
     const client = this.getClientForModel(model);
 
-    // ב-GenAI SDK אפשר להעביר פשוט string ב-contents
-    const contents = userText || systemText;
+    let contents = userText || systemText;
+    let imagePayload = null;
+    if (taskType === "image_generation") {
+      try {
+        imagePayload = JSON.parse(userText);
+        const promptParts = [];
+        if (imagePayload.prompt) promptParts.push(imagePayload.prompt);
+        if (imagePayload.style) promptParts.push(`Style: ${imagePayload.style}`);
+        if (imagePayload.negative_prompt || imagePayload.negativePrompt) {
+          const neg = imagePayload.negative_prompt ?? imagePayload.negativePrompt;
+          promptParts.push(`Avoid: ${neg}`);
+        }
+        contents = promptParts.join("\n");
+      } catch (error) {
+        // Fall back to raw text if parsing fails
+        imagePayload = null;
+        contents = userText || systemText;
+      }
+    }
 
     const config = {
       temperature,
       maxOutputTokens: maxTokens,
     };
 
-    // אם יש system – נשים אותו בשדה המובנה
+    if (taskType === "image_generation") {
+      config.responseModalities = ["TEXT", "IMAGE"];
+    }
+
     if (systemText) {
       config.systemInstruction = systemText;
     }
 
-    if (mode === "json") {
+    if (mode === "json" && taskType !== "image_generation") {
       config.responseMimeType = "application/json";
     }
 
     let response;
     try {
-      response = await client.models.generateContent({
-        model,
-        contents,
-        config,
-      });
+      if (taskType === "image_generation" && typeof client?.images?.generate === "function") {
+        llmLogger.info(
+          { provider: "vertex-ai-genai", model, promptLength: (contents ?? "").length },
+          "GeminiAdapter image_generation using images.generate"
+        );
+        response = await client.images.generate({
+          model,
+          prompt: contents,
+          ...(imagePayload?.size ? { size: imagePayload.size } : {}),
+          ...(imagePayload?.aspect_ratio ? { aspectRatio: imagePayload.aspect_ratio } : {})
+        });
+      } else {
+        response = await client.models.generateContent({
+          model,
+          contents,
+          config,
+        });
+      }
     } catch (error) {
       llmLogger.error(
         {
@@ -139,6 +163,129 @@ export class GeminiAdapter {
         "Google GenAI SDK execution failed"
       );
       throw error;
+    }
+
+    // Handle image generation separately
+    if (taskType === "image_generation") {
+      const sanitizeBase64 = (payload) => {
+        if (!payload || typeof payload !== "object") return payload;
+        const clone = Array.isArray(payload) ? [...payload] : { ...payload };
+        if (clone.inlineData?.data) {
+          clone.inlineData = {
+            ...clone.inlineData,
+            data: "<BASE64_IMAGE_DATA_OMITTED>"
+          };
+        }
+        if (clone.bytesBase64Encoded) {
+          clone.bytesBase64Encoded = "<BASE64_IMAGE_DATA_OMITTED>";
+        }
+        if (clone.b64_json) {
+          clone.b64_json = "<BASE64_IMAGE_DATA_OMITTED>";
+        }
+        return clone;
+      };
+      const sanitizedResponse = (() => {
+        if (!response || typeof response !== "object") return response;
+        const clone = Array.isArray(response) ? [...response] : { ...response };
+        if (Array.isArray(clone.predictions)) {
+          clone.predictions = clone.predictions.map((pred) => sanitizeBase64(pred));
+        }
+        if (Array.isArray(clone.data)) {
+          clone.data = clone.data.map((entry) => sanitizeBase64(entry));
+        }
+        if (Array.isArray(clone.images)) {
+          clone.images = clone.images.map((entry) => sanitizeBase64(entry));
+        }
+        if (Array.isArray(clone.candidates)) {
+          clone.candidates = clone.candidates.map((cand) => {
+            if (!cand || typeof cand !== "object") return cand;
+            const candClone = { ...cand };
+            if (candClone.content?.parts) {
+              candClone.content = {
+                ...candClone.content,
+                parts: candClone.content.parts.map((part) => sanitizeBase64(part))
+              };
+            }
+            return candClone;
+          });
+        }
+        return clone;
+      })();
+
+      // Log the raw response for debugging differences between Vertex AI and hosted APIs
+      llmLogger.info(
+        {
+          provider: "vertex-ai-genai",
+          model,
+          rawResponse: JSON.stringify(sanitizedResponse)
+        },
+        "GeminiAdapter image_generation raw response"
+      );
+
+      const candidate = response?.candidates?.[0];
+      const parts = candidate?.content?.parts ?? [];
+      const inlinePart = parts.find((part) => part?.inlineData?.data);
+      // Fallbacks for Vertex AI predictions payloads
+      const prediction =
+        Array.isArray(response?.predictions) && response.predictions.length > 0
+          ? response.predictions[0]
+          : null;
+      const vertexBase64 =
+        (prediction && typeof prediction === "object"
+          ? prediction.bytesBase64Encoded
+          : null) ||
+        (typeof prediction === "string" ? prediction : null);
+      // images.generate responses may use data array or images array
+      const dataBase64 =
+        (Array.isArray(response?.data) && response.data[0]?.b64_json) ||
+        (Array.isArray(response?.images) && response.images[0]?.base64);
+      const imageBase64 =
+        inlinePart?.inlineData?.data ?? vertexBase64 ?? dataBase64 ?? null;
+      if (!imageBase64) {
+        const finishReason = candidate?.finishReason ?? null;
+        const responseKeys = response && typeof response === "object" ? Object.keys(response) : [];
+        const candidateKeys =
+          candidate && typeof candidate === "object" ? Object.keys(candidate) : [];
+        const partKeys = Array.isArray(parts)
+          ? parts.map((p) => (p && typeof p === "object" ? Object.keys(p) : []))
+          : [];
+        llmLogger.info(
+          {
+            provider: "vertex-ai-genai",
+            model,
+            responseKeys,
+            candidateKeys,
+            partKeys
+          },
+          "GeminiAdapter image_generation response structure (no image found)"
+        );
+        llmLogger.warn(
+          {
+            provider: "vertex-ai-genai",
+            model,
+            finishReason,
+            safetyRatings: candidate?.safetyRatings,
+            predictionsPreview: prediction,
+            rawResponse: JSON.stringify(response)
+          },
+          "Vertex AI image response missing inlineData"
+        );
+        throw new Error("Image provider payload missing image data");
+      }
+      const usage = response?.usageMetadata;
+      const metadata = usage
+        ? {
+            promptTokens: usage.promptTokenCount ?? null,
+            responseTokens: usage.candidatesTokenCount ?? null,
+            totalTokens: usage.totalTokenCount ?? null,
+            finishReason: candidate?.finishReason ?? null,
+          }
+        : undefined;
+      return {
+        text: null,
+        json: { imageBase64 },
+        metadata,
+      };
     }
 
     const text = (response?.text || "").trim();
@@ -164,7 +311,6 @@ export class GeminiAdapter {
     if (mode === "json") {
       try {
         let jsonStr = text.trim();
-        // להוריד ```json ``` אם קיים
         const fenceRegex = /^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/;
         const match = jsonStr.match(fenceRegex);
         if (match && match[1]) {
@@ -176,7 +322,6 @@ export class GeminiAdapter {
           { model, textPreview: text.slice(0, 200) },
           "Failed to parse JSON from Gemini response"
         );
-        // נשאיר json=null, והקורא יכול להחליט מה לעשות
       }
     }
 

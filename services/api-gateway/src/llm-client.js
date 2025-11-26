@@ -551,7 +551,10 @@ async function runImageGeneration(context) {
   try {
     llmLogger.info(
       {
-        promptPreview: context?.prompt?.slice(0, 120) ?? null
+        promptPreview: context?.prompt?.slice(0, 120) ?? null,
+        negativePreview: context?.negativePrompt?.slice?.(0, 80) ?? null,
+        style: context?.style ?? null,
+        task: "image_generation"
       },
       "runImageGeneration:start"
     );
@@ -575,6 +578,16 @@ async function runImageGeneration(context) {
         },
       };
     }
+    llmLogger.info(
+      {
+        provider: result.provider,
+        model: result.model,
+        hasBase64: Boolean(result.imageBase64),
+        hasUrl: Boolean(result.imageUrl),
+        base64Length: result.imageBase64 ? result.imageBase64.length : 0
+      },
+      "runImageGeneration:success"
+    );
     return {
       provider: result.provider,
       model: result.model,

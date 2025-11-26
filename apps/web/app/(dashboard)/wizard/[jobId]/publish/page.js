@@ -956,8 +956,6 @@ function HeroImageCard({ content, status }) {
     if (!imageUrl) {
       return;
     }
-    const link = document.createElement("a");
-    link.href = imageUrl;
     const isDataUrl = imageUrl.startsWith("data:");
     const extensionMatch = isDataUrl
       ? imageUrl.match(/^data:image\/([a-zA-Z0-9+]+);/i)
@@ -965,12 +963,41 @@ function HeroImageCard({ content, status }) {
     const extension =
       (Array.isArray(extensionMatch) && extensionMatch[1]) ||
       (typeof extensionMatch === "string" ? extensionMatch : "png");
-    link.download = filename.endsWith(extension)
+    const downloadName = filename.endsWith(extension)
       ? filename
       : `${filename.replace(/\.[a-z]+$/i, "")}.${extension}`;
+
+    const link = document.createElement("a");
+    let objectUrl = null;
+
+    if (isDataUrl) {
+      const base64 = imageUrl.split(",")[1];
+      const mimeMatch = imageUrl.match(/^data:([^;]+);base64,/i);
+      const mimeType = mimeMatch?.[1] ?? "image/png";
+      try {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: mimeType });
+        objectUrl = URL.createObjectURL(blob);
+        link.href = objectUrl;
+      } catch (error) {
+        // Fallback to raw data URL if conversion fails
+        link.href = imageUrl;
+      }
+    } else {
+      link.href = imageUrl;
+    }
+
+    link.download = downloadName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+    }
   };
 
   if (status === "READY" && imageUrl) {

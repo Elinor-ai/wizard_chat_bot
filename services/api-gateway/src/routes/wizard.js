@@ -2676,6 +2676,14 @@ export function wizardRouter({ firestore, logger, llmClient }) {
               companyContext: heroCompanyContext,
             }),
           ]);
+          logger.info(
+            {
+              jobId: payload.jobId,
+              imageStatus: imageOutcome.status,
+              captionStatus: captionOutcome.status
+            },
+            "hero image parallel tasks settled"
+          );
 
           if (imageOutcome.status === "fulfilled") {
             imageResult = imageOutcome.value;
@@ -2693,7 +2701,22 @@ export function wizardRouter({ firestore, logger, llmClient }) {
                 },
               }
             );
+            logger.info(
+              {
+                jobId: payload.jobId,
+                provider: imageResult.provider,
+                model: imageResult.model,
+                hasBase64: Boolean(imageResult.imageBase64),
+                hasUrl: Boolean(imageResult.imageUrl),
+                base64Length: imageResult.imageBase64 ? imageResult.imageBase64.length : 0
+              },
+              "hero image generation outcome"
+            );
           } else {
+            logger.warn(
+              { jobId: payload.jobId, err: imageOutcome.reason },
+              "hero image generation promise rejected"
+            );
             throw imageOutcome.reason;
           }
 
@@ -2712,6 +2735,14 @@ export function wizardRouter({ firestore, logger, llmClient }) {
                   ? captionResult.hashtags
                   : null,
               };
+              logger.info(
+                {
+                  jobId: payload.jobId,
+                  captionLength: captionResult.caption?.length ?? 0,
+                  hashtagCount: captionResult.hashtags?.length ?? 0
+                },
+                "hero image caption outcome"
+              );
             } else {
               logger.warn(
                 {

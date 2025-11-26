@@ -107,6 +107,10 @@ const BASE_RATE_CARD = {
           },
           "nano-pro": {
             costPerUnitUsd: 0.05
+          },
+          "gemini-3-pro-image-preview": {
+            // Based on pricing note: ~$0.134 per 1K/2K image output.
+            costPerUnitUsd: 0.134
           }
         },
         default: {
