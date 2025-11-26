@@ -824,6 +824,16 @@ export const COPILOT_TOOLS = [
         assetId,
         record: updated
       });
+      context.logger?.info?.(
+        {
+          jobId: context.jobId,
+          assetId,
+          fields: Object.keys(input.content ?? {}),
+          channelId: record.channelId,
+          formatId: record.formatId
+        },
+        "copilot.asset_update"
+      );
       return {
         status: "updated",
         asset: saved,
@@ -831,6 +841,93 @@ export const COPILOT_TOOLS = [
           type: "asset_update",
           assetId,
           content: mergedContent
+        }
+      };
+    }
+  },
+  {
+    name: "batch_update_assets",
+    description:
+      "Update multiple assets in one call. Use when the user requests changes across several assets or multiple fields within them.",
+    schema: z.object({
+      updates: z
+        .array(
+          z.object({
+            assetId: z.string().optional(),
+            channelId: z.string().optional(),
+            formatId: z.string().optional(),
+            content: z
+              .object({
+                title: z.string().optional(),
+                subtitle: z.string().optional(),
+                body: z.string().optional(),
+                bullets: z.array(z.string()).optional(),
+                callToAction: z.string().optional(),
+                notes: z.string().optional(),
+                hashtags: z.array(z.string()).optional(),
+                imagePrompt: z.string().optional(),
+                script: z
+                  .array(
+                    z.object({
+                      beat: z.string(),
+                      details: z.string().optional(),
+                      visual: z.string().optional()
+                    })
+                  )
+                  .optional(),
+                raw: z.unknown().optional()
+              })
+              .partial()
+              .refine((val) => Object.keys(val).length > 0, {
+                message: "At least one content field must be provided."
+              })
+          })
+        )
+        .min(1)
+    }),
+    schemaDescription:
+      "Input: { \"updates\": [{ assetId?: string, channelId?: string, formatId?: string, content: { title?, body?, bullets?, ... } }] }. Provide assetId or channelId+formatId per update.",
+    async execute(context, input) {
+      const updatedIds = [];
+      const results = [];
+      for (const update of input.updates) {
+        const assetId = resolveAssetId(context, update);
+        updatedIds.push(assetId);
+        const record = await loadAssetRecord({
+          firestore: context.firestore,
+          assetId
+        });
+        const mergedContent = {
+          ...(record.content ?? {}),
+          ...(update.content ?? {})
+        };
+        const now = new Date();
+        const updated = {
+          ...record,
+          content: mergedContent,
+          updatedAt: now
+        };
+        const saved = await saveAssetRecord({
+          firestore: context.firestore,
+          assetId,
+          record: updated
+        });
+        results.push(saved);
+      }
+      context.logger?.info?.(
+        {
+          jobId: context.jobId,
+          assetIds: updatedIds,
+          updateCount: results.length
+        },
+        "copilot.asset_batch_update"
+      );
+      return {
+        status: "updated",
+        assets: results,
+        action: {
+          type: "asset_batch_update",
+          assets: results
         }
       };
     }

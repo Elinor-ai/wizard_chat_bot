@@ -275,13 +275,40 @@ export function copilotRouter({ firestore, llmClient, logger }) {
       );
 
       let updatedJobSnapshot = null;
-      if (Array.isArray(agentResult.actions) && agentResult.actions.length > 0) {
+      let updatedAssets = null;
+      const actions = Array.isArray(agentResult.actions) ? agentResult.actions : [];
+
+      if (actions.length > 0) {
         const latestJob = await loadJobForUser({
           firestore,
           jobId: payload.jobId,
           userId
         });
         updatedJobSnapshot = buildJobSnapshot(latestJob);
+        const assetActions = actions.filter(
+          (action) =>
+            action?.type === "asset_update" ||
+            action?.type === "asset_batch_update"
+        );
+        if (assetActions.length > 0) {
+          const collected = [];
+          assetActions.forEach((action) => {
+            if (Array.isArray(action.assets)) {
+              collected.push(...action.assets);
+            } else if (action.asset) {
+              collected.push(action.asset);
+            }
+          });
+          updatedAssets = collected.length > 0 ? collected : null;
+          logger.debug(
+            {
+              jobId: payload.jobId,
+              assetActionCount: assetActions.length,
+              updatedAssetIds: (updatedAssets ?? []).map((asset) => asset.id)
+            },
+            "copilot.chat.updated_assets_collected"
+          );
+        }
         logger.debug(
           {
             jobId: payload.jobId,
@@ -294,16 +321,18 @@ export function copilotRouter({ firestore, llmClient, logger }) {
       const responsePayload = {
         jobId: payload.jobId,
         messages: serializeMessages(history),
-        actions: agentResult.actions ?? [],
-        updatedJobSnapshot
+        actions,
+        updatedJobSnapshot,
+        updatedAssets
       };
       logger.info(
         {
           jobId: payload.jobId,
           userId,
-          actionCount: Array.isArray(agentResult.actions) ? agentResult.actions.length : 0,
-          actions: agentResult.actions ?? [],
+          actionCount: actions.length,
+          actions,
           updatedSnapshotKeys: Object.keys(updatedJobSnapshot ?? {}),
+          updatedAssetCount: Array.isArray(updatedAssets) ? updatedAssets.length : 0,
           stage: payload.stage
         },
         "copilot.chat.response_payload"

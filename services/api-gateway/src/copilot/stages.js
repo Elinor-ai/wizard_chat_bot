@@ -51,10 +51,11 @@ export const COPILOT_STAGE_CONFIG = {
       "Do not touch job-intake fields in this stage unless the user explicitly requests it.",
       "Only update an asset’s content when the user is clear about the change.",
       "Before editing, identify the exact assetId. Use list_job_assets when unsure.",
-      "If an asset does not exist yet, ask the user to generate assets before editing."
+      "If an asset does not exist yet, ask the user to generate assets before editing.",
+      "When the user asks to change existing assets, use asset tools (list_job_assets, get_asset_details, update_asset_content, batch_update_assets) instead of updating job fields."
     ],
     instructions:
-      "You are assisting inside the asset-generation workspace. Help the user understand the generated assets. Use list_job_assets to locate the correct assetId before editing. If no asset exists yet, ask the user to generate assets. Only update assets or intake data when the user explicitly asks.",
+      "You are assisting inside the asset-generation workspace. Help the user understand the generated assets. Use list_job_assets to locate the correct assetId before editing. If no asset exists yet, ask the user to generate assets. When asked to update existing assets, call the asset tools (list_job_assets → get_asset_details → update_asset_content or batch_update_assets) to edit their text. Only update intake data when the user explicitly asks.",
     toolNames: [
       "get_job_snapshot",
       "get_refined_job_snapshot",
@@ -64,7 +65,8 @@ export const COPILOT_STAGE_CONFIG = {
       "update_refined_job_fields",
       "list_job_assets",
       "get_asset_details",
-      "update_asset_content"
+      "update_asset_content",
+      "batch_update_assets"
     ]
   },
   channels: {
