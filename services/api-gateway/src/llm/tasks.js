@@ -46,6 +46,7 @@ import {
   logVideoPreview,
   logImagePromptPreview
 } from "./logger.js";
+import { LLM_TASK_CONFIG } from "../config/llm-config.js";
 
 export const TASK_REGISTRY = {
   suggest: {
@@ -235,3 +236,12 @@ export const TASK_REGISTRY = {
     strictOnRetry: true
   },
 };
+
+const missingTaskConfig = Object.keys(TASK_REGISTRY).filter(
+  (task) => !LLM_TASK_CONFIG[task]
+);
+if (missingTaskConfig.length > 0) {
+  throw new Error(
+    `LLM task configuration missing for: ${missingTaskConfig.join(", ")}`
+  );
+}

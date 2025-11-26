@@ -67,23 +67,39 @@ export class ProviderSelectionPolicy {
     if (!config) {
       throw new Error(`No provider selection config for task ${task}`);
     }
+    if (
+      typeof config.provider === "string" &&
+      typeof config.model === "string" &&
+      !config.env
+    ) {
+      return { provider: config.provider, model: config.model };
+    }
+
     const spec =
-      process.env[config.env] !== undefined
+      config.env && process.env[config.env] !== undefined
         ? process.env[config.env]
         : config.defaultSpec;
 
     const parsed = parseProviderSpec(spec, {
-      defaultProvider: config.defaultProvider,
-      defaultModel: config.providerDefaults[config.defaultProvider],
+      defaultProvider: config.defaultProvider ?? config.provider,
+      defaultModel:
+        config.providerDefaults?.[config.defaultProvider] ??
+        config.providerDefaults?.default ??
+        config.model,
     });
 
-    const provider = parsed.provider || config.defaultProvider;
+    const provider =
+      parsed.provider || config.defaultProvider || config.provider;
     const model =
-      parsed.modelProvided && parsed.model
+      (parsed.modelProvided && parsed.model
         ? parsed.model
-        : config.providerDefaults[provider] ??
-          config.providerDefaults.default ??
-          config.providerDefaults[config.defaultProvider];
+        : config.providerDefaults?.[provider] ??
+          config.providerDefaults?.default ??
+          config.model) ?? parsed.model;
+
+    if (!provider || !model) {
+      throw new Error(`Provider/model missing for task ${task}`);
+    }
 
     return { provider, model };
   }

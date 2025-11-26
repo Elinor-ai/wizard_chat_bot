@@ -43,9 +43,7 @@ export function createRenderer(options = {}) {
     logger: options.logger,
   });
 
-  const assetBaseSetting =
-    process.env.VIDEO_RENDER_PUBLIC_BASE_URL ??
-    "http://localhost:4000/video-assets";
+  const assetBaseSetting = "http://localhost:4000/video-assets";
   const assetBaseUrl = new URL(assetBaseSetting, "http://localhost");
   const basePath =
     assetBaseUrl.pathname === "/"
