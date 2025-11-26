@@ -15,7 +15,8 @@ const EMPLOYMENT_TYPE_LABELS = {
   contract: "Contract",
   temporary: "Temporary",
   seasonal: "Seasonal",
-  intern: "Internship"
+  intern: "Internship",
+  gig: "Gig / Freelance"
 };
 
 const WORK_MODEL_LABELS = {

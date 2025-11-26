@@ -29,7 +29,7 @@ const JOB_ASSET_COLLECTION = "jobAssets";
 const editableFields = new Set(ALLOWED_INTAKE_KEYS);
 const enumFieldMap = {
   workModel: ["on_site", "hybrid", "remote"],
-  employmentType: ["full_time", "part_time", "contract", "temporary", "seasonal", "intern"],
+  employmentType: ["full_time", "part_time", "contract", "temporary", "seasonal", "intern", "gig"],
   seniorityLevel: ["entry", "mid", "senior", "lead", "executive"]
 };
 

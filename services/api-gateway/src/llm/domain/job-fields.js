@@ -51,7 +51,7 @@ export const JOB_FIELD_GUIDE = [
     label: "Employment Type",
     required: true,
     description:
-      "Engagement type advertised to candidates (full_time, part_time, contract, temporary, seasonal, intern).",
+      "Engagement type advertised to candidates (full_time, part_time, contract, temporary, seasonal, intern, gig).",
     example: "full_time",
   },
   {

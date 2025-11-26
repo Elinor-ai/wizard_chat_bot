@@ -66,7 +66,15 @@ export function createJobCreationStateMachine() {
 
 export const WorkModelEnum = z.enum(["on_site", "hybrid", "remote"]);
 
-export const EmploymentTypeEnum = z.enum(["full_time", "part_time", "contract", "temporary", "seasonal", "intern"]);
+export const EmploymentTypeEnum = z.enum([
+  "full_time",
+  "part_time",
+  "contract",
+  "temporary",
+  "seasonal",
+  "intern",
+  "gig"
+]);
 
 export const ExperienceLevelEnum = z.enum(["entry", "mid", "senior", "lead", "executive"]);
 

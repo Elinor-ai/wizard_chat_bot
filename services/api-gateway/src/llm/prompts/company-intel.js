@@ -107,7 +107,7 @@ export function buildCompanyIntelPrompt(context = {}) {
           industry: "string or null",
           seniorityLevel: "entry | mid | senior | lead | executive | null",
           employmentType:
-            "full_time | part_time | contract | temporary | seasonal | intern | null",
+            "full_time | part_time | contract | temporary | seasonal | intern | gig | null",
           workModel: "on_site | hybrid | remote | null",
           description: "full paragraph describing the role",
           coreDuties: ["bullet list of responsibilities"],

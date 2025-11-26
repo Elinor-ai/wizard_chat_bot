@@ -11,6 +11,7 @@ export const EMPLOYMENT_TYPE_OPTIONS = [
   { value: "temporary", label: "Temporary" },
   { value: "seasonal", label: "Seasonal" },
   { value: "intern", label: "Internship" },
+  { value: "gig", label: "Gig / Freelance" },
 ];
 
 export const EXPERIENCE_LEVEL_OPTIONS = [
@@ -92,7 +93,7 @@ export const REQUIRED_STEPS = [
         id: "employmentType",
         label: "What is the employment type?",
         helper:
-          "Clarify whether this is full-time, part-time, contract, or another arrangement.",
+          "Clarify whether this is full-time, part-time, contract, gig, or another arrangement.",
         required: true,
         type: "capsule",
         options: EMPLOYMENT_TYPE_OPTIONS,
