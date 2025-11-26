@@ -539,6 +539,7 @@ const copilotConversationResponseSchema = z.object({
     .record(z.string(), z.unknown())
     .optional()
     .nullable(),
+  updatedAssets: z.array(z.unknown()).optional().nullable()
 });
 
 const dashboardSummarySchema = z.object({
