@@ -7,7 +7,8 @@ import {
 } from "@wizard/core";
 import { buildVideoManifest } from "./manifest-builder.js";
 import { incrementMetric } from "./metrics.js";
-import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
+import { recordLlmUsage, recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
+import { VERTEX_DEFAULTS } from "../vertex/constants.js";
 
 const COLLECTION = "videoLibraryItems";
 const AUTO_RENDER = process.env.VIDEO_RENDER_AUTOSTART !== "false";
@@ -421,6 +422,40 @@ export function createVideoLibraryService({
       },
       auditEntry
     );
+    if (renderTask.status === "completed" && provider === "veo") {
+      const secondsGenerated = Number.isFinite(Number(renderTask.metrics?.secondsGenerated))
+        ? Number(renderTask.metrics.secondsGenerated)
+        : Number(existing?.activeManifest?.generator?.targetDurationSeconds ?? 0) || 0;
+      const videoModel =
+        renderTask.metrics?.model ??
+        process.env.VIDEO_MODEL ??
+        VERTEX_DEFAULTS.VEO_MODEL_ID;
+      try {
+        await recordLlmUsage({
+          firestore,
+          logger,
+          usageContext: {
+            userId: ownerUserId,
+            jobId: existing.jobId,
+            taskType: "video_generation"
+          },
+          provider: "veo",
+          model: videoModel,
+          metadata: {},
+          status: "success",
+          usageType: "video",
+          usageMetrics: {
+            seconds: secondsGenerated,
+            units: 1
+          }
+        });
+      } catch (error) {
+        logger?.warn?.(
+          { err: error, jobId: existing.jobId, provider: "veo" },
+          "video.render.usage_log_failed"
+        );
+      }
+    }
     if (renderTask.status === "completed") {
       incrementMetric(logger, "video_renders_completed", 1, { ownerUserId });
     } else if (renderTask.status === "failed") {

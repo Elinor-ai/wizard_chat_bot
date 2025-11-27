@@ -3,6 +3,7 @@ import { loadEnv } from "@wizard/utils";
 import { VideoRenderTaskSchema } from "@wizard/core";
 import { UnifiedVideoRenderer } from "./renderers/unified-renderer.js";
 import { VideoRendererError } from "./renderers/contracts.js";
+import { VERTEX_DEFAULTS } from "../vertex/constants.js";
 
 loadEnv();
 
@@ -84,6 +85,7 @@ export function createRenderer(options = {}) {
   return {
     async render({ manifest, provider, jobId, itemId, ownerUserId }) {
       const requestedAt = new Date().toISOString();
+      const videoModel = process.env.VIDEO_MODEL ?? VERTEX_DEFAULTS.VEO_MODEL_ID;
       const request = {
         prompt: buildPrompt(manifest),
         duration: calculateDuration(manifest),
@@ -104,6 +106,12 @@ export function createRenderer(options = {}) {
           videoUrl = toAbsoluteUrl(videoUrl);
         }
 
+        const renderMetrics = {
+          secondsGenerated: request.duration ?? 0,
+          model: videoModel,
+          tier: "standard"
+        };
+
         return VideoRenderTaskSchema.parse({
           id: uuid(),
           manifestVersion: manifest.version,
@@ -112,6 +120,7 @@ export function createRenderer(options = {}) {
           renderer: provider,
           requestedAt,
           completedAt: new Date().toISOString(),
+          metrics: renderMetrics,
           result: {
             videoUrl,
           },

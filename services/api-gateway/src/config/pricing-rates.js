@@ -22,73 +22,13 @@ const BASE_RATE_CARD = {
     }
   },
   providers: {
-    openai: {
-      planName: "openai-standard",
-      credits: {
-        usdPerCredit: null
-      },
-      text: {
-        default: {
-          inputUsdPerMillionTokens: 0.5,
-          outputUsdPerMillionTokens: 0.5,
-          cachedUsdPerMillionTokens: 0.25
-        },
-        models: {
-          "gpt-4o": {
-            inputUsdPerMillionTokens: 5,
-            outputUsdPerMillionTokens: 15,
-            cachedUsdPerMillionTokens: 2.5
-          },
-          "gpt-4o-mini": {
-            inputUsdPerMillionTokens: 0.15,
-            outputUsdPerMillionTokens: 0.60,
-            cachedUsdPerMillionTokens: 0.05
-          },
-          "gpt-3.5-turbo": {
-            inputUsdPerMillionTokens: 0.50,
-            outputUsdPerMillionTokens: 1.50,
-            cachedUsdPerMillionTokens: 0.25
-          }
-        }
-      },
-      image: {
-        models: {
-          "gpt-image-1": {
-            costPerUnitUsd: 0.04
-          }
-        },
-        default: {
-          costPerUnitUsd: 0.04
-        }
-      },
-      video: {
-        default: {
-          costPerSecondUsd: 0.01
-        }
-      }
-    },
     gemini: {
       planName: "gemini-production",
       credits: {
         usdPerCredit: null
       },
       text: {
-        default: {
-          inputUsdPerMillionTokens: 0.35,
-          outputUsdPerMillionTokens: 0.70,
-          cachedUsdPerMillionTokens: 0.20
-        },
         models: {
-          "gemini-flash-latest": {
-            inputUsdPerMillionTokens: 0.35,
-            outputUsdPerMillionTokens: 0.70,
-            cachedUsdPerMillionTokens: 0.18
-          },
-          "gemini-pro": {
-            inputUsdPerMillionTokens: 0.50,
-            outputUsdPerMillionTokens: 1.50,
-            cachedUsdPerMillionTokens: 0.25
-          },
           "gemini-3-pro-preview": {
             promptTokenTiers: [
               {
@@ -103,41 +43,16 @@ const BASE_RATE_CARD = {
                 cachedUsdPerMillionTokens: 0.40
               }
             ]
-          },
-          "gemini-3-pro-image-preview": {
-            promptTokenTiers: [
-              {
-                maxPromptTokens: 200_000,
-                inputUsdPerMillionTokens: 2,
-                outputUsdPerMillionTokens: 12,
-                cachedUsdPerMillionTokens: 0.20
-              },
-              {
-                inputUsdPerMillionTokens: 4,
-                outputUsdPerMillionTokens: 18,
-                cachedUsdPerMillionTokens: 0.40
-              }
-            ]
           }
+        },
+        default: {
+          inputUsdPerMillionTokens: 2,
+          outputUsdPerMillionTokens: 12,
+          cachedUsdPerMillionTokens: 0.20
         }
       },
       image: {
         models: {
-          imagen: {
-            costPerUnitUsd: 0.05
-          },
-          "imagen-3.0-fast-generate-001": {
-            costPerUnitUsd: 0.03
-          },
-          "imagen-3.0-generate-001": {
-            costPerUnitUsd: 0.05
-          },
-          nano: {
-            costPerUnitUsd: 0.03
-          },
-          "nano-pro": {
-            costPerUnitUsd: 0.05
-          },
           "gemini-3-pro-image-preview": {
             // Default per-image estimate assumes 1K/2K outputs (~1120 tokens per image).
             costPerUnitUsd: 0.134,
@@ -157,15 +72,26 @@ const BASE_RATE_CARD = {
           }
         },
         default: {
-          costPerUnitUsd: 0.04
+          costPerUnitUsd: 0.134,
+          inputUsdPerMillionTokens: 2,
+          outputUsdPerMillionTokens: 120,
+          cachedUsdPerMillionTokens: 0.20
         }
       }
     },
-    stable_diffusion: {
-      planName: "sd-enterprise",
-      image: {
+    veo: {
+      planName: "veo-preview",
+      credits: {
+        usdPerCredit: null
+      },
+      video: {
+        models: {
+          "veo-3.1-generate-preview": {
+            costPerSecondUsd: 0.40
+          }
+        },
         default: {
-          costPerUnitUsd: 0.02
+          costPerSecondUsd: 0.40
         }
       }
     }
