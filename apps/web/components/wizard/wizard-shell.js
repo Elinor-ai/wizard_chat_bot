@@ -58,40 +58,50 @@ function InlineSuggestionList({ suggestions = [], onApply }) {
     return null;
   }
   return (
-    <div className="flex flex-wrap gap-2 pt-2">
+    <div className="flex flex-col gap-2 pt-2">
       {suggestions.map((message) => {
         const canApply = Boolean(message.meta?.fieldId);
         const preview = summarizeSuggestionValue(
           message.meta?.value ?? message.content ?? ""
         );
+        const rationale = message.meta?.rationale;
         return (
-          <button
-            key={message.id}
-            type="button"
-            title={preview}
-            disabled={!canApply}
-            onClick={() => {
-              if (canApply) {
-                onApply?.(message.meta);
-              }
-            }}
-            className={clsx(
-              "group flex max-w-full items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition",
-              canApply
-                ? "border-primary-200 bg-primary-50/70 text-primary-700 hover:bg-primary-100"
-                : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
-            )}
-          >
-            <span
+          <div key={message.id} className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-primary-500">
+              Suggested by your copilot
+            </span>
+            {rationale ? (
+              <span className="text-xs italic text-primary-400">
+                {rationale}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              title={preview}
+              disabled={!canApply}
+              onClick={() => {
+                if (canApply) {
+                  onApply?.(message.meta);
+                }
+              }}
               className={clsx(
-                "flex h-5 w-5 items-center justify-center rounded-full text-white",
-                canApply ? "bg-primary-600" : "bg-neutral-400"
+                "group flex max-w-full items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition w-fit",
+                canApply
+                  ? "border-primary-200 bg-primary-50/70 text-primary-700 hover:bg-primary-100"
+                  : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
               )}
             >
-              +
-            </span>
-            <span className="max-w-[220px] truncate text-left">{preview}</span>
-          </button>
+              <span
+                className={clsx(
+                  "flex h-5 w-5 items-center justify-center rounded-full text-white",
+                  canApply ? "bg-primary-600" : "bg-neutral-400"
+                )}
+              >
+                +
+              </span>
+              <span className="max-w-[220px] truncate text-left">{preview}</span>
+            </button>
+          </div>
         );
       })}
     </div>
@@ -353,6 +363,7 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
 
               const rawValue = getDeep(state, field.id);
               const highlightMeta = getDeep(autofilledFields, field.id);
+              const hasSuggestionMeta = Boolean(highlightMeta);
               const effectiveValue = rawValue;
               const isListField = field.asList === true;
               const isSuggestedValue = Boolean(highlightMeta?.accepted);
@@ -607,12 +618,12 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
                       {field.helper}
                     </span>
                   ) : null}
-                  {isSuggestedValue ? (
+                  {hasSuggestionMeta ? (
                     <span className="text-xs font-semibold uppercase tracking-wide text-primary-500">
                       Suggested by your copilot
                     </span>
                   ) : null}
-                  {isSuggestedValue && highlightMeta?.rationale ? (
+                  {hasSuggestionMeta && highlightMeta?.rationale ? (
                     <span className="text-xs text-primary-400">
                       {highlightMeta.rationale}
                     </span>
