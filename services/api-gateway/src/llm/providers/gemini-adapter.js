@@ -11,13 +11,19 @@ const TOKEN_DEBUG_TASKS = new Set([
   "image_prompt_generation",
   "image_caption"
 ]);
-const GROUNDED_TASKS = new Set([
+const SEARCH_GROUNDING_TASKS = new Set([
   "suggest",
   "copilot_agent",
   "company_intel",
   "video_storyboard",
   "image_prompt_generation",
-  "image_caption"
+  "image_caption",
+  "refine"
+]);
+const MAPS_GROUNDING_TASKS = new Set([
+  "suggest",
+  "copilot_agent",
+  "refine"
 ]);
 
 export class GeminiAdapter {
@@ -154,9 +160,21 @@ export class GeminiAdapter {
       temperature,
       maxOutputTokens: maxTokens,
     };
-    if (taskType && GROUNDED_TASKS.has(taskType)) {
-      config.tools = [{ googleSearch: {} }];
-      config.toolConfig = { googleSearch: { mode: "AUTO" } };
+    let hasGroundingTools = false;
+    if (taskType) {
+      const wantsSearch = SEARCH_GROUNDING_TASKS.has(taskType);
+      const wantsMaps = MAPS_GROUNDING_TASKS.has(taskType);
+      const tools = [];
+      if (wantsSearch) {
+        tools.push({ googleSearch: {} });
+      }
+      if (wantsMaps) {
+        tools.push({ googleMaps: {} });
+      }
+      if (tools.length > 0) {
+        config.tools = tools;
+        hasGroundingTools = true;
+      }
     }
 
     if (taskType === "image_generation") {
@@ -167,7 +185,7 @@ export class GeminiAdapter {
       config.systemInstruction = systemText;
     }
 
-    if (mode === "json" && taskType !== "image_generation") {
+    if (mode === "json" && taskType !== "image_generation" && !hasGroundingTools) {
       config.responseMimeType = "application/json";
     }
 

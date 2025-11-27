@@ -27,6 +27,12 @@ const BASE_RATE_CARD = {
       credits: {
         usdPerCredit: null
       },
+      grounding: {
+        searchUsdPerQuery: 0.014 // $14 per 1,000 queries
+      },
+      storage: {
+        usdPerMillionTokensPerHour: 4.5
+      },
       text: {
         models: {
           "gemini-3-pro-preview": {
@@ -250,6 +256,16 @@ export function resolveVideoPricing(provider, model) {
     costPerUnitUsd: resolved.costPerUnitUsd ?? defaults.costPerUnitUsd,
     usdPerCredit: resolveUsdPerCredit(provider)
   };
+}
+
+export function resolveGroundingPricing(provider) {
+  const providerConfig = resolveProviderConfig(provider);
+  return providerConfig?.grounding ?? {};
+}
+
+export function resolveStoragePricing(provider) {
+  const providerConfig = resolveProviderConfig(provider);
+  return providerConfig?.storage ?? {};
 }
 
 export function resolveCreditConversion(provider) {
