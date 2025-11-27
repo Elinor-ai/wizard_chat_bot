@@ -2496,6 +2496,15 @@ export default function RefineJobPage() {
           setOriginalDraft((prev) => mergeSnapshot(prev, snapshot));
           setInitialOriginal((prev) => mergeSnapshot(prev, snapshot));
         }
+        if (
+          stage === "refine" &&
+          response.updatedRefinedSnapshot &&
+          typeof response.updatedRefinedSnapshot === "object"
+        ) {
+          const refinedSnapshot = response.updatedRefinedSnapshot;
+          setRefinedDraft((prev) => mergeSnapshot(prev, refinedSnapshot));
+          setInitialRefined((prev) => mergeSnapshot(prev, refinedSnapshot));
+        }
         const actions = Array.isArray(response.actions) ? response.actions : [];
         if (actions.length > 0) {
           actions.forEach((action) => {
@@ -2519,6 +2528,10 @@ export default function RefineJobPage() {
                 };
                 applyField(setOriginalDraft);
                 applyField(setInitialOriginal);
+                if (stage === "refine") {
+                  applyField(setRefinedDraft);
+                  applyField(setInitialRefined);
+                }
                 break;
               }
               case "field_batch_update": {
@@ -2537,6 +2550,10 @@ export default function RefineJobPage() {
                 };
                 applyFields(setOriginalDraft);
                 applyFields(setInitialOriginal);
+                if (stage === "refine") {
+                  applyFields(setRefinedDraft);
+                  applyFields(setInitialRefined);
+                }
                 break;
               }
               case "refined_field_update": {

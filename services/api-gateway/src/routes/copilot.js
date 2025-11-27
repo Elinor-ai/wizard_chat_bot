@@ -2,7 +2,11 @@ import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { wrapAsync, httpError } from "@wizard/utils";
-import { JobSchema, JobSuggestionSchema } from "@wizard/core";
+import {
+  JobSchema,
+  JobSuggestionSchema,
+  JobRefinementSchema
+} from "@wizard/core";
 import { WizardCopilotAgent } from "../copilot/agent.js";
 import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 import { COPILOT_TOOLS } from "../copilot/tools.js";
@@ -18,6 +22,7 @@ import { loadCompanyContext } from "../services/company-context.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
+const REFINEMENT_COLLECTION = "jobRefinements";
 
 const stageEnum = z.enum(listSupportedStages());
 
@@ -88,6 +93,57 @@ async function loadSuggestionSnapshot({ firestore, jobId }) {
     return [];
   }
   return Object.values(parsed.data.candidates);
+}
+
+async function loadRefinementDoc({ firestore, jobId }) {
+  const doc = await firestore.getDocument(REFINEMENT_COLLECTION, jobId);
+  if (!doc) return null;
+  const parsed = JobRefinementSchema.safeParse(doc);
+  if (!parsed.success) {
+    return null;
+  }
+  return parsed.data;
+}
+
+async function loadRefinedSnapshot({ firestore, jobId }) {
+  const parsed = await loadRefinementDoc({ firestore, jobId });
+  if (!parsed) {
+    return null;
+  }
+  return parsed.refinedJob ?? null;
+}
+
+async function syncRefinedFields({ firestore, job, jobId, updates }) {
+  if (!updates || updates.length === 0) {
+    return null;
+  }
+  const existing = await loadRefinementDoc({ firestore, jobId });
+  const refined = { ...(existing?.refinedJob ?? buildJobSnapshot(job)) };
+  updates.forEach(({ fieldId, value }) => {
+    refined[fieldId] = value === undefined || value === null ? "" : value;
+  });
+  const payload = {
+    id: jobId,
+    jobId,
+    companyId: job.companyId ?? existing?.companyId ?? null,
+    schema_version: "1",
+    refinedJob: refined,
+    summary: existing?.summary ?? null,
+    provider: existing?.provider,
+    model: existing?.model,
+    metadata: existing?.metadata,
+    lastFailure: existing?.lastFailure,
+    updatedAt: new Date(),
+  };
+  if (!payload.metadata) {
+    delete payload.metadata;
+  }
+  if (!payload.lastFailure) {
+    delete payload.lastFailure;
+  }
+  const parsed = JobRefinementSchema.parse(payload);
+  await firestore.saveDocument(REFINEMENT_COLLECTION, jobId, payload);
+  return parsed.refinedJob;
 }
 
 function serializeMessages(messages = []) {
@@ -275,6 +331,7 @@ export function copilotRouter({ firestore, llmClient, logger }) {
       );
 
       let updatedJobSnapshot = null;
+      let updatedRefinedSnapshot = null;
       let updatedAssets = null;
       const actions = Array.isArray(agentResult.actions) ? agentResult.actions : [];
 
@@ -285,6 +342,17 @@ export function copilotRouter({ firestore, llmClient, logger }) {
           userId
         });
         updatedJobSnapshot = buildJobSnapshot(latestJob);
+        const touchedRefinedFields = actions.some((action) =>
+          typeof action?.type === "string"
+            ? action.type.startsWith("refined_")
+            : false
+        );
+        if (touchedRefinedFields) {
+          updatedRefinedSnapshot = await loadRefinedSnapshot({
+            firestore,
+            jobId: payload.jobId
+          });
+        }
         const assetActions = actions.filter(
           (action) =>
             action?.type === "asset_update" ||
@@ -318,11 +386,45 @@ export function copilotRouter({ firestore, llmClient, logger }) {
         );
       }
 
+      if (
+        payload.stage === "refine" &&
+        actions.length > 0
+      ) {
+        const refinedUpdates = [];
+        actions.forEach((action) => {
+          if (action?.type === "field_update" && action.fieldId) {
+            refinedUpdates.push({
+              fieldId: action.fieldId,
+              value: action.value
+            });
+          } else if (
+            action?.type === "field_batch_update" &&
+            action.fields &&
+            typeof action.fields === "object"
+          ) {
+            Object.entries(action.fields).forEach(([fieldId, value]) => {
+              refinedUpdates.push({ fieldId, value });
+            });
+          }
+        });
+        if (refinedUpdates.length > 0) {
+          await syncRefinedFields({
+            firestore,
+            job,
+            jobId: payload.jobId,
+            updates: refinedUpdates
+          });
+          updatedRefinedSnapshot =
+            await loadRefinedSnapshot({ firestore, jobId: payload.jobId });
+        }
+      }
+
       const responsePayload = {
         jobId: payload.jobId,
         messages: serializeMessages(history),
         actions,
         updatedJobSnapshot,
+        updatedRefinedSnapshot,
         updatedAssets
       };
       logger.info(
