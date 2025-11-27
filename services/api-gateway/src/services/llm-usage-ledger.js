@@ -3,7 +3,8 @@ import {
   resolveImagePricing,
   resolveTextPricing,
   resolveVideoPricing,
-  resolveProviderPlanName
+  resolveProviderPlanName,
+  resolveGroundingPricing
 } from "../config/pricing-rates.js";
 
 const MILLION = 1_000_000;
@@ -165,9 +166,19 @@ export async function recordLlmUsage({
   let cachedInputCostPerMillionUsd;
   let imageCostPerUnitUsd;
   let videoCostPerSecondUsd;
+  let groundingSearchCostPerQueryUsd;
+  let groundingSearchQueries;
 
   const usdPerCredit = resolveCreditConversion(provider);
   const pricingPlan = resolveProviderPlanName(provider);
+  const groundingPricing = resolveGroundingPricing(provider);
+  groundingSearchCostPerQueryUsd = groundingPricing.searchUsdPerQuery ?? 0;
+  groundingSearchQueries = normalizeTokens(
+    usageMetrics.searchQueries ??
+    usageMetrics.searchQueryCount ??
+    metadata?.searchQueries ??
+    metadata?.searchQueryCount
+  );
 
   if (resolvedUsageType === "image") {
     const imagePricing = resolveImagePricing(provider, model, { promptTokens: inputTokens });
@@ -237,6 +248,9 @@ export async function recordLlmUsage({
   if (!Number.isFinite(estimatedCostUsd) || estimatedCostUsd < 0) {
     estimatedCostUsd = 0;
   }
+  if (groundingSearchCostPerQueryUsd > 0 && groundingSearchQueries > 0) {
+    estimatedCostUsd += groundingSearchQueries * groundingSearchCostPerQueryUsd;
+  }
   const creditsUsed =
     usdPerCredit > 0 ? Number((estimatedCostUsd / usdPerCredit).toFixed(6)) : 0;
   const tokenCreditRatio =
@@ -259,6 +273,8 @@ export async function recordLlmUsage({
     cachedInputCostPerMillionUsd,
     imageCostPerUnitUsd,
     videoCostPerSecondUsd,
+    groundingSearchQueries,
+    groundingSearchCostPerQueryUsd,
     estimatedCostUsd: Number(estimatedCostUsd.toFixed(6)),
     creditsUsed,
     pricingPlan,

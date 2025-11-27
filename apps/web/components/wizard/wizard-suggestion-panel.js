@@ -6,7 +6,7 @@ const EXPERIENCE_LABELS = {
   mid: "Mid level",
   senior: "Senior",
   lead: "Lead",
-  executive: "Executive"
+  executive: "Executive",
 };
 
 const EMPLOYMENT_TYPE_LABELS = {
@@ -16,13 +16,13 @@ const EMPLOYMENT_TYPE_LABELS = {
   temporary: "Temporary",
   seasonal: "Seasonal",
   intern: "Internship",
-  gig: "Gig / Freelance"
+  gig: "Gig / Freelance",
 };
 
 const WORK_MODEL_LABELS = {
   on_site: "On-site",
   hybrid: "Hybrid",
-  remote: "Remote"
+  remote: "Remote",
 };
 
 function formatPrimitive(value) {
@@ -34,7 +34,6 @@ function formatPrimitive(value) {
   return JSON.stringify(value);
 }
 
-
 function cleanString(value) {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -42,15 +41,15 @@ function cleanString(value) {
 }
 
 function labelExperienceLevel(value) {
-  return value ? EXPERIENCE_LABELS[value] ?? value : null;
+  return value ? (EXPERIENCE_LABELS[value] ?? value) : null;
 }
 
 function labelEmploymentType(value) {
-  return value ? EMPLOYMENT_TYPE_LABELS[value] ?? value : null;
+  return value ? (EMPLOYMENT_TYPE_LABELS[value] ?? value) : null;
 }
 
 function labelWorkModel(value) {
-  return value ? WORK_MODEL_LABELS[value] ?? value : null;
+  return value ? (WORK_MODEL_LABELS[value] ?? value) : null;
 }
 
 function formatListItems(value) {
@@ -90,22 +89,22 @@ function JobPreview({ jobState }) {
   const tags = [
     labelExperienceLevel(source.seniorityLevel),
     labelEmploymentType(source.employmentType),
-    labelWorkModel(source.workModel)
+    labelWorkModel(source.workModel),
   ].filter(Boolean);
 
   const listSections = [
     {
       title: "Key responsibilities",
-      items: formatListItems(source.coreDuties)
+      items: formatListItems(source.coreDuties),
     },
     {
       title: "Must-have qualifications",
-      items: formatListItems(source.mustHaves)
+      items: formatListItems(source.mustHaves),
     },
     {
       title: "Benefits & perks",
-      items: formatListItems(source.benefits)
-    }
+      items: formatListItems(source.benefits),
+    },
   ].filter((section) => section.items.length > 0);
 
   const detailItems = [
@@ -113,7 +112,7 @@ function JobPreview({ jobState }) {
     { label: "Postal code", value: cleanString(source.zipCode) },
     { label: "Salary range", value: cleanString(source.salary) },
     { label: "Pay cadence", value: cleanString(source.salaryPeriod) },
-    { label: "Currency", value: cleanString(source.currency) }
+    { label: "Currency", value: cleanString(source.currency) },
   ].filter((item) => item.value);
 
   const hasExtendedContent =
@@ -219,7 +218,6 @@ function TypingIndicatorBubble() {
         <div className="flex items-center gap-1">
           {[0, 1, 2].map((index) => (
             <span
-              // eslint-disable-next-line react/no-array-index-key
               key={index}
               className="h-2 w-2 rounded-full bg-primary-300 opacity-80 animate-bounce"
               style={{ animationDelay: `${index * 0.15}s` }}
@@ -258,7 +256,6 @@ function readDraftFromStorage(storageKey) {
   try {
     return window.sessionStorage.getItem(storageKey) ?? "";
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.warn("Failed to read chat draft", error);
     return "";
   }
@@ -275,7 +272,6 @@ function persistDraft(storageKey, value) {
       window.sessionStorage.removeItem(storageKey);
     }
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.warn("Failed to persist chat draft", error);
   }
 }
@@ -283,7 +279,7 @@ function persistDraft(storageKey, value) {
 const PANEL_STYLE = {
   minHeight: "520px",
   maxHeight: "880px",
-  height: "calc(100vh - 48px)"
+  height: "calc(100vh - 48px)",
 };
 
 function SuggestionsLoadingIndicator() {
@@ -312,7 +308,7 @@ export function WizardSuggestionPanel({
   nextStepTeaser,
   jobState,
   isJobTabEnabled,
-  stage = "wizard"
+  stage = "wizard",
 }) {
   const draftStorageKey = getDraftStorageKey(jobId, stage);
   const focusStorageKey = getFocusStorageKey(jobId, stage);
@@ -443,7 +439,7 @@ export function WizardSuggestionPanel({
     if (node) {
       node.scrollTo({
         top: node.scrollHeight,
-        behavior: "smooth"
+        behavior: "smooth",
       });
     }
   }, [chatTabActive, conversationMessages.length, isSending]);
@@ -464,7 +460,6 @@ export function WizardSuggestionPanel({
     try {
       window.sessionStorage.setItem(focusStorageKey, "1");
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.warn("Failed to persist chat focus flag", error);
     }
   }, [focusStorageKey]);
@@ -477,7 +472,6 @@ export function WizardSuggestionPanel({
     try {
       window.sessionStorage.removeItem(focusStorageKey);
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.warn("Failed to clear chat focus flag", error);
     }
   }, [focusStorageKey]);
@@ -545,101 +539,102 @@ export function WizardSuggestionPanel({
 
       {chatTabActive ? (
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-neutral-100 bg-white shadow-md shadow-primary-50">
-            <header className="border-b border-neutral-100 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                Conversation
+          <header className="border-b border-neutral-100 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Conversation
+            </p>
+            {isFetchingSuggestions ? (
+              <div className="mt-2">
+                <SuggestionsLoadingIndicator />
+              </div>
+            ) : null}
+          </header>
+          <div
+            ref={scrollContainerRef}
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-white px-4 py-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-neutral-200 hover:scrollbar-thumb-neutral-300"
+          >
+            {conversationMessages.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-neutral-200 bg-white p-4 text-xs text-neutral-500">
+                Ask your copilot for definitions, rewrites, or next steps.
               </p>
-              {isFetchingSuggestions ? (
-                <div className="mt-2">
-                  <SuggestionsLoadingIndicator />
-                </div>
-              ) : null}
-            </header>
-            <div
-              ref={scrollContainerRef}
-              className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-white px-4 py-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-neutral-200 hover:scrollbar-thumb-neutral-300"
-            >
-              {conversationMessages.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-neutral-200 bg-white p-4 text-xs text-neutral-500">
-                  Ask your copilot for definitions, rewrites, or next steps.
-                </p>
-              ) : (
-                conversationMessages.map((message) => (
-                  <div
-                    key={message.id}
+            ) : (
+              conversationMessages.map((message) => (
+                <div
+                  key={message.id}
+                  className={clsx(
+                    "flex w-full",
+                    message.role === "user" ? "justify-end" : "justify-start"
+                  )}
+                >
+                  <article
                     className={clsx(
-                      "flex w-full",
-                      message.role === "user" ? "justify-end" : "justify-start"
+                      "max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm transition",
+                      message.role === "user"
+                        ? "rounded-br-lg bg-primary-600 text-white"
+                        : message.role === "assistant"
+                          ? "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-800"
+                          : "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-600"
                     )}
                   >
-                    <article
-                      className={clsx(
-                        "max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm transition",
-                        message.role === "user"
-                          ? "rounded-br-lg bg-primary-600 text-white"
-                          : message.role === "assistant"
-                            ? "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-800"
-                            : "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-600"
-                      )}
-                    >
-                      <p className="whitespace-pre-wrap">{message.content}</p>
-                      {message.metadata?.actions?.length ? (
-                        <div className="mt-2 text-xs text-primary-300">
-                          Applied {message.metadata.actions.length} update
-                          {message.metadata.actions.length > 1 ? "s" : ""} to the form.
-                        </div>
-                      ) : null}
-                    </article>
-                  </div>
-                ))
-              )}
-              {isSending ? <TypingIndicatorBubble /> : null}
-            </div>
-            <footer className="border-t border-neutral-100 bg-white/95 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <textarea
-                  ref={textareaRef}
-                  className="flex-1 resize-none rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 outline-none transition placeholder:text-neutral-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 max-h-28 overflow-y-auto"
-                  placeholder="Ask your copilot..."
-                  value={draftMessage}
-                  onChange={(event) => setDraftMessage(event.target.value)}
-                  onFocus={handleTextareaFocus}
-                  onBlur={handleTextareaBlur}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      if (!isSending) {
-                        handleSubmit();
-                      }
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    {message.metadata?.actions?.length ? (
+                      <div className="mt-2 text-xs text-primary-300">
+                        Applied {message.metadata.actions.length} update
+                        {message.metadata.actions.length > 1 ? "s" : ""} to the
+                        form.
+                      </div>
+                    ) : null}
+                  </article>
+                </div>
+              ))
+            )}
+            {isSending ? <TypingIndicatorBubble /> : null}
+          </div>
+          <footer className="border-t border-neutral-100 bg-white/95 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <textarea
+                ref={textareaRef}
+                className="flex-1 resize-none rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 outline-none transition placeholder:text-neutral-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 max-h-28 overflow-y-auto"
+                placeholder="Ask your copilot..."
+                value={draftMessage}
+                onChange={(event) => setDraftMessage(event.target.value)}
+                onFocus={handleTextareaFocus}
+                onBlur={handleTextareaBlur}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    if (!isSending) {
+                      handleSubmit();
                     }
-                  }}
-                  rows={2}
-                />
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={isSending || !draftMessage.trim()}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-                  aria-label="Send message"
+                  }
+                }}
+                rows={2}
+              />
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={isSending || !draftMessage.trim()}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                aria-label="Send message"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="m22 2-7 20-4-9-9-4Z" />
-                    <path d="m22 2-11 11" />
-                  </svg>
-                </button>
-              </div>
-            </footer>
-          </section>
+                  <path d="m22 2-7 20-4-9-9-4Z" />
+                  <path d="m22 2-11 11" />
+                </svg>
+              </button>
+            </div>
+          </footer>
+        </section>
       ) : (
         <div className="flex-1 overflow-y-auto rounded-3xl border border-neutral-100 bg-neutral-50 px-2 py-2 pr-1">
           <JobPreview jobState={jobState} />
