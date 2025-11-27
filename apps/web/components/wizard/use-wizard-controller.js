@@ -296,6 +296,9 @@ export function useWizardController({
   const currentStepIdRef = useRef(null);
   const previousFieldValuesRef = useRef({});
   const lastSuggestionSnapshotRef = useRef({});
+  const suggestionsCacheRef = useRef({});
+  const prefetchAbortRef = useRef(null);
+  const SUGGESTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
   const toastTimeoutRef = useRef(null);
   const draftPersistTimeoutRef = useRef(null);
   const hydrationKey = `${user?.id ?? "anon"}:${initialJobId ?? "new"}`;
@@ -1322,6 +1325,17 @@ useEffect(() => {
         return [fieldId, { __defined: true, value: deepClone(rawValue) }];
       });
       const snapshotKey = JSON.stringify(snapshotEntries);
+
+      const cachedEntry = suggestionsCacheRef.current[stepId];
+      const cacheIsValid = cachedEntry &&
+        cachedEntry.snapshotKey === snapshotKey &&
+        (Date.now() - cachedEntry.timestamp) < SUGGESTIONS_CACHE_TTL_MS;
+
+      if (!shouldForceFetch && cacheIsValid) {
+        debug("suggestions:cache-hit", { stepId, age: Date.now() - cachedEntry.timestamp });
+        return;
+      }
+
       if (
         !shouldForceFetch &&
         lastSuggestionSnapshotRef.current[stepId] === snapshotKey
@@ -1354,6 +1368,13 @@ useEffect(() => {
         });
 
         lastSuggestionSnapshotRef.current[stepId] = snapshotKey;
+
+        suggestionsCacheRef.current[stepId] = {
+          snapshotKey,
+          timestamp: Date.now(),
+          response,
+        };
+        debug("suggestions:cache-update", { stepId });
 
         const failure = response.failure;
         const visibleFieldSet = new Set(visibleFieldIds);
@@ -1516,15 +1537,21 @@ useEffect(() => {
         if (error?.name === "AbortError") {
           return;
         }
-        dispatch({
-          type: "PUSH_ASSISTANT_MESSAGE",
-          payload: {
-            id: `suggestion-error-${Date.now()}`,
-            role: "assistant",
-            kind: "error",
-            content: error?.message ?? "Failed to load suggestions.",
-          },
-        });
+
+        const isTimeout = error?.message?.includes("timed out");
+        debug("suggestions:error", { stepId, isTimeout, error: error?.message });
+
+        if (!isTimeout) {
+          dispatch({
+            type: "PUSH_ASSISTANT_MESSAGE",
+            payload: {
+              id: `suggestion-error-${Date.now()}`,
+              role: "assistant",
+              kind: "error",
+              content: error?.message ?? "Failed to load suggestions.",
+            },
+          });
+        }
       } finally {
         if (suggestionsAbortRef.current === controller) {
           suggestionsAbortRef.current = null;
@@ -1535,6 +1562,7 @@ useEffect(() => {
     [
       announceAuthRequired,
       currentStep?.id,
+      debug,
       steps,
       user,
       wizardState.autofilledFields,
@@ -1717,6 +1745,78 @@ useEffect(() => {
     []
   );
 
+  const prefetchSuggestionsForStep = useCallback(
+    async (targetStepId, jobId) => {
+      if (!user?.authToken || !targetStepId || !jobId) {
+        return;
+      }
+
+      if (prefetchAbortRef.current) {
+        prefetchAbortRef.current.abort();
+      }
+
+      const controller = new AbortController();
+      prefetchAbortRef.current = controller;
+
+      debug("suggestions:prefetch-start", { stepId: targetStepId, jobId });
+      dispatch({ type: "SET_SUGGESTIONS_LOADING", payload: true });
+
+      try {
+        const workingState = stateRef.current ?? {};
+        const targetStep = OPTIONAL_STEPS.find((step) => step.id === targetStepId);
+        if (!targetStep) {
+          dispatch({ type: "SET_SUGGESTIONS_LOADING", payload: false });
+          return;
+        }
+
+        const visibleFieldIds = targetStep.fields.map((field) => field.id);
+        const emptyFieldIds = targetStep.fields
+          .filter((field) => !isFieldValueProvided(getDeep(workingState, field.id), field))
+          .map((field) => field.id);
+
+        const response = await fetchStepSuggestions({
+          authToken: user.authToken,
+          jobId,
+          stepId: targetStepId,
+          state: workingState,
+          includeOptional: true,
+          intentOverrides: {},
+          emptyFieldIds,
+          upcomingFieldIds: [],
+          visibleFieldIds,
+          signal: controller.signal,
+        });
+
+        const snapshotEntries = visibleFieldIds.map((fieldId) => {
+          const rawValue = getDeep(workingState, fieldId);
+          if (rawValue === undefined) {
+            return [fieldId, { __defined: false }];
+          }
+          return [fieldId, { __defined: true, value: deepClone(rawValue) }];
+        });
+        const snapshotKey = JSON.stringify(snapshotEntries);
+
+        suggestionsCacheRef.current[targetStepId] = {
+          snapshotKey,
+          timestamp: Date.now(),
+          response,
+        };
+
+        debug("suggestions:prefetch-complete", { stepId: targetStepId });
+      } catch (error) {
+        if (error?.name !== "AbortError") {
+          debug("suggestions:prefetch-error", { stepId: targetStepId, error: error?.message });
+        }
+      } finally {
+        if (prefetchAbortRef.current === controller) {
+          prefetchAbortRef.current = null;
+        }
+        dispatch({ type: "SET_SUGGESTIONS_LOADING", payload: false });
+      }
+    },
+    [debug, user?.authToken]
+  );
+
   const handleNext = useCallback(async () => {
     if (wizardState.currentStepIndex >= steps.length - 1) {
       return;
@@ -1736,17 +1836,25 @@ useEffect(() => {
     }
 
     const stepId = currentStep?.id;
+    const nextIndex = wizardState.currentStepIndex + 1;
+    const nextStep = steps[nextIndex] ?? steps[steps.length - 1];
+    const isLastRequiredStep = wizardState.currentStepIndex === REQUIRED_STEPS.length - 1;
+    const firstOptionalStepId = OPTIONAL_STEPS[0]?.id;
+
+    if (isLastRequiredStep && firstOptionalStepId && wizardState.jobId) {
+      prefetchSuggestionsForStep(firstOptionalStepId, wizardState.jobId);
+    }
+
     const result = await persistCurrentDraft({}, stepId);
     if (!result) {
       return;
     }
 
-    const nextIndex = wizardState.currentStepIndex + 1;
-    const nextStep = steps[nextIndex] ?? steps[steps.length - 1];
     const shouldForceRefresh = !result.noChanges;
 
     goToStep(nextIndex);
-    await fetchSuggestionsForStep({
+
+    fetchSuggestionsForStep({
       stepId: nextStep?.id ?? stepId,
       intentOverrides: {
         ...result.intent,
@@ -1761,8 +1869,10 @@ useEffect(() => {
     goToStep,
     isCurrentStepRequired,
     persistCurrentDraft,
+    prefetchSuggestionsForStep,
     steps,
     wizardState.currentStepIndex,
+    wizardState.jobId,
   ]);
 
   const handleBack = useCallback(async () => {

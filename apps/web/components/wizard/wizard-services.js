@@ -37,6 +37,26 @@ export async function persistJobDraft({
   return result;
 }
 
+const SUGGESTIONS_TIMEOUT_MS = 8000;
+
+function withTimeout(promise, timeoutMs, timeoutMessage = "Request timed out") {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
+    promise
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 export async function fetchStepSuggestions({
   authToken,
   jobId,
@@ -50,8 +70,9 @@ export async function fetchStepSuggestions({
   visibleFieldIds = [],
   includeOptional,
   signal,
+  timeoutMs = SUGGESTIONS_TIMEOUT_MS,
 }) {
-  return WizardApi.fetchSuggestions(
+  const fetchPromise = WizardApi.fetchSuggestions(
     {
       state,
       currentStepId: stepId,
@@ -67,6 +88,12 @@ export async function fetchStepSuggestions({
       jobId,
       signal,
     }
+  );
+
+  return withTimeout(
+    fetchPromise,
+    timeoutMs,
+    "Suggestions request timed out. Please try again."
   );
 }
 

@@ -286,10 +286,28 @@ const PANEL_STYLE = {
   height: "calc(100vh - 48px)"
 };
 
+function SuggestionsLoadingIndicator() {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-primary-100 bg-primary-50/50 px-4 py-3 text-sm text-primary-700">
+      <div className="flex items-center gap-1">
+        {[0, 1, 2].map((index) => (
+          <span
+            key={index}
+            className="h-2 w-2 rounded-full bg-primary-400 animate-bounce"
+            style={{ animationDelay: `${index * 0.15}s` }}
+          />
+        ))}
+      </div>
+      <span className="text-xs font-medium">Loading suggestions...</span>
+    </div>
+  );
+}
+
 export function WizardSuggestionPanel({
   jobId,
   copilotConversation = [],
   isSending,
+  isFetchingSuggestions = false,
   onSendMessage,
   nextStepTeaser,
   jobState,
@@ -531,6 +549,11 @@ export function WizardSuggestionPanel({
               <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
                 Conversation
               </p>
+              {isFetchingSuggestions ? (
+                <div className="mt-2">
+                  <SuggestionsLoadingIndicator />
+                </div>
+              ) : null}
             </header>
             <div
               ref={scrollContainerRef}

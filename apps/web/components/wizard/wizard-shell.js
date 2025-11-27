@@ -143,6 +143,7 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
     visibleAssistantMessages,
     copilotConversation,
     isChatting,
+    isFetchingSuggestions,
     copilotNextTeaser,
     committedState,
     allRequiredStepsCompleteInState,
@@ -803,6 +804,7 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
         copilotConversation={copilotConversation}
         onSendMessage={handleSendMessage}
         isSending={isChatting}
+        isFetchingSuggestions={isFetchingSuggestions}
         nextStepTeaser={copilotNextTeaser}
         jobState={committedState}
         isJobTabEnabled
