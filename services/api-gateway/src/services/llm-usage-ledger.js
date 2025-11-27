@@ -10,7 +10,7 @@ const MILLION = 1_000_000;
 const DEBUG_TASKS = new Set([
   "image_generation",
   "image_prompt_generation",
-  "hero_image_caption",
+  "image_caption",
   "video_generation"
 ]);
 

@@ -6,7 +6,6 @@ const GEMINI_TASKS = [
   "suggest",
   "refine",
   "channels",
-  "channel_picker",
   "chat",
   "copilot_agent",
   "company_intel",
@@ -16,7 +15,7 @@ const GEMINI_TASKS = [
   "video_storyboard",
   "video_caption",
   "video_compliance",
-  "hero_image_caption",
+  "image_caption",
   "image_prompt_generation"
 ];
 

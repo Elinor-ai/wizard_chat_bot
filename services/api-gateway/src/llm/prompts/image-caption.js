@@ -46,8 +46,8 @@ export function buildImageCaptionPrompt(context = {}) {
 
   const serialized = JSON.stringify(payload, null, 2);
   llmLogger.info(
-    { task: "hero_image_caption", payloadSize: serialized.length },
-    "LLM hero image caption payload"
+    { task: "image_caption", payloadSize: serialized.length },
+    "LLM image caption payload"
   );
   return serialized;
 }

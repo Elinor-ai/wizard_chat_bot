@@ -2672,7 +2672,7 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
               negativePrompt: promptResult.negativePrompt ?? undefined,
               style: promptResult.style ?? undefined,
             }),
-            llmClient.askHeroImageCaption({
+            llmClient.askImageCaption({
               jobSnapshot: refinedSnapshot,
               companyContext: heroCompanyContext,
             }),
@@ -2727,7 +2727,7 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
             await trackLlmUsage(captionResult, {
               userId,
               jobId: payload.jobId,
-              taskType: "hero_image_caption",
+              taskType: "image_caption",
             });
             if (!captionResult.error) {
               captionResultData = {
@@ -2742,7 +2742,7 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
                   captionLength: captionResult.caption?.length ?? 0,
                   hashtagCount: captionResult.hashtags?.length ?? 0
                 },
-                "hero image caption outcome"
+                "image caption outcome"
               );
             } else {
               logger.warn(

@@ -88,9 +88,9 @@ async function askSuggestions(context) {
   }
 }
 
-async function askHeroImageCaption(context) {
+async function askImageCaption(context) {
   try {
-    const result = await orchestrator.run("hero_image_caption", context);
+    const result = await orchestrator.run("image_caption", context);
     if (result.error) {
       return {
         error: {
@@ -289,42 +289,6 @@ function buildChatFallback({ draftState }) {
   const title = draftState?.title ? ` about ${draftState.title}` : "";
   const location = draftState?.location ? ` in ${draftState.location}` : "";
   return `Understood. I'll take that into account${title}${location ? ` ${location}` : ""}.`;
-}
-
-async function askChannelPicker(context) {
-  try {
-    const result = await orchestrator.run("channel_picker", context);
-    if (result.error) {
-      return {
-        error: {
-          ...result.error,
-          provider: result.provider,
-          model: result.model,
-        },
-      };
-    }
-    return {
-      provider: result.provider,
-      model: result.model,
-      jobTitle: result.jobTitle ?? null,
-      geo: result.geo ?? null,
-      roleFamily: result.roleFamily ?? null,
-      topChannel: result.topChannel ?? null,
-      recommendedMedium: result.recommendedMedium ?? null,
-      copyHint: result.copyHint ?? null,
-      alternatives: result.alternatives ?? [],
-      complianceFlags: result.complianceFlags ?? [],
-      metadata: result.metadata ?? null,
-    };
-  } catch (error) {
-    llmLogger.warn({ err: error }, "askChannelPicker orchestrator failure");
-    return {
-      error: {
-        reason: "exception",
-        message: error?.message ?? String(error),
-      },
-    };
-  }
 }
 
 async function askAssetMaster(context) {
@@ -612,7 +576,6 @@ export const llmClient = {
   askChannelRecommendations,
   askRefineJob,
   askCompanyIntel,
-  askChannelPicker,
   askAssetMaster,
   askAssetChannelBatch,
   askAssetAdapt,
@@ -621,6 +584,6 @@ export const llmClient = {
   askVideoCompliance,
   runCopilotAgent,
   askHeroImagePrompt,
-  askHeroImageCaption,
+  askImageCaption,
   runImageGeneration
 };

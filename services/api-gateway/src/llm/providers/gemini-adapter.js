@@ -9,7 +9,15 @@ const require = createRequire(import.meta.url);
 const TOKEN_DEBUG_TASKS = new Set([
   "image_generation",
   "image_prompt_generation",
-  "hero_image_caption"
+  "image_caption"
+]);
+const GROUNDED_TASKS = new Set([
+  "suggest",
+  "copilot_agent",
+  "company_intel",
+  "video_storyboard",
+  "image_prompt_generation",
+  "image_caption"
 ]);
 
 export class GeminiAdapter {
@@ -146,6 +154,10 @@ export class GeminiAdapter {
       temperature,
       maxOutputTokens: maxTokens,
     };
+    if (taskType && GROUNDED_TASKS.has(taskType)) {
+      config.tools = [{ googleSearch: {} }];
+      config.toolConfig = { googleSearch: { mode: "AUTO" } };
+    }
 
     if (taskType === "image_generation") {
       config.responseModalities = ["TEXT", "IMAGE"];
