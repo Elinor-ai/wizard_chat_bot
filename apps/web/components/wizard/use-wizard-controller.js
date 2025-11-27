@@ -296,6 +296,8 @@ export function useWizardController({
   const currentStepIdRef = useRef(null);
   const previousFieldValuesRef = useRef({});
   const lastSuggestionSnapshotRef = useRef({});
+  const suggestionsCacheRef = useRef({});
+  const SUGGESTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
   const toastTimeoutRef = useRef(null);
   const draftPersistTimeoutRef = useRef(null);
   const hydrationKey = `${user?.id ?? "anon"}:${initialJobId ?? "new"}`;
@@ -1245,117 +1247,26 @@ useEffect(() => {
       updatedFieldId,
       updatedValue,
     } = {}) => {
-      if (!user || !stepId) {
-        if (!user) {
-          announceAuthRequired();
-        }
-        return;
-      }
-
-      const effectiveJobId = jobIdOverride ?? wizardState.jobId;
-      if (!effectiveJobId) {
-        return;
-      }
-
       const workingState = stateRef.current ?? {};
-      const targetStep =
-        steps.find((step) => step.id === stepId) ??
-        OPTIONAL_STEPS.find((step) => step.id === stepId) ??
-        REQUIRED_STEPS.find((step) => step.id === stepId) ??
-        null;
-
-      const emptyFieldIds = [];
-      if (targetStep) {
-        for (const field of targetStep.fields) {
-          const value = getDeep(workingState, field.id);
-          if (!isFieldValueProvided(value, field)) {
-            emptyFieldIds.push(field.id);
-          }
+      const applySuggestionResponse = (response, { source, refreshed, visibleFieldIds, snapshotKey }) => {
+        lastSuggestionSnapshotRef.current[stepId] = snapshotKey;
+        if (source !== "cache") {
+          suggestionsCacheRef.current[stepId] = {
+            snapshotKey,
+            timestamp: Date.now(),
+            response,
+          };
         }
-      }
 
-      const stepIndex = steps.findIndex((step) => step.id === stepId);
-      const upcomingFieldIds =
-        stepIndex === -1
-          ? []
-          : steps
-              .slice(stepIndex + 1)
-              .flatMap((step) => step.fields.map((field) => field.id));
-
-      const isOptionalStep = OPTIONAL_STEPS.some((step) => step.id === stepId);
-      if (!isOptionalStep) {
-        return;
-      }
-
-      const requiredComplete = REQUIRED_FIELD_IDS.every((fieldId) => {
-        const fieldDefinition = findFieldDefinition(fieldId);
-        return isFieldValueProvided(
-          getDeep(workingState, fieldId),
-          fieldDefinition
-        );
-      });
-
-      if (!requiredComplete) {
-        return;
-      }
-
-      if (suggestionsAbortRef.current) {
-        suggestionsAbortRef.current.abort();
-      }
-
-      const visibleFieldIds = targetStep
-        ? targetStep.fields.map((field) => field.id)
-        : [];
-      if (visibleFieldIds.length === 0) {
-        return;
-      }
-
-      const shouldForceFetch = Boolean(intentOverrides?.forceRefresh);
-      const snapshotEntries = visibleFieldIds.map((fieldId) => {
-        const rawValue =
-          fieldId === updatedFieldId
-            ? updatedValue
-            : getDeep(workingState, fieldId);
-        if (rawValue === undefined) {
-          return [fieldId, { __defined: false }];
-        }
-        return [fieldId, { __defined: true, value: deepClone(rawValue) }];
-      });
-      const snapshotKey = JSON.stringify(snapshotEntries);
-      if (
-        !shouldForceFetch &&
-        lastSuggestionSnapshotRef.current[stepId] === snapshotKey
-      ) {
-        return;
-      }
-
-      const controller = new AbortController();
-      suggestionsAbortRef.current = controller;
-      dispatch({ type: "SET_SUGGESTIONS_LOADING", payload: true });
-
-      try {
-        if (!user?.authToken) {
-          announceAuthRequired();
-          return;
-        }
-        const response = await fetchStepSuggestions({
-          authToken: user.authToken,
-          jobId: effectiveJobId,
+        debug("suggestions:response-received", {
           stepId,
-          state: workingState,
-          includeOptional: wizardState.includeOptional,
-          intentOverrides,
-          updatedFieldId,
-          updatedValue,
-          emptyFieldIds,
-          upcomingFieldIds,
-          visibleFieldIds,
-          signal: controller.signal,
+          suggestionsCount: response.suggestions?.length ?? 0,
+          refreshed: refreshed ?? response.refreshed,
+          failure: response.failure,
+          source,
         });
 
-        lastSuggestionSnapshotRef.current[stepId] = snapshotKey;
-
-        const failure = response.failure;
+        const failure = response.failure ?? null;
         const visibleFieldSet = new Set(visibleFieldIds);
         const suggestions = response.suggestions ?? [];
 
@@ -1404,6 +1315,15 @@ useEffect(() => {
               (fieldOrderIndex.get(a.fieldId) ?? Number.MAX_SAFE_INTEGER) -
               (fieldOrderIndex.get(b.fieldId) ?? Number.MAX_SAFE_INTEGER)
           );
+
+        debug("suggestions:processed", {
+          stepId,
+          rawCount: suggestions.length,
+          enrichedCount: enrichedSuggestions.length,
+          orderedCount: orderedSuggestions.length,
+          fieldIds: orderedSuggestions.map((s) => s.fieldId),
+          source,
+        });
 
         const nextAutofilledFields = deepClone(
           wizardState.autofilledFields
@@ -1512,19 +1432,169 @@ useEffect(() => {
               : "",
           },
         });
+      };
+
+      if (!user || !stepId) {
+        if (!user) {
+          announceAuthRequired();
+        }
+        return;
+      }
+
+      const effectiveJobId = jobIdOverride ?? wizardState.jobId;
+      if (!effectiveJobId) {
+        return;
+      }
+
+      const targetStep =
+        steps.find((step) => step.id === stepId) ??
+        OPTIONAL_STEPS.find((step) => step.id === stepId) ??
+        REQUIRED_STEPS.find((step) => step.id === stepId) ??
+        null;
+
+      const emptyFieldIds = [];
+      if (targetStep) {
+        for (const field of targetStep.fields) {
+          const value = getDeep(workingState, field.id);
+          if (!isFieldValueProvided(value, field)) {
+            emptyFieldIds.push(field.id);
+          }
+        }
+      }
+
+      const stepIndex = steps.findIndex((step) => step.id === stepId);
+      const upcomingFieldIds =
+        stepIndex === -1
+          ? []
+          : steps
+              .slice(stepIndex + 1)
+              .flatMap((step) => step.fields.map((field) => field.id));
+
+      const isOptionalStep = OPTIONAL_STEPS.some((step) => step.id === stepId);
+      if (!isOptionalStep) {
+        return;
+      }
+
+      const requiredComplete = REQUIRED_FIELD_IDS.every((fieldId) => {
+        const fieldDefinition = findFieldDefinition(fieldId);
+        return isFieldValueProvided(
+          getDeep(workingState, fieldId),
+          fieldDefinition
+        );
+      });
+
+      if (!requiredComplete) {
+        return;
+      }
+
+      if (suggestionsAbortRef.current) {
+        suggestionsAbortRef.current.abort();
+      }
+
+      const visibleFieldIds = targetStep
+        ? targetStep.fields.map((field) => field.id)
+        : [];
+      if (visibleFieldIds.length === 0) {
+        return;
+      }
+
+      const shouldForceFetch = Boolean(intentOverrides?.forceRefresh);
+      const snapshotEntries = visibleFieldIds.map((fieldId) => {
+        const rawValue =
+          fieldId === updatedFieldId
+            ? updatedValue
+            : getDeep(workingState, fieldId);
+        if (rawValue === undefined) {
+          return [fieldId, { __defined: false }];
+        }
+        return [fieldId, { __defined: true, value: deepClone(rawValue) }];
+      });
+      const snapshotKey = JSON.stringify(snapshotEntries);
+
+      const cachedEntry = suggestionsCacheRef.current[stepId];
+      const cacheMatchesSnapshot =
+        cachedEntry && cachedEntry.snapshotKey === snapshotKey;
+      const cacheAgeMs = cacheMatchesSnapshot
+        ? Date.now() - cachedEntry.timestamp
+        : Number.POSITIVE_INFINITY;
+      const cacheIsFresh =
+        cacheMatchesSnapshot && cacheAgeMs < SUGGESTIONS_CACHE_TTL_MS;
+
+      if (cacheMatchesSnapshot && cachedEntry?.response) {
+        applySuggestionResponse(cachedEntry.response, {
+          source: "cache",
+          refreshed: cachedEntry.response?.refreshed,
+          visibleFieldIds,
+          snapshotKey,
+        });
+        debug("suggestions:cache-primed", {
+          stepId,
+          age: cacheAgeMs,
+          fresh: cacheIsFresh,
+        });
+      }
+
+      if (!shouldForceFetch && cacheIsFresh) {
+        debug("suggestions:cache-hit", { stepId, age: cacheAgeMs });
+        return;
+      }
+
+      const controller = new AbortController();
+      suggestionsAbortRef.current = controller;
+      dispatch({ type: "SET_SUGGESTIONS_LOADING", payload: true });
+
+      debug("suggestions:fetch-start", {
+        stepId,
+        jobId: effectiveJobId,
+        visibleFieldIds,
+        emptyFieldIds,
+      });
+
+      try {
+        if (!user?.authToken) {
+          announceAuthRequired();
+          return;
+        }
+        const response = await fetchStepSuggestions({
+          authToken: user.authToken,
+          jobId: effectiveJobId,
+          stepId,
+          state: workingState,
+          includeOptional: wizardState.includeOptional,
+          intentOverrides,
+          updatedFieldId,
+          updatedValue,
+          emptyFieldIds,
+          upcomingFieldIds,
+          visibleFieldIds,
+          signal: controller.signal,
+        });
+
+        applySuggestionResponse(response, {
+          source: "network",
+          refreshed: response.refreshed,
+          visibleFieldIds,
+          snapshotKey,
+        });
       } catch (error) {
         if (error?.name === "AbortError") {
           return;
         }
-        dispatch({
-          type: "PUSH_ASSISTANT_MESSAGE",
-          payload: {
-            id: `suggestion-error-${Date.now()}`,
-            role: "assistant",
-            kind: "error",
-            content: error?.message ?? "Failed to load suggestions.",
-          },
-        });
+
+        const isTimeout = error?.message?.includes("timed out");
+        debug("suggestions:error", { stepId, isTimeout, error: error?.message });
+
+        if (!isTimeout) {
+          dispatch({
+            type: "PUSH_ASSISTANT_MESSAGE",
+            payload: {
+              id: `suggestion-error-${Date.now()}`,
+              role: "assistant",
+              kind: "error",
+              content: error?.message ?? "Failed to load suggestions.",
+            },
+          });
+        }
       } finally {
         if (suggestionsAbortRef.current === controller) {
           suggestionsAbortRef.current = null;
@@ -1535,6 +1605,7 @@ useEffect(() => {
     [
       announceAuthRequired,
       currentStep?.id,
+      debug,
       steps,
       user,
       wizardState.autofilledFields,
@@ -1736,17 +1807,62 @@ useEffect(() => {
     }
 
     const stepId = currentStep?.id;
+    const nextIndex = wizardState.currentStepIndex + 1;
+    const nextStep = steps[nextIndex] ?? steps[steps.length - 1];
+    const existingJobId = wizardState.jobId;
+
+    // Optimization: If jobId already exists, navigate and fetch suggestions immediately
+    // while persisting in the background. This reduces perceived latency significantly.
+    if (existingJobId) {
+      debug("handleNext:parallel-mode", {
+        currentStepId: stepId,
+        nextStepId: nextStep?.id,
+        jobId: existingJobId,
+      });
+
+      // Navigate immediately
+      goToStep(nextIndex);
+
+      // Fire suggestions fetch immediately (non-blocking)
+      fetchSuggestionsForStep({
+        stepId: nextStep?.id ?? stepId,
+        intentOverrides: {
+          includeOptional: wizardState.includeOptional,
+        },
+        jobIdOverride: existingJobId,
+      });
+
+      // Persist in background (don't block on this)
+      persistCurrentDraft({}, stepId).catch((err) => {
+        debug("handleNext:background-persist-error", err?.message);
+      });
+
+      return;
+    }
+
+    // If no jobId exists, we must persist first to create one
+    debug("handleNext:sequential-mode", {
+      currentStepId: stepId,
+      nextStepId: nextStep?.id,
+      reason: "no-job-id",
+    });
+
     const result = await persistCurrentDraft({}, stepId);
     if (!result) {
       return;
     }
 
-    const nextIndex = wizardState.currentStepIndex + 1;
-    const nextStep = steps[nextIndex] ?? steps[steps.length - 1];
     const shouldForceRefresh = !result.noChanges;
 
     goToStep(nextIndex);
-    await fetchSuggestionsForStep({
+
+    debug("handleNext:fetchSuggestions", {
+      nextStepId: nextStep?.id,
+      shouldForceRefresh,
+      jobId: result.savedId,
+    });
+
+    fetchSuggestionsForStep({
       stepId: nextStep?.id ?? stepId,
       intentOverrides: {
         ...result.intent,
@@ -1757,12 +1873,15 @@ useEffect(() => {
   }, [
     currentRequiredStepCompleteInState,
     currentStep?.id,
+    debug,
     fetchSuggestionsForStep,
     goToStep,
     isCurrentStepRequired,
     persistCurrentDraft,
     steps,
     wizardState.currentStepIndex,
+    wizardState.includeOptional,
+    wizardState.jobId,
   ]);
 
   const handleBack = useCallback(async () => {

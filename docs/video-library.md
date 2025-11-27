@@ -39,12 +39,12 @@ Environment variables (see root `.env` template):
 | `VIDEO_USE_FAST_FOR_DRAFTS`     | `true`                               | Use Fast tier until an operator requests a final render.                                        |
 | `VEO_STANDARD_PRICE_PER_SECOND` | `0.40`                               | Used for cost estimates/logging.                                                                |
 | `VEO_FAST_PRICE_PER_SECOND`     | `0.15`                               | Draft tier cost estimate.                                                                       |
-| `VEO_DOWNLOAD_TIMEOUT_MS`       | `45000`                              | Abort Veo asset downloads after this many ms.                                                   |
+| `VEO_DOWNLOAD_TIMEOUT_MS`       | `60000`                              | Abort Veo asset downloads after this many ms.                                                   |
 | `VEO_DOWNLOAD_RETRIES`          | `3`                                  | Attempts per asset (video/poster) before surfacing an error.                                    |
 | `LLM_VIDEO_PROVIDER`            | inherits from asset provider         | Controls model/provider for storyboard/caption/compliance tasks; reuses OpenAI/Gemini adapters. |
 | `SORA_BASE_URL`                 | _(empty)_                            | Optional override for OpenAI Sora base URL used by `sora-client`.                               |
 | `SORA_API_TOKEN`                | _(empty)_                            | Bearer token for the Sora API when selecting the Sora renderer.                                 |
-| `SORA_TIMEOUT_MS`               | `45000`                              | Request timeout applied inside `sora-client`; mirrors server defaults.                          |
+| `SORA_TIMEOUT_MS`               | `60000`                              | Request timeout applied inside `sora-client`; mirrors server defaults.                          |
 
 All endpoints sit behind `/videos/*` and require the same bearer token as the rest of the dashboard.
 
