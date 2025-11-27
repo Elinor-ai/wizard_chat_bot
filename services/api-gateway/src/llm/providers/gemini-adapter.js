@@ -4,6 +4,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { GoogleGenAI } from "@google/genai";
 import { llmLogger } from "../logger.js";
+import { logRawTraffic } from "../raw-traffic-logger.js";
 
 const require = createRequire(import.meta.url);
 const TOKEN_DEBUG_TASKS = new Set([
@@ -178,7 +179,8 @@ export class GeminiAdapter {
     }
 
     if (taskType === "image_generation") {
-      config.responseModalities = ["TEXT", "IMAGE"];
+      // Request only image outputs to avoid billed "thought" text
+      config.responseModalities = ["IMAGE"];
     }
 
     if (systemText) {
@@ -190,8 +192,24 @@ export class GeminiAdapter {
     }
 
     let response;
+    const requestContext = {
+      task: taskType ?? "unknown",
+      provider: "vertex-ai-genai",
+      model
+    };
     try {
       if (taskType === "image_generation" && typeof client?.images?.generate === "function") {
+        const imageRequest = {
+          model,
+          prompt: contents,
+          ...(imagePayload?.size ? { size: imagePayload.size } : {}),
+          ...(imagePayload?.aspect_ratio ? { aspectRatio: imagePayload.aspect_ratio } : {})
+        };
+        await logRawTraffic({
+          taskId: taskType ?? "image_generation",
+          direction: "REQUEST",
+          payload: imageRequest
+        });
         llmLogger.info(
           {
             provider: "vertex-ai-genai",
@@ -203,18 +221,19 @@ export class GeminiAdapter {
           },
           "GeminiAdapter image_generation using images.generate"
         );
-        response = await client.images.generate({
-          model,
-          prompt: contents,
-          ...(imagePayload?.size ? { size: imagePayload.size } : {}),
-          ...(imagePayload?.aspect_ratio ? { aspectRatio: imagePayload.aspect_ratio } : {})
-        });
+        response = await client.images.generate(imageRequest);
       } else {
-        response = await client.models.generateContent({
+        const textRequest = {
           model,
           contents,
           config,
+        };
+        await logRawTraffic({
+          taskId: taskType ?? "text",
+          direction: "REQUEST",
+          payload: textRequest
         });
+        response = await client.models.generateContent(textRequest);
       }
     } catch (error) {
       llmLogger.error(
@@ -231,6 +250,11 @@ export class GeminiAdapter {
 
     // Handle image generation separately
     if (taskType === "image_generation") {
+      await logRawTraffic({
+        taskId: taskType ?? "image_generation",
+        direction: "RESPONSE",
+        payload: response
+      });
       const sanitizeBase64 = (payload) => {
         if (!payload || typeof payload !== "object") return payload;
         const clone = Array.isArray(payload) ? [...payload] : { ...payload };
@@ -345,6 +369,7 @@ export class GeminiAdapter {
         ? {
             promptTokens: usage.promptTokenCount ?? null,
             responseTokens: usage.candidatesTokenCount ?? null,
+            thoughtsTokens: usage.thoughtsTokenCount ?? null,
             totalTokens: usage.totalTokenCount ?? null,
             finishReason: candidate?.finishReason ?? null,
           }
@@ -356,6 +381,12 @@ export class GeminiAdapter {
         metadata,
       };
     }
+
+    await logRawTraffic({
+      taskId: taskType ?? "text",
+      direction: "RESPONSE",
+      payload: response
+    });
 
     const text = (response?.text || "").trim();
 
@@ -394,10 +425,18 @@ export class GeminiAdapter {
     }
 
     const usage = response?.usageMetadata;
+    const thoughtTokens = usage?.thoughtsTokenCount ?? 0;
+    const candidateTokens = usage?.candidatesTokenCount ?? null;
+    const responseTokenSum =
+      (typeof candidateTokens === "number" ? candidateTokens : 0) +
+      (typeof thoughtTokens === "number" ? thoughtTokens : 0);
     const metadata = usage
       ? {
           promptTokens: usage.promptTokenCount ?? null,
-          responseTokens: usage.candidatesTokenCount ?? null,
+          responseTokens: Number.isFinite(responseTokenSum)
+            ? responseTokenSum
+            : candidateTokens ?? null,
+          thoughtsTokens: thoughtTokens || null,
           totalTokens: usage.totalTokenCount ?? null,
           finishReason: response?.candidates?.[0]?.finishReason ?? null,
         }

@@ -13,6 +13,7 @@ export const LlmUsageEntrySchema = z.object({
   inputTokens: z.number().int().min(0).default(0),
   outputTokens: z.number().int().min(0).default(0),
   totalTokens: z.number().int().min(0).default(0),
+  thoughtsTokens: z.number().int().min(0).default(0),
   cachedTokens: z.number().int().min(0).default(0),
   inputCostPerMillionUsd: z.number().nonnegative().optional(),
   outputCostPerMillionUsd: z.number().nonnegative().optional(),
