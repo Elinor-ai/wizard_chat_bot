@@ -31,18 +31,20 @@ export class GeminiAdapter {
       );
     }
 
-   
     this.defaultLocation = location || "global";
     this.projectId = projectId;
 
     this.clientsByLocation = new Map();
   }
 
- 
   getClientForModel(model) {
     let effectiveLocation = this.defaultLocation || "global";
 
-    if (model && model.startsWith("gemini-3-") && effectiveLocation !== "global") {
+    if (
+      model &&
+      model.startsWith("gemini-3-") &&
+      effectiveLocation !== "global"
+    ) {
       llmLogger.warn(
         {
           requestedLocation: this.defaultLocation,
@@ -62,7 +64,7 @@ export class GeminiAdapter {
       vertexai: true,
       project: this.projectId,
       location: effectiveLocation,
-      apiVersion: "v1", 
+      apiVersion: "v1",
     });
 
     this.clientsByLocation.set(effectiveLocation, client);
@@ -76,17 +78,6 @@ export class GeminiAdapter {
     return system || user || "";
   }
 
-  /**
-   * invoke – נקודת החיבור עם ה-LLM Orchestrator
-   *
-   * params:
-   *   model        - string, למשל "gemini-3-pro-preview" או "gemini-2.5-pro"
-   *   system       - system prompt (אופציונלי)
-   *   user         - user prompt
-   *   mode         - "text" | "json"
-   *   temperature  - מספר, ברירת מחדל 0.2
-   *   maxTokens    - מספר, ברירת מחדל 800
-   */
   async invoke({
     model,
     system,
@@ -99,12 +90,13 @@ export class GeminiAdapter {
     const systemText = (system || "").trim();
 
     if (!userText && !systemText) {
-      throw new Error("Gemini adapter requires at least a user or system prompt");
+      throw new Error(
+        "Gemini adapter requires at least a user or system prompt"
+      );
     }
 
     const client = this.getClientForModel(model);
 
-    // ב-GenAI SDK אפשר להעביר פשוט string ב-contents
     const contents = userText || systemText;
 
     const config = {
@@ -112,7 +104,6 @@ export class GeminiAdapter {
       maxOutputTokens: maxTokens,
     };
 
-    // אם יש system – נשים אותו בשדה המובנה
     if (systemText) {
       config.systemInstruction = systemText;
     }
@@ -144,8 +135,7 @@ export class GeminiAdapter {
     const text = (response?.text || "").trim();
 
     if (!text) {
-      const finishReason =
-        response?.candidates?.[0]?.finishReason ?? null;
+      const finishReason = response?.candidates?.[0]?.finishReason ?? null;
       llmLogger.warn(
         {
           provider: "vertex-ai-genai",
@@ -164,7 +154,6 @@ export class GeminiAdapter {
     if (mode === "json") {
       try {
         let jsonStr = text.trim();
-        // להוריד ```json ``` אם קיים
         const fenceRegex = /^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/;
         const match = jsonStr.match(fenceRegex);
         if (match && match[1]) {
@@ -176,7 +165,6 @@ export class GeminiAdapter {
           { model, textPreview: text.slice(0, 200) },
           "Failed to parse JSON from Gemini response"
         );
-        // נשאיר json=null, והקורא יכול להחליט מה לעשות
       }
     }
 

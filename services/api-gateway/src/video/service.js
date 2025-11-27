@@ -125,6 +125,7 @@ function resolveRenderProvider(item) {
 
 export function createVideoLibraryService({
   firestore,
+  bigQuery,
   llmClient,
   renderer,
   publisherRegistry,
@@ -133,6 +134,7 @@ export function createVideoLibraryService({
   const usageTracker = ({ result, usageContext }) =>
     recordLlmUsageFromResult({
       firestore,
+      bigQuery,
       logger,
       usageContext,
       result,

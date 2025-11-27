@@ -27,7 +27,7 @@ const corsConfig = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-export function createApp({ logger, firestore, llmClient }) {
+export function createApp({ logger, firestore, bigQuery, llmClient }) {
   const app = express();
 
   app.use(cors(corsConfig));
@@ -51,37 +51,52 @@ export function createApp({ logger, firestore, llmClient }) {
     express.static(videoAssetDir, { fallthrough: true, maxAge: "5m" })
   );
 
+  app.locals.firestore = firestore;
+  app.locals.bigQuery = bigQuery;
+
   const authMiddleware = requireAuth({ logger });
 
-  app.use("/auth", authRouter({ firestore, logger }));
+  app.use("/auth", authRouter({ firestore, bigQuery, logger }));
   app.use("/contact", contactRouter({ logger }));
   app.use(
     "/wizard/copilot",
     authMiddleware,
-    copilotRouter({ firestore, llmClient, logger })
+    copilotRouter({ firestore, bigQuery, llmClient, logger })
   );
   app.use(
     "/wizard",
     authMiddleware,
-    wizardRouter({ firestore, logger, llmClient })
+    wizardRouter({ firestore, bigQuery, logger, llmClient })
   );
   app.use(
     "/chat",
     authMiddleware,
-    chatRouter({ firestore, llmClient, logger })
+    chatRouter({ firestore, bigQuery, llmClient, logger })
   );
-  app.use("/assets", authMiddleware, assetsRouter({ firestore, logger }));
+  app.use(
+    "/assets",
+    authMiddleware,
+    assetsRouter({ firestore, bigQuery, logger })
+  );
   app.use(
     "/videos",
     authMiddleware,
-    videosRouter({ firestore, llmClient, logger })
+    videosRouter({ firestore, bigQuery, llmClient, logger })
   );
-  app.use("/dashboard", authMiddleware, dashboardRouter({ firestore, logger }));
-  app.use("/users", authMiddleware, usersRouter({ firestore, logger }));
+  app.use(
+    "/dashboard",
+    authMiddleware,
+    dashboardRouter({ firestore, bigQuery, logger })
+  );
+  app.use(
+    "/users",
+    authMiddleware,
+    usersRouter({ firestore, bigQuery, logger })
+  );
   app.use(
     "/companies",
     authMiddleware,
-    companiesRouter({ firestore, logger, llmClient })
+    companiesRouter({ firestore, bigQuery, logger, llmClient })
   );
   const publicSubscriptionsRouter = express.Router();
   publicSubscriptionsRouter.get("/plans", (req, res, next) => {
@@ -101,7 +116,7 @@ export function createApp({ logger, firestore, llmClient }) {
   app.use(
     "/subscriptions",
     authMiddleware,
-    subscriptionsRouter({ firestore, logger })
+    subscriptionsRouter({ firestore, bigQuery, logger })
   );
 
   app.use(notFound);

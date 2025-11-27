@@ -1689,7 +1689,13 @@ async function markEnrichmentFailed({ firestore, companyId, reason, message }) {
   });
 }
 
-export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, company }) {
+export async function runCompanyEnrichmentOnce({
+  firestore,
+  bigQuery,
+  logger,
+  llmClient,
+  company
+}) {
   if (!company?.id) {
     throw new Error("Company context required for enrichment");
   }
@@ -1794,6 +1800,7 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
   });
   await recordLlmUsageFromResult({
     firestore,
+    bigQuery,
     logger,
     usageContext: {
       userId: company.createdByUserId ?? null,
@@ -2127,7 +2134,7 @@ export async function runCompanyEnrichmentOnce({ firestore, logger, llmClient, c
   return { jobs };
 }
 
-export async function retryStuckEnrichments({ firestore, logger, llmClient }) {
+export async function retryStuckEnrichments({ firestore, bigQuery, logger, llmClient }) {
   if (!firestore || !logger || !llmClient) {
     throw new Error("firestore, logger, and llmClient are required");
   }
@@ -2161,6 +2168,7 @@ export async function retryStuckEnrichments({ firestore, logger, llmClient }) {
       const fresh = (await firestore.getDocument("companies", record.id)) ?? record;
       await runCompanyEnrichmentOnce({
         firestore,
+        bigQuery,
         logger,
         llmClient,
         company: fresh
