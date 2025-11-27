@@ -37,7 +37,7 @@ export async function persistJobDraft({
   return result;
 }
 
-const SUGGESTIONS_TIMEOUT_MS = 8000;
+const SUGGESTIONS_TIMEOUT_MS = 60000;
 
 function withTimeout(promise, timeoutMs, timeoutMessage = "Request timed out") {
   return new Promise((resolve, reject) => {

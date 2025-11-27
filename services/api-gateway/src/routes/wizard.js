@@ -1834,8 +1834,13 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
   router.post(
     "/suggestions",
     wrapAsync(async (req, res) => {
+      const requestStarted = Date.now();
       const userId = getAuthenticatedUserId(req);
       const payload = suggestionsRequestSchema.parse(req.body ?? {});
+      logger.info(
+        { jobId: payload.jobId, currentStepId: payload.currentStepId },
+        "wizard:suggestions:start"
+      );
 
       const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
       if (!job) {
@@ -1849,12 +1854,24 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
         now,
       });
       const progress = computeRequiredProgress(mergedJob);
+      const finishLog = (extra = {}) => {
+        logger.info(
+          {
+            jobId: payload.jobId,
+            durationMs: Date.now() - requestStarted,
+            refreshed: extra.refreshed ?? false,
+            failure: extra.failureReason ?? null,
+          },
+          "wizard:suggestions:finish"
+        );
+      };
 
       if (!progress.allComplete) {
         logger.info(
           { jobId: payload.jobId, currentStepId: payload.currentStepId },
           "Suggestions requested before required intake completed"
         );
+        finishLog({ refreshed: false });
         return res.json({
           jobId: payload.jobId,
           suggestions: [],
@@ -1873,22 +1890,43 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
             ? payload.emptyFieldIds
             : [];
 
-      let suggestionDoc = await loadSuggestionDocument(
-        firestore,
-        payload.jobId
-      );
-      const companyContext = await loadCompanyContext({
-        firestore,
-        companyId: job.companyId ?? null,
-        taskType: "wizard_suggestions",
-        logger,
-      });
+      const [suggestionDoc, companyContext] = await Promise.all([
+        loadSuggestionDocument(firestore, payload.jobId),
+        loadCompanyContext({
+          firestore,
+          companyId: job.companyId ?? null,
+          taskType: "wizard_suggestions",
+          logger,
+        }),
+      ]);
       const shouldRefresh =
         !suggestionDoc ||
         payload.intent?.forceRefresh === true ||
         (payload.updatedFieldId && payload.updatedFieldValue !== undefined);
 
       let refreshed = false;
+      let responseCandidates = suggestionDoc?.candidates ?? {};
+      let failure = suggestionDoc?.lastFailure ?? null;
+      let updatedAt = suggestionDoc?.updatedAt ?? null;
+
+      const respondWith = ({ candidatesMap, failurePayload, refreshedFlag }) => {
+        const suggestions = selectSuggestionsForFields(
+          candidatesMap ?? {},
+          visibleFieldIds
+        );
+
+        res.json({
+          jobId: payload.jobId,
+          suggestions,
+          updatedAt,
+          refreshed: refreshedFlag,
+          failure: failurePayload ?? null,
+        });
+        finishLog({
+          refreshed: refreshedFlag,
+          failureReason: failurePayload?.reason ?? null,
+        });
+      };
 
       if (shouldRefresh && llmClient?.askSuggestions) {
         const llmPayload = {
@@ -1904,62 +1942,91 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
         };
 
         const llmResult = await llmClient.askSuggestions(llmPayload);
-        await trackLlmUsage(llmResult, {
-          userId,
-          jobId: payload.jobId,
-          taskType: "wizard_suggestions",
-        });
+        refreshed = true;
+
         if (llmResult?.candidates?.length > 0) {
-          suggestionDoc = await overwriteSuggestionDocument({
-            firestore,
-            logger,
-            jobId: payload.jobId,
-            companyId: mergedJob.companyId ?? null,
-            candidates: llmResult.candidates,
-            provider: llmResult.provider,
-            model: llmResult.model,
-            metadata: llmResult.metadata,
-            now,
+          responseCandidates = mapCandidatesByField(llmResult.candidates);
+          failure = null;
+          updatedAt = now;
+          respondWith({
+            candidatesMap: responseCandidates,
+            failurePayload: failure,
+            refreshedFlag: true,
           });
-          refreshed = true;
-        } else if (llmResult?.error) {
-          suggestionDoc = await persistSuggestionFailure({
-            firestore,
-            logger,
-            jobId: payload.jobId,
-            companyId: mergedJob.companyId ?? null,
-            reason: llmResult.error.reason ?? "unknown_error",
-            rawPreview: llmResult.error.rawPreview ?? null,
-            error: llmResult.error.message ?? null,
-            now,
+          Promise.allSettled([
+            trackLlmUsage(llmResult, {
+              userId,
+              jobId: payload.jobId,
+              taskType: "wizard_suggestions",
+            }),
+            overwriteSuggestionDocument({
+              firestore,
+              logger,
+              jobId: payload.jobId,
+              companyId: mergedJob.companyId ?? null,
+              candidates: llmResult.candidates,
+              provider: llmResult.provider,
+              model: llmResult.model,
+              metadata: llmResult.metadata,
+              now,
+            }),
+          ]).catch((error) => {
+            logger.warn(
+              { jobId: payload.jobId, err: error },
+              "wizard:suggestions:persist-error"
+            );
           });
-          refreshed = true;
-        } else {
-          suggestionDoc = await persistSuggestionFailure({
-            firestore,
-            logger,
-            jobId: payload.jobId,
-            companyId: mergedJob.companyId ?? null,
-            reason: "no_suggestions",
-            rawPreview: null,
-            error: "LLM returned no candidates",
-            now,
-          });
-          refreshed = true;
+          return;
         }
+
+        const failureReason = llmResult?.error?.reason ?? "no_suggestions";
+        failure = llmResult?.error
+          ? {
+              reason: failureReason,
+              rawPreview: llmResult.error.rawPreview ?? null,
+              error: llmResult.error.message ?? null,
+            }
+          : {
+              reason: "no_suggestions",
+              rawPreview: null,
+              error: "LLM returned no candidates",
+            };
+
+        respondWith({
+          candidatesMap: responseCandidates,
+          failurePayload: failure,
+          refreshedFlag: true,
+        });
+
+        Promise.allSettled([
+          trackLlmUsage(llmResult, {
+            userId,
+            jobId: payload.jobId,
+            taskType: "wizard_suggestions",
+          }),
+          persistSuggestionFailure({
+            firestore,
+            logger,
+            jobId: payload.jobId,
+            companyId: mergedJob.companyId ?? null,
+            reason: failure.reason ?? "unknown_error",
+            rawPreview: failure.rawPreview ?? null,
+            error: failure.error ?? null,
+            now,
+          }),
+        ]).catch((error) => {
+          logger.warn(
+            { jobId: payload.jobId, err: error },
+            "wizard:suggestions:persist-error"
+          );
+        });
+        return;
       }
 
-      const suggestions = selectSuggestionsForFields(
-        suggestionDoc?.candidates ?? {},
-        visibleFieldIds
-      );
-
-      res.json({
-        jobId: payload.jobId,
-        suggestions,
-        updatedAt: suggestionDoc?.updatedAt ?? null,
+      respondWith({
+        candidatesMap: responseCandidates,
+        failurePayload: failure,
         refreshed,
-        failure: suggestionDoc?.lastFailure ?? null,
       });
     })
   );

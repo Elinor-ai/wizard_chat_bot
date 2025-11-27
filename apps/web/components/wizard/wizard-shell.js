@@ -325,6 +325,23 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
           </div>
         ) : null}
 
+        {isFetchingSuggestions ? (
+          <div className="flex items-center gap-3 rounded-xl border border-primary-200 bg-gradient-to-r from-primary-50 to-white px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-1">
+              {[0, 1, 2].map((index) => (
+                <span
+                  key={index}
+                  className="h-2.5 w-2.5 rounded-full bg-primary-500 animate-bounce"
+                  style={{ animationDelay: `${index * 0.15}s` }}
+                />
+              ))}
+            </div>
+            <span className="text-sm font-medium text-primary-700">
+              Generating smart suggestions for you...
+            </span>
+          </div>
+        ) : null}
+
         {currentStep ? (
           <form className="grid gap-4">
             {currentStep.fields.map((field) => {
@@ -804,7 +821,6 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
         copilotConversation={copilotConversation}
         onSendMessage={handleSendMessage}
         isSending={isChatting}
-        isFetchingSuggestions={isFetchingSuggestions}
         nextStepTeaser={copilotNextTeaser}
         jobState={committedState}
         isJobTabEnabled
