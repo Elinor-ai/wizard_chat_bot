@@ -116,6 +116,27 @@ const DEFAULT_REFINE_INSIGHTS = {
   ],
 };
 
+function calculateInterestLift(
+  improvementScore,
+  originalScore,
+  fallback = DEFAULT_REFINE_INSIGHTS.interestLift
+) {
+  const base = Number(originalScore);
+  const improved = Number(improvementScore);
+  if (!Number.isFinite(base) || !Number.isFinite(improved) || base <= 0) {
+    return fallback;
+  }
+  const delta = improved - base;
+  if (delta <= 0) {
+    return "+0%";
+  }
+  const lift = Math.round((delta / base) * 100);
+  if (!Number.isFinite(lift) || lift <= 0) {
+    return "+0%";
+  }
+  return `+${lift}%`;
+}
+
 const DIFF_FIELD_CONFIG = [
   {
     id: "roleTitle",
@@ -256,19 +277,18 @@ function deriveInsights(metadata, fallbackSummary) {
         (item) => typeof item === "string" && item.trim().length > 0
       )
     : DEFAULT_REFINE_INSIGHTS.keyImprovements;
+  const improvementScore =
+    source.improvementScore ??
+    metadata.improvementScore ??
+    DEFAULT_REFINE_INSIGHTS.improvementScore;
+  const originalScore =
+    source.originalScore ??
+    metadata.originalScore ??
+    DEFAULT_REFINE_INSIGHTS.originalScore;
   return {
-    improvementScore:
-      source.improvementScore ??
-      metadata.improvementScore ??
-      DEFAULT_REFINE_INSIGHTS.improvementScore,
-    originalScore:
-      source.originalScore ??
-      metadata.originalScore ??
-      DEFAULT_REFINE_INSIGHTS.originalScore,
-    interestLift:
-      source.ctrPrediction ??
-      metadata.ctrPrediction ??
-      DEFAULT_REFINE_INSIGHTS.interestLift,
+    improvementScore,
+    originalScore,
+    interestLift: calculateInterestLift(improvementScore, originalScore),
     impactSummary:
       source.impactSummary ??
       metadata.impactSummary ??
@@ -1766,9 +1786,11 @@ export default function RefineJobPage() {
   const [isRefining, setIsRefining] = useState(true);
   const [refineError, setRefineError] = useState(null);
   const [summary, setSummary] = useState("");
+  const [job, setJob] = useState(null);
   const [refinementInsights, setRefinementInsights] = useState(
     DEFAULT_REFINE_INSIGHTS
   );
+  const [jobMetadata, setJobMetadata] = useState(null);
   const [originalDraft, setOriginalDraft] = useState(DEFAULT_JOB_STATE);
   const [refinedDraft, setRefinedDraft] = useState(DEFAULT_JOB_STATE);
   const [userDraftSnapshot, setUserDraftSnapshot] = useState(DEFAULT_JOB_STATE);
@@ -1983,6 +2005,31 @@ export default function RefineJobPage() {
     [normalizedRefinedJob]
   );
   const chatTeaser = copilotError ?? (currentStep === "refine" ? summary : "");
+  const optimizationInsights = useMemo(() => {
+    const jobImprovementScore = job?.metadata?.improvementScore ?? null;
+    const jobOriginalScore = job?.metadata?.originalScore ?? null;
+    const improvementScore =
+      jobImprovementScore ??
+      jobMetadata?.improvementScore ??
+      refinementInsights?.improvementScore ??
+      DEFAULT_REFINE_INSIGHTS.improvementScore;
+    const originalScore =
+      jobOriginalScore ??
+      jobMetadata?.originalScore ??
+      refinementInsights?.originalScore ??
+      DEFAULT_REFINE_INSIGHTS.originalScore;
+    const interestLift = calculateInterestLift(
+      improvementScore,
+      originalScore,
+      refinementInsights?.interestLift ?? DEFAULT_REFINE_INSIGHTS.interestLift
+    );
+    return {
+      ...refinementInsights,
+      improvementScore,
+      originalScore,
+      interestLift,
+    };
+  }, [job, jobMetadata, refinementInsights]);
   const heroImageStatus = heroImage?.status ?? "IDLE";
   const heroImageInFlight =
     isHeroImageLoading || ["PROMPTING", "GENERATING"].includes(heroImageStatus);
@@ -2215,6 +2262,10 @@ export default function RefineJobPage() {
           jobId,
         });
         if (cancelled) return;
+        setJob(response ?? null);
+        if (response && "metadata" in response) {
+          setJobMetadata(response.metadata ?? null);
+        }
         const normalizedState = normaliseJobDraft(response?.state ?? {});
         setUserDraftSnapshot(normalizedState);
         const nextLogoFromState = normalizeLogoUrl(response?.state?.logoUrl);
@@ -2294,6 +2345,7 @@ export default function RefineJobPage() {
         setRefinementInsights(
           deriveInsights(response.metadata, response.summary)
         );
+        setJobMetadata(response.metadata ?? null);
         setViewMode("refined");
         if (response.failure) {
           setRefineError(
@@ -2715,10 +2767,10 @@ export default function RefineJobPage() {
         ? summary
         : "Listings with transparent salary ranges receive up to 40% more applications from qualified candidates.";
     const liftValue =
-      typeof refinementInsights.interestLift === "string" &&
-      refinementInsights.interestLift.length > 0
-        ? refinementInsights.interestLift
-        : "+15%";
+      typeof optimizationInsights.interestLift === "string" &&
+      optimizationInsights.interestLift.length > 0
+        ? optimizationInsights.interestLift
+        : DEFAULT_REFINE_INSIGHTS.interestLift;
     return (
       <div className="space-y-6">
         <StepProgress
@@ -2774,7 +2826,7 @@ export default function RefineJobPage() {
 
               <div className="grid gap-6 lg:grid-cols-[360px,minmax(0,1fr)]">
                 <aside className="space-y-6">
-                  <OptimizationScoreCard insights={refinementInsights} />
+                  <OptimizationScoreCard insights={optimizationInsights} />
                   <InsightStats
                     interestLift={liftValue}
                     completeness={completenessScore}

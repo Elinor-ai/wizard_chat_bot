@@ -1,3 +1,38 @@
+import {
+  EmploymentTypeEnum,
+  ExperienceLevelEnum,
+  WorkModelEnum
+} from "@wizard/core";
+
+const ENUM_VALUE_MAP = {
+  seniorityLevel: ExperienceLevelEnum.options,
+  employmentType: EmploymentTypeEnum.options,
+  workModel: WorkModelEnum.options
+};
+
+function normaliseEnumValue(fieldId, rawValue) {
+  if (typeof rawValue !== "string") {
+    return rawValue;
+  }
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  const allowed = ENUM_VALUE_MAP[fieldId];
+  if (!allowed) {
+    return trimmed;
+  }
+  const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+  if (allowed.includes(normalized)) {
+    return normalized;
+  }
+  // Some enums already use lowercase underscore. Preserve valid originals.
+  if (allowed.includes(trimmed)) {
+    return trimmed;
+  }
+  return trimmed;
+}
+
 export const JOB_FIELD_GUIDE = [
   {
     id: "roleTitle",
@@ -195,7 +230,7 @@ export function normaliseRefinedJob(refinedJob, baseJob = {}) {
     if (typeof value === "string") {
       const trimmed = value.trim();
       if (trimmed.length > 0) {
-        result[fieldId] = trimmed;
+        result[fieldId] = normaliseEnumValue(fieldId, trimmed);
       }
       return;
     }

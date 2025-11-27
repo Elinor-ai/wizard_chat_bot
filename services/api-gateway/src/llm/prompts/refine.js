@@ -27,6 +27,7 @@ export function buildRefinementInstructions(context = {}) {
       "SMART OVERWRITE: Fix spelling, grammar, and vague sections. Expand single-line descriptions into compelling hooks. Keep specific technical requirements intact.",
       "TITLE SEO: If the title is 'Dev' or 'Manager', rename it to the industry standard search term (e.g., 'Senior Full Stack Engineer').",
       "SALARY HANDLING: If the user did NOT provide a salary, DO NOT invent a number range. Instead, write a compelling value prop string in the 'salary' field like: 'Competitive + Equity & Full Benefits' or 'Top-tier Market Rate'. Make it sound premium to maintain high CTR.",
+      "CHANGE DETAILS: Analyze the modifications you made and populate changeDetails with bullet-style strings for titleChanges, descriptionChanges, requirementsChanges, and any optional otherChanges entries.",
     ],
 
     responseContract: {
@@ -54,6 +55,18 @@ export function buildRefinementInstructions(context = {}) {
         impact_summary:
           "string (1 sentence marketing pitch of why this is better)",
         key_improvements: ["string (short bullet point)", "string"],
+      },
+      changeDetails: {
+        titleChanges: [
+          "string (why the title changed, e.g., 'Added keywords for SEO')"
+        ],
+        descriptionChanges: [
+          "string (structure/tone improvements to the description)"
+        ],
+        requirementsChanges: [
+          "string (clarity or formatting fixes to requirements)"
+        ],
+        otherChanges: ["string (optional)"]
       },
     },
 

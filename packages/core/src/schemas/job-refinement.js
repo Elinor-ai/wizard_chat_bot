@@ -13,10 +13,33 @@ export const JobRefinementSchema = z.object({
   model: z.string().optional(),
   metadata: z
     .object({
-      promptTokens: z.number().nullable().optional(),
-      responseTokens: z.number().nullable().optional(),
-      totalTokens: z.number().nullable().optional(),
-      finishReason: z.string().nullable().optional()
+      promptTokens: z.number().optional(),
+      completionTokens: z.number().optional(),
+      totalTokens: z.number().optional(),
+      improvementScore: z
+        .number()
+        .optional()
+        .describe("The optimization score calculated by the AI (0-100)"),
+      originalScore: z
+        .number()
+        .optional()
+        .describe("The baseline score before refinement (0-100)"),
+      responseTokens: z.number().optional(),
+      finishReason: z.string().nullable().optional(),
+      changeDetails: z
+        .object({
+          titleChanges: z
+            .array(z.string())
+            .describe("List of improvements made to the title"),
+          descriptionChanges: z
+            .array(z.string())
+            .describe("List of improvements made to the description"),
+          requirementsChanges: z
+            .array(z.string())
+            .describe("List of improvements made to the requirements"),
+          otherChanges: z.array(z.string()).optional()
+        })
+        .optional()
     })
     .optional(),
   lastFailure: z

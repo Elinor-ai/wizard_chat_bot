@@ -2093,6 +2093,7 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
         updatedAt: refinementDoc.updatedAt ?? null,
         refreshed,
         failure: refinementDoc.lastFailure ?? null,
+        metadata: refinementDoc.metadata ?? null,
         originalJob: jobSnapshot,
       });
     })

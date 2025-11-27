@@ -446,6 +446,7 @@ const refinementResponseSchema = z
     updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
     refreshed: z.boolean().optional(),
     failure: refinementFailureSchema.optional().nullable(),
+    metadata: z.record(z.string(), z.unknown()).optional().nullable(),
   })
   .transform((data) => ({
     jobId: data.jobId,
@@ -457,6 +458,7 @@ const refinementResponseSchema = z
     updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
     refreshed: Boolean(data.refreshed),
     failure: data.failure ?? null,
+    metadata: data.metadata ?? null,
   }));
 
 const finalizeResponseSchema = z
