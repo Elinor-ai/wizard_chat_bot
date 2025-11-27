@@ -102,6 +102,7 @@ function maybeLogPricingDebug({
   cachedInputCostPerMillionUsd,
   imageCostPerUnitUsd,
   videoCostPerSecondUsd,
+  thinkingOutputCostPerMillionUsd,
   estimatedCostUsd
 }) {
   const taskType = usageContext?.taskType;
@@ -126,6 +127,7 @@ function maybeLogPricingDebug({
       cachedInputCostPerMillionUsd,
       imageCostPerUnitUsd,
       videoCostPerSecondUsd,
+      thinkingOutputCostPerMillionUsd,
       estimatedCostUsd
     },
     "llm.usage.debug.pricing"
@@ -152,6 +154,9 @@ export async function recordLlmUsage({
 
   const inputTokens = normalizeTokens(metadata?.promptTokens);
   const outputTokens = normalizeTokens(metadata?.responseTokens);
+  const thoughtsTokens = normalizeTokens(
+    usageMetrics.thoughtsTokens ?? metadata?.thoughtsTokens
+  );
   const derivedTotal = inputTokens + outputTokens;
   const totalTokens = normalizeTokens(metadata?.totalTokens ?? derivedTotal);
   const cachedTokens = normalizeTokens(
@@ -166,6 +171,7 @@ export async function recordLlmUsage({
   let cachedInputCostPerMillionUsd;
   let imageCostPerUnitUsd;
   let videoCostPerSecondUsd;
+  let thinkingOutputCostPerMillionUsd;
   let groundingSearchCostPerQueryUsd;
   let groundingSearchQueries;
 
@@ -182,6 +188,8 @@ export async function recordLlmUsage({
 
   if (resolvedUsageType === "image") {
     const imagePricing = resolveImagePricing(provider, model, { promptTokens: inputTokens });
+    const textPricing = resolveTextPricing(provider, model, { promptTokens: inputTokens });
+    thinkingOutputCostPerMillionUsd = textPricing.outputUsdPerMillionTokens ?? 0;
     imageCostPerUnitUsd = imagePricing.costPerUnitUsd ?? 0;
     const inputImageCostPerMillionUsd = imagePricing.inputUsdPerMillionTokens;
     const outputImageCostPerMillionUsd = imagePricing.outputUsdPerMillionTokens;
@@ -208,9 +216,14 @@ export async function recordLlmUsage({
         ((outputImageCostPerMillionUsd ?? 0) * outputTokens) / MILLION;
       const cachedCost =
         ((cachedImageCostPerMillionUsd ?? 0) * cachedTokens) / MILLION;
-      estimatedCostUsd = inputCost + outputCost + cachedCost;
+      const thinkingCost =
+        (thinkingOutputCostPerMillionUsd * thoughtsTokens) / MILLION;
+      estimatedCostUsd = inputCost + outputCost + cachedCost + thinkingCost;
     } else {
       estimatedCostUsd = imageCostPerUnitUsd * units;
+      if (thinkingOutputCostPerMillionUsd > 0 && thoughtsTokens > 0) {
+        estimatedCostUsd += (thinkingOutputCostPerMillionUsd * thoughtsTokens) / MILLION;
+      }
     }
   } else if (resolvedUsageType === "video") {
     const videoPricing = resolveVideoPricing(provider, model);
@@ -267,6 +280,7 @@ export async function recordLlmUsage({
     inputTokens,
     outputTokens,
     totalTokens,
+    thoughtsTokens,
     cachedTokens,
     inputCostPerMillionUsd,
     outputCostPerMillionUsd,
@@ -304,6 +318,7 @@ export async function recordLlmUsage({
     cachedInputCostPerMillionUsd,
     imageCostPerUnitUsd,
     videoCostPerSecondUsd,
+    thinkingOutputCostPerMillionUsd,
     estimatedCostUsd: entryPayload.estimatedCostUsd
   });
 

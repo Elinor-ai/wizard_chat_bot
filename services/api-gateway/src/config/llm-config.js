@@ -29,10 +29,10 @@ config.image_generation = {
   model: GEMINI_IMAGE_MODEL
 };
 
-// Override prompt generation for images to use the same Gemini image model
 config.image_prompt_generation = {
   provider: "gemini",
-  model: GEMINI_IMAGE_MODEL
+  // Use the text model here—this task only crafts prompts and shouldn't incur image-model billing
+  model: GEMINI_DEFAULT_MODEL
 };
 
 export const LLM_TASK_CONFIG = Object.freeze(config);
