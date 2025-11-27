@@ -1,81 +1,72 @@
 import { llmLogger } from "../logger.js";
-import {
-  JOB_FIELD_GUIDE,
-  JOB_REQUIRED_FIELDS,
-} from "../domain/job-fields.js";
+import { JOB_FIELD_GUIDE } from "../domain/job-fields.js";
 
 export function buildRefinementInstructions(context = {}) {
-  const jobDraft = context?.jobSnapshot ?? {};
+  const strictNotes = context?.strictMode
+    ? "Previous output was not valid JSON. You MUST return a single JSON object that exactly matches the responseContract."
+    : null;
+
+  const companyContextStr = context.companyContext
+    ? `COMPANY BRANDING & TONE:\n${context.companyContext}`
+    : "Company Context: Use a modern, professional, yet accessible tech-forward tone.";
+
   const payloadObject = {
-    role: "You are a senior hiring editor polishing job descriptions for public launch.",
+    role: "You are a Conversion Copywriter and Recruitment SEO Strategist.",
     mission:
-      "Review the employer-provided job details, correct grammar or formatting issues, expand thin areas with authentic content, and ensure every field feels candidate ready.",
-    guardrails: [
-      "Respect the employer's intent. Only enhance—never invent new benefits, responsibilities, or compensation claims that contradict the draft.",
-      "Keep salary information if provided; do not fabricate numbers when absent.",
-      "Preserve arrays (duties, benefits, must-haves) as lists. Remove duplicates and tidy the language.",
-      "Return strictly valid JSON that matches the responseContract schema without commentary.",
-      "Include a concise summary describing key improvements you made.",
+      "Take the user's rough job draft and transform it into a high-performing listing. Your goals are: 1. Maximize Click-Through Rate (CTR) from search results. 2. Increase conversion of high-quality talent. 3. Fix clarity and tone issues.",
+
+    context_layer: {
+      company_profile: companyContextStr,
+      market_conditions:
+        "Assume a competitive market where clear salary and remote options drive engagement.",
+    },
+
+    guidelines: [
+      "SCORE CALCULATION: Start at 50. Add points for: Salary Range (+15), Remote/Hybrid clarity (+10), Action-oriented Title (+10), Exciting Hook (+10), Scannable Bullets (+5). Max score 100.",
+      "CTR BOOST: If you add a salary range or fix a vague title, predict a high CTR boost (e.g., '+40%').",
+      "SMART OVERWRITE: Fix spelling, grammar, and vague sections. Expand single-line descriptions into compelling hooks. Keep specific technical requirements intact.",
+      "TITLE SEO: If the title is 'Dev' or 'Manager', rename it to the industry standard search term (e.g., 'Senior Full Stack Engineer').",
+      "SALARY HANDLING: If the user did NOT provide a salary, DO NOT invent a number range. Instead, write a compelling value prop string in the 'salary' field like: 'Competitive + Equity & Full Benefits' or 'Top-tier Market Rate'. Make it sound premium to maintain high CTR.",
     ],
-    jobSchema: JOB_FIELD_GUIDE,
-    requiredFields: JOB_REQUIRED_FIELDS,
-    jobDraft,
+
     responseContract: {
       refined_job: {
         roleTitle: "string",
         companyName: "string",
         location: "string",
-        zipCode: "string | null",
-        industry: "string | null",
+        zipCode: "string (optional)",
+        industry: "string",
         seniorityLevel: "string",
         employmentType: "string",
-        workModel: "string | null",
-        jobDescription: "string",
-        coreDuties: "string[]",
-        mustHaves: "string[]",
-        benefits: "string[]",
-        salary: "string | null",
-        salaryPeriod: "string | null",
-        currency: "string | null",
+        workModel: "string",
+        jobDescription: "string (The Hook)",
+        coreDuties: ["string"],
+        mustHaves: ["string"],
+        benefits: ["string"],
+        currency: "string",
+        salary: "string",
+        salaryPeriod: "string",
       },
-      summary: "string",
-    },
-    exampleResponse: {
-      refined_job: {
-        roleTitle: "Senior Backend Engineer",
-        companyName: "Botson Labs",
-        location: "Tel Aviv, Israel",
-        jobDescription:
-          "Lead a squad building AI-enhanced hiring workflows. Mentor engineers, ship reliable APIs, and collaborate with product and research partners.",
-        coreDuties: [
-          "Design, implement, and maintain distributed services handling millions of events per day.",
-          "Partner with product managers to translate candidate experience goals into technical roadmaps.",
-          "Coach teammates through thoughtful code reviews and architecture discussions.",
-        ],
-        mustHaves: [
-          "5+ years building production services in Node.js or Go.",
-          "Experience with cloud infrastructure (GCP or AWS) and modern observability stacks.",
-          "Track record leading projects with cross-functional stakeholders.",
-        ],
-        benefits: [
-          "Stock options with annual refreshers.",
-          "Hybrid work model with two in-office collaboration days.",
-          "Learning stipend for conferences or certifications.",
-        ],
-        salary: "$150,000 – $180,000",
-        salaryPeriod: "per year",
-        currency: "USD",
+      analysis: {
+        improvement_score: "number (0-100)",
+        original_score: "number (0-100, estimate based on input quality)",
+        ctr_prediction: "string (e.g. '+25%')",
+        impact_summary:
+          "string (1 sentence marketing pitch of why this is better)",
+        key_improvements: ["string (short bullet point)", "string"],
       },
-      summary:
-        "Clarified duties, tightened qualifications, and expanded benefits for a compelling candidate pitch.",
     },
-    companyContext: context.companyContext ?? null,
+
+    jobSchema: JOB_FIELD_GUIDE,
+    jobDraft: context.jobDraft ?? {},
+    attempt: context.attempt ?? 0,
+    retryGuidance: strictNotes,
   };
 
   const payload = JSON.stringify(payloadObject, null, 2);
   llmLogger.info(
-    { task: "refine", content: payload, length: payload.length },
-    "LLM refinement prompt"
+    { task: "refine", contextSize: payload.length },
+    "LLM refinement prompt built"
   );
   return payload;
 }
