@@ -122,12 +122,13 @@ function buildDetailResponse(item) {
   };
 }
 
-export function videosRouter({ firestore, llmClient, logger }) {
+export function videosRouter({ firestore, bigQuery, llmClient, logger }) {
   const router = Router();
   const renderer = createRenderer({ logger });
   const publisherRegistry = createPublisherRegistry({ logger });
   const service = createVideoLibraryService({
     firestore,
+    bigQuery,
     llmClient,
     renderer,
     publisherRegistry,

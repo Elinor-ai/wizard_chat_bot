@@ -1525,11 +1525,12 @@ function applyCompanyDefaults(job, companyProfile) {
   return next;
 }
 
-export function wizardRouter({ firestore, logger, llmClient }) {
+export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
   const router = Router();
   const trackLlmUsage = (result, usageContext, options = {}) =>
     recordLlmUsageFromResult({
       firestore,
+      bigQuery,
       logger,
       usageContext,
       result,

@@ -133,6 +133,7 @@ function maybeLogPricingDebug({
 
 export async function recordLlmUsage({
   firestore,
+  bigQuery,
   logger,
   usageContext = {},
   provider,
@@ -296,6 +297,37 @@ export async function recordLlmUsage({
     logger?.warn?.({ err: error }, "llm.usage.ledger_write_failed");
   }
 
+  if (bigQuery?.addDocument) {
+    try {
+      await bigQuery.addDocument(entryPayload);
+      logger?.debug?.(
+        {
+          taskType: entryPayload.taskType,
+          provider: entryPayload.provider,
+          model: entryPayload.model,
+          tokensUsed: entryPayload.totalTokens
+        },
+        "Successfully recorded LLM usage to BigQuery"
+      );
+    } catch (error) {
+      // Check if it's a permission error
+      const isPermissionError = error.message?.includes("Permission") || error.message?.includes("denied");
+      const logLevel = isPermissionError ? "warn" : "error";
+
+      logger?.[logLevel]?.(
+        {
+          err: error,
+          taskType: entryPayload.taskType,
+          errorType: isPermissionError ? "permission_denied" : "insertion_failed",
+          hint: isPermissionError
+            ? "Grant bigquery.tables.updateData permission to the service account"
+            : "Check data format and BigQuery table schema"
+        },
+        "Failed to record LLM usage to BigQuery, continuing with Firestore only"
+      );
+    }
+  }
+
   await updateUserUsageCounters({
     firestore,
     logger,
@@ -308,6 +340,7 @@ export async function recordLlmUsage({
 
 export async function recordLlmUsageFromResult({
   firestore,
+  bigQuery,
   logger,
   usageContext = {},
   result,
@@ -325,6 +358,7 @@ export async function recordLlmUsageFromResult({
 
   await recordLlmUsage({
     firestore,
+    bigQuery,
     logger,
     usageContext,
     provider,

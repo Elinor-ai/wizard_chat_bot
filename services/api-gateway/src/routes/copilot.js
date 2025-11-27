@@ -127,7 +127,7 @@ function sanitizeCopilotReply(input) {
     .trim();
 }
 
-export function copilotRouter({ firestore, llmClient, logger }) {
+export function copilotRouter({ firestore, bigQuery, llmClient, logger }) {
   const router = Router();
   const agent = new WizardCopilotAgent({
     llmClient,
@@ -136,6 +136,7 @@ export function copilotRouter({ firestore, llmClient, logger }) {
     usageTracker: ({ result, usageContext }) =>
       recordLlmUsageFromResult({
         firestore,
+        bigQuery,
         logger,
         usageContext,
         result

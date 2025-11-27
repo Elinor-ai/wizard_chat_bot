@@ -1,15 +1,16 @@
 import "express-async-errors";
 import { createApp } from "./server.js";
 import { loadEnv, createLogger } from "@wizard/utils";
-import { createFirestoreAdapter } from "@wizard/data";
+import { createFirestoreAdapter, createBigQueryAdapter } from "@wizard/data";
 import { llmClient } from "./llm-client.js";
 
 async function main() {
   const env = loadEnv();
   const logger = createLogger("api-gateway");
   const firestore = createFirestoreAdapter();
+  const bigQuery = createBigQueryAdapter();
 
-  const app = createApp({ logger, firestore, llmClient });
+  const app = createApp({ logger, firestore, bigQuery, llmClient });
   const port = Number(env.PORT ?? 4000);
 
   app.listen(port, () => {

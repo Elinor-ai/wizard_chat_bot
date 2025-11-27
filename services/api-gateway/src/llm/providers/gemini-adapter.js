@@ -36,7 +36,6 @@ export class GeminiAdapter {
       );
     }
 
-   
     this.defaultLocation = location || "global";
     this.projectId = projectId;
 
@@ -65,7 +64,11 @@ export class GeminiAdapter {
   getClientForModel(model) {
     let effectiveLocation = this.defaultLocation || "global";
 
-    if (model && model.startsWith("gemini-3-") && effectiveLocation !== "global") {
+    if (
+      model &&
+      model.startsWith("gemini-3-") &&
+      effectiveLocation !== "global"
+    ) {
       llmLogger.warn(
         {
           requestedLocation: this.defaultLocation,
@@ -85,7 +88,7 @@ export class GeminiAdapter {
       vertexai: true,
       project: this.projectId,
       location: effectiveLocation,
-      apiVersion: "v1", 
+      apiVersion: "v1",
     });
 
     this.clientsByLocation.set(effectiveLocation, client);
@@ -98,7 +101,6 @@ export class GeminiAdapter {
     }
     return system || user || "";
   }
-
 
   async invoke({
     model,
@@ -113,7 +115,9 @@ export class GeminiAdapter {
     const systemText = (system || "").trim();
 
     if (!userText && !systemText) {
-      throw new Error("Gemini adapter requires at least a user or system prompt");
+      throw new Error(
+        "Gemini adapter requires at least a user or system prompt"
+      );
     }
 
     const client = this.getClientForModel(model);
@@ -215,7 +219,7 @@ export class GeminiAdapter {
         return clone;
       };
       const sanitizedResponse = (() => {
-        if (!response || typeof response !== "object") return response;
+        if (!response || typeof response === "object") return response;
         const clone = Array.isArray(response) ? [...response] : { ...response };
         if (Array.isArray(clone.predictions)) {
           clone.predictions = clone.predictions.map((pred) => sanitizeBase64(pred));
@@ -326,8 +330,7 @@ export class GeminiAdapter {
     const text = (response?.text || "").trim();
 
     if (!text) {
-      const finishReason =
-        response?.candidates?.[0]?.finishReason ?? null;
+      const finishReason = response?.candidates?.[0]?.finishReason ?? null;
       llmLogger.warn(
         {
           provider: "vertex-ai-genai",

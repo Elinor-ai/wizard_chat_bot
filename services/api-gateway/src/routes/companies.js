@@ -321,7 +321,7 @@ const createCompanySchema = z.object({
   hqCity: z.string().optional()
 });
 
-export function companiesRouter({ firestore, logger, llmClient }) {
+export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
   const router = Router();
 
   router.get(
@@ -459,6 +459,7 @@ export function companiesRouter({ firestore, logger, llmClient }) {
       if (refreshed.enrichmentStatus === CompanyEnrichmentStatusEnum.enum.PENDING) {
         runCompanyEnrichmentOnce({
           firestore,
+          bigQuery,
           logger,
           llmClient,
           company: refreshed
@@ -546,6 +547,7 @@ export function companiesRouter({ firestore, logger, llmClient }) {
 
       runCompanyEnrichmentOnce({
         firestore,
+        bigQuery,
         logger,
         llmClient,
         company: refreshed
@@ -625,6 +627,7 @@ export function companiesRouter({ firestore, logger, llmClient }) {
 
       runCompanyEnrichmentOnce({
         firestore,
+        bigQuery,
         logger,
         llmClient,
         company: savedCompany

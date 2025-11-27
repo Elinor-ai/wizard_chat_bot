@@ -13,7 +13,7 @@ const chatRequestSchema = z.object({
 
 const JOB_COLLECTION = "jobs";
 
-export function chatRouter({ firestore, llmClient, logger }) {
+export function chatRouter({ firestore, bigQuery, llmClient, logger }) {
   const router = Router();
 
   router.post(
@@ -51,6 +51,7 @@ export function chatRouter({ firestore, llmClient, logger }) {
 
       await recordLlmUsageFromResult({
         firestore,
+        bigQuery,
         logger,
         usageContext: {
           userId,
