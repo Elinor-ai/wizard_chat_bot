@@ -1,7 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
+import {
+  AlignLeft,
+  ArrowUpRight,
+  BadgePercent,
+  Bolt,
+  CheckCircle2,
+  Coins,
+  Info,
+  ListChecks,
+  MapPin,
+  PenSquare,
+  TrendingUp,
+} from "lucide-react";
 import { clsx } from "../../../../../lib/cn";
 import { useUser } from "../../../../../components/user-context";
 import {
@@ -14,7 +32,7 @@ import {
   refineJob,
   sendCopilotAgentMessage,
   fetchHeroImage,
-  requestHeroImage
+  requestHeroImage,
 } from "../../../../../components/wizard/wizard-services";
 import {
   OPTIONAL_STEPS,
@@ -23,35 +41,32 @@ import {
 import { WizardSuggestionPanel } from "../../../../../components/wizard/wizard-suggestion-panel";
 import {
   deepClone,
-  setDeep
+  setDeep,
 } from "../../../../../components/wizard/wizard-utils";
 
 const FIELD_DEFINITIONS = [...REQUIRED_STEPS, ...OPTIONAL_STEPS].flatMap(
   (step) => step.fields
 );
 
-const ARRAY_FIELD_IDS = new Set([
-  "coreDuties",
-  "mustHaves",
-  "benefits",
-]);
+const ARRAY_FIELD_IDS = new Set(["coreDuties", "mustHaves", "benefits"]);
 
 const FLOW_STEPS = [
   {
     id: "refine",
     label: "Refine job",
-    description: "Polish the draft and confirm the final version."
+    description: "Polish the draft and confirm the final version.",
   },
   {
     id: "channels",
     label: "Pick channels",
-    description: "Let the copilot recommend channels and choose where to promote."
+    description:
+      "Let the copilot recommend channels and choose where to promote.",
   },
   {
     id: "assets",
     label: "Generate assets",
-    description: "Produce campaign-ready copy and creative briefs."
-  }
+    description: "Produce campaign-ready copy and creative briefs.",
+  },
 ];
 
 const DEFAULT_FLOW_STEP = FLOW_STEPS[0].id;
@@ -89,6 +104,61 @@ const DEFAULT_JOB_STATE = {
   currency: "",
 };
 
+const DEFAULT_REFINE_INSIGHTS = {
+  improvementScore: 90,
+  originalScore: 60,
+  interestLift: "+18%",
+  impactSummary: "Optimized for clarity and engagement.",
+  keyImprovements: [
+    "Sharpened search-friendly title",
+    "Value prop reframed for motivation",
+    "Responsibilities organized for scannability",
+  ],
+};
+
+const DIFF_FIELD_CONFIG = [
+  {
+    id: "roleTitle",
+    label: "Role title",
+    icon: PenSquare,
+    badge: "SEO optimized",
+  },
+  {
+    id: "compensation",
+    label: "Compensation & benefits",
+    icon: Coins,
+    badge: "Value prop",
+    getValue: (job) => buildCompensationValue(job),
+    getCompareValue: (job) =>
+      JSON.stringify({
+        salary: job?.salary ?? "",
+        salaryPeriod: job?.salaryPeriod ?? "",
+        currency: job?.currency ?? "",
+        benefits: Array.isArray(job?.benefits)
+          ? job.benefits.filter(Boolean)
+          : [],
+      }),
+  },
+  {
+    id: "jobDescription",
+    label: "The hook (job summary)",
+    icon: AlignLeft,
+    badge: "Messaging refresh",
+  },
+  {
+    id: "coreDuties",
+    label: "Responsibilities",
+    icon: ListChecks,
+    badge: "Structured",
+    asList: true,
+  },
+  {
+    id: "location",
+    label: "Location",
+    icon: MapPin,
+  },
+];
+
 function normalizeLogoUrl(value) {
   if (typeof value !== "string") {
     return "";
@@ -110,9 +180,11 @@ function normaliseJobDraft(input) {
     }
     if (ARRAY_FIELD_IDS.has(key)) {
       if (Array.isArray(value)) {
-        base[key] = value.map((item) =>
-          typeof item === "string" ? item.trim() : String(item)
-        ).filter((item) => item.length > 0);
+        base[key] = value
+          .map((item) =>
+            typeof item === "string" ? item.trim() : String(item)
+          )
+          .filter((item) => item.length > 0);
       } else if (typeof value === "string" && value.trim().length > 0) {
         base[key] = value
           .split(/\r?\n/)
@@ -155,6 +227,158 @@ function hasMeaningfulValue(field, value) {
     return value.trim().length > 0;
   }
   return value !== undefined && value !== null && value !== "";
+}
+
+function clampScoreUi(value, fallback = 0) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  if (value < 0) return 0;
+  if (value > 100) return 100;
+  return Math.round(value);
+}
+
+function deriveInsights(metadata, fallbackSummary) {
+  if (!metadata) {
+    return {
+      ...DEFAULT_REFINE_INSIGHTS,
+      impactSummary: fallbackSummary || DEFAULT_REFINE_INSIGHTS.impactSummary,
+    };
+  }
+  const source =
+    (metadata.analysis && typeof metadata.analysis === "object"
+      ? metadata.analysis
+      : metadata) ?? {};
+  const keyImprovements = Array.isArray(
+    source.keyImprovements ?? metadata.keyImprovements
+  )
+    ? (source.keyImprovements ?? metadata.keyImprovements).filter(
+        (item) => typeof item === "string" && item.trim().length > 0
+      )
+    : DEFAULT_REFINE_INSIGHTS.keyImprovements;
+  return {
+    improvementScore:
+      source.improvementScore ??
+      metadata.improvementScore ??
+      DEFAULT_REFINE_INSIGHTS.improvementScore,
+    originalScore:
+      source.originalScore ??
+      metadata.originalScore ??
+      DEFAULT_REFINE_INSIGHTS.originalScore,
+    interestLift:
+      source.ctrPrediction ??
+      metadata.ctrPrediction ??
+      DEFAULT_REFINE_INSIGHTS.interestLift,
+    impactSummary:
+      source.impactSummary ??
+      metadata.impactSummary ??
+      fallbackSummary ??
+      DEFAULT_REFINE_INSIGHTS.impactSummary,
+    keyImprovements: keyImprovements.length
+      ? keyImprovements
+      : DEFAULT_REFINE_INSIGHTS.keyImprovements,
+  };
+}
+
+function formatListValue(list) {
+  if (!Array.isArray(list) || list.length === 0) {
+    return "";
+  }
+  return list
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildCompensationValue(job) {
+  if (!job) return "";
+  const parts = [job?.salary, job?.salaryPeriod, job?.currency]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean);
+  const salaryLine = parts.join(" • ");
+  const benefits = formatListValue(job?.benefits);
+  return [salaryLine, benefits].filter(Boolean).join("\n");
+}
+
+function normalizeDiffValue(value) {
+  if (Array.isArray(value)) {
+    return JSON.stringify(
+      value.map((item) => (typeof item === "string" ? item.trim() : item))
+    );
+  }
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (value === undefined || value === null) {
+    return "";
+  }
+  return String(value);
+}
+
+function calculateCompleteness(job) {
+  if (!job) return 0;
+  const fieldsToCheck = [
+    "roleTitle",
+    "location",
+    "jobDescription",
+    "salary",
+    "coreDuties",
+    "mustHaves",
+    "benefits",
+  ];
+  const total = fieldsToCheck.length;
+  if (total === 0) return 0;
+  const filled = fieldsToCheck.reduce((count, fieldId) => {
+    const value = job[fieldId];
+    if (Array.isArray(value)) {
+      return value.length > 0 ? count + 1 : count;
+    }
+    if (typeof value === "string") {
+      return value.trim().length > 0 ? count + 1 : count;
+    }
+    return value ? count + 1 : count;
+  }, 0);
+  return Math.round((filled / total) * 100);
+}
+
+function jobHasContent(job) {
+  if (!job || typeof job !== "object") return false;
+  return Object.values(job).some((value) => {
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    return value !== undefined && value !== null && value !== "";
+  });
+}
+
+function buildDiffEntries(originalJob, refinedJob) {
+  return DIFF_FIELD_CONFIG.map((field) => {
+    const originalValue = field.getValue
+      ? field.getValue(originalJob)
+      : field.asList
+        ? formatListValue(originalJob?.[field.id])
+        : (originalJob?.[field.id] ?? "");
+    const refinedValue = field.getValue
+      ? field.getValue(refinedJob)
+      : field.asList
+        ? formatListValue(refinedJob?.[field.id])
+        : (refinedJob?.[field.id] ?? "");
+    const originalCompare = field.getCompareValue
+      ? field.getCompareValue(originalJob)
+      : normalizeDiffValue(originalValue);
+    const refinedCompare = field.getCompareValue
+      ? field.getCompareValue(refinedJob)
+      : normalizeDiffValue(refinedValue);
+    return {
+      ...field,
+      original: originalValue,
+      refined: refinedValue,
+      changed: originalCompare !== refinedCompare,
+    };
+  });
 }
 
 function getMessageTimestamp(message) {
@@ -223,8 +447,11 @@ function mergeSnapshot(prev, snapshot) {
 function JobPreview({ job }) {
   const summary = useMemo(() => normaliseJobDraft(job), [job]);
   const { roleTitle, companyName, location, logoUrl } = summary;
-  const tags = [summary.seniorityLevel, summary.employmentType, summary.workModel]
-    .filter((tag) => tag && tag.length > 0);
+  const tags = [
+    summary.seniorityLevel,
+    summary.employmentType,
+    summary.workModel,
+  ].filter((tag) => tag && tag.length > 0);
 
   const detailItems = [
     { label: "Industry", value: summary.industry },
@@ -387,8 +614,9 @@ function JobEditorCard({
     const rawValue = event?.target ? event.target.value : event;
     let nextValue = rawValue;
     if (ARRAY_FIELD_IDS.has(field.id)) {
-      nextValue =
-        transform ? transform(rawValue) : textareaValueToList(rawValue);
+      nextValue = transform
+        ? transform(rawValue)
+        : textareaValueToList(rawValue);
     } else if (field.type === "number" || field.valueAs === "number") {
       if (rawValue === "") {
         nextValue = "";
@@ -407,8 +635,7 @@ function JobEditorCard({
   };
 
   const handleFieldRevert = (field, target = "original") => {
-    const sourceDraft =
-      target === "original" ? baseline : refinedBaseline;
+    const sourceDraft = target === "original" ? baseline : refinedBaseline;
     let targetValue = sourceDraft[field.id];
 
     if (ARRAY_FIELD_IDS.has(field.id)) {
@@ -460,7 +687,10 @@ function JobEditorCard({
             const originalValue = baseline[field.id];
             const refinedValue = refinedBaseline[field.id];
             const normalizedValue = normalizeForCompare(value, field);
-            const normalizedOriginal = normalizeForCompare(originalValue, field);
+            const normalizedOriginal = normalizeForCompare(
+              originalValue,
+              field
+            );
             const normalizedRefined = normalizeForCompare(refinedValue, field);
             const isSameAsOriginal = showFieldRevert
               ? normalizedValue === normalizedOriginal
@@ -472,8 +702,8 @@ function JobEditorCard({
               ? isSameAsOriginal
                 ? "original"
                 : isSameAsRefined
-                ? "refined"
-                : "custom"
+                  ? "refined"
+                  : "custom"
               : null;
             const shouldShowBaselineToggle =
               showFieldRevert &&
@@ -483,49 +713,53 @@ function JobEditorCard({
                 hasMeaningfulValue(field, refinedValue)) &&
               normalizedOriginal !== normalizedRefined;
 
-            const revertButton =
-              shouldShowBaselineToggle ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex rounded-full border border-neutral-200 bg-neutral-50 p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => handleFieldRevert(field, "refined")}
-                      disabled={isSameAsRefined}
-                      className={clsx(
-                        "rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition",
-                        isSameAsRefined
-                          ? "bg-primary-600 text-white shadow"
-                          : "text-neutral-600 hover:text-primary-600 disabled:text-neutral-300"
-                      )}
-                    >
-                      Refined
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleFieldRevert(field, "original")}
-                      disabled={isSameAsOriginal}
-                      className={clsx(
-                        "rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition",
-                        isSameAsOriginal
-                          ? "bg-primary-600 text-white shadow"
-                          : "text-neutral-600 hover:text-primary-600 disabled:text-neutral-300"
-                      )}
-                    >
-                      Original
-                    </button>
-                  </div>
-                  {currentBaseline === "custom" ? (
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
-                      Custom edits
-                    </span>
-                  ) : null}
+            const revertButton = shouldShowBaselineToggle ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex rounded-full border border-neutral-200 bg-neutral-50 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleFieldRevert(field, "refined")}
+                    disabled={isSameAsRefined}
+                    className={clsx(
+                      "rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition",
+                      isSameAsRefined
+                        ? "bg-primary-600 text-white shadow"
+                        : "text-neutral-600 hover:text-primary-600 disabled:text-neutral-300"
+                    )}
+                  >
+                    Refined
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleFieldRevert(field, "original")}
+                    disabled={isSameAsOriginal}
+                    className={clsx(
+                      "rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition",
+                      isSameAsOriginal
+                        ? "bg-primary-600 text-white shadow"
+                        : "text-neutral-600 hover:text-primary-600 disabled:text-neutral-300"
+                    )}
+                  >
+                    Original
+                  </button>
                 </div>
-              ) : null;
+                {currentBaseline === "custom" ? (
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
+                    Custom edits
+                  </span>
+                ) : null}
+              </div>
+            ) : null;
 
             if (field.type === "capsule" && Array.isArray(field.options)) {
               return (
-                <label key={field.id} className="flex flex-col gap-1 text-sm text-neutral-700">
-                  <span className="font-medium text-neutral-800">{field.label}</span>
+                <label
+                  key={field.id}
+                  className="flex flex-col gap-1 text-sm text-neutral-700"
+                >
+                  <span className="font-medium text-neutral-800">
+                    {field.label}
+                  </span>
                   <select
                     className="rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
                     value={fieldValue}
@@ -545,8 +779,13 @@ function JobEditorCard({
 
             if (field.asList) {
               return (
-                <label key={field.id} className="flex flex-col gap-1 text-sm text-neutral-700">
-                  <span className="font-medium text-neutral-800">{field.label}</span>
+                <label
+                  key={field.id}
+                  className="flex flex-col gap-1 text-sm text-neutral-700"
+                >
+                  <span className="font-medium text-neutral-800">
+                    {field.label}
+                  </span>
                   <textarea
                     className="min-h-[120px] rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
                     value={fieldValue}
@@ -559,8 +798,13 @@ function JobEditorCard({
 
             if (field.type === "textarea") {
               return (
-                <label key={field.id} className="flex flex-col gap-1 text-sm text-neutral-700">
-                  <span className="font-medium text-neutral-800">{field.label}</span>
+                <label
+                  key={field.id}
+                  className="flex flex-col gap-1 text-sm text-neutral-700"
+                >
+                  <span className="font-medium text-neutral-800">
+                    {field.label}
+                  </span>
                   <textarea
                     className="min-h-[120px] rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
                     value={fieldValue}
@@ -572,8 +816,13 @@ function JobEditorCard({
             }
 
             return (
-              <label key={field.id} className="flex flex-col gap-1 text-sm text-neutral-700">
-                <span className="font-medium text-neutral-800">{field.label}</span>
+              <label
+                key={field.id}
+                className="flex flex-col gap-1 text-sm text-neutral-700"
+              >
+                <span className="font-medium text-neutral-800">
+                  {field.label}
+                </span>
                 <input
                   className="rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
                   value={fieldValue}
@@ -591,13 +840,241 @@ function JobEditorCard({
   );
 }
 
+function OptimizationScoreCard({ insights }) {
+  const optimizedScore = clampScoreUi(insights?.improvementScore ?? 0);
+  const draftScore = clampScoreUi(insights?.originalScore ?? 0);
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+            Optimization score
+          </p>
+          <div className="mt-3 flex items-baseline gap-2 text-slate-900">
+            <span className="text-5xl font-semibold">{optimizedScore}</span>
+            <span className="text-sm text-slate-400">/ 100</span>
+          </div>
+          <p className="text-xs text-slate-400">
+            Draft quality {draftScore}/100
+          </p>
+        </div>
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+          <TrendingUp className="h-5 w-5" />
+        </div>
+      </div>
+      <div className="mt-6 space-y-4">
+        <ScoreTrack label="Draft quality" value={draftScore} tone="muted" />
+        <ScoreTrack
+          label="AI optimized"
+          value={optimizedScore}
+          tone="primary"
+          helper={insights?.interestLift}
+        />
+      </div>
+      <div className="mt-6 flex gap-3 rounded-2xl bg-gradient-to-r from-indigo-50 to-indigo-100/70 px-4 py-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-indigo-600">
+          <Bolt className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-slate-900">
+            Projected impact
+          </p>
+          <p className="text-xs text-slate-500">
+            {insights?.impactSummary ??
+              "The refined listing is projected to attract more qualified candidates due to high-intent keyword matching."}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScoreTrack({ label, value, tone, helper }) {
+  const fillColor =
+    tone === "primary"
+      ? "bg-gradient-to-r from-indigo-500 to-indigo-600"
+      : "bg-slate-300";
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.2em] text-slate-400">
+        <span>{label}</span>
+        <span className="text-slate-900">{value}%</span>
+      </div>
+      {helper ? (
+        <p className="text-xs font-semibold text-emerald-600">{helper}</p>
+      ) : null}
+      <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
+        <div
+          className={`h-full rounded-full ${fillColor}`}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function InsightStats({ interestLift, completeness }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <MetricStatCard
+        label="Est. clicks"
+        value={interestLift || "+15%"}
+        caption="versus original"
+        Icon={ArrowUpRight}
+        accent="text-emerald-600 bg-emerald-50"
+      />
+      <MetricStatCard
+        label="Completeness"
+        value={`${clampScoreUi(completeness, 95)}%`}
+        caption="all essentials covered"
+        Icon={BadgePercent}
+        accent="text-indigo-600 bg-indigo-50"
+      />
+    </div>
+  );
+}
+
+function MetricStatCard({ label, value, caption, Icon, accent }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div
+        className={`inline-flex items-center justify-center rounded-full p-2 ${accent}`}
+      >
+        <Icon className="h-4 w-4" />
+      </div>
+      <p className="mt-3 text-[11px] uppercase tracking-[0.2em] text-slate-400">
+        {label}
+      </p>
+      <p className="text-2xl font-semibold text-slate-900">{value}</p>
+      <p className="text-xs text-slate-500">{caption}</p>
+    </div>
+  );
+}
+
+function EnhancementsPanel({ items }) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return null;
+  }
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+        Key enhancements
+      </p>
+      <ul className="mt-4 space-y-3 text-sm text-slate-700">
+        {items.map((item, index) => (
+          <li key={`${item}-${index}`} className="flex items-start gap-2">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-500" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// function ProTipCard({ copy }) {
+//   return (
+//     <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-5 text-sm text-blue-900">
+//       <div className="flex items-start gap-3">
+//         <div className="mt-0.5">
+//           <Info className="h-4 w-4" />
+//         </div>
+//         <div>
+//           <p className="font-semibold">Pro tip</p>
+//           <p className="text-sm text-blue-900/80">{copy}</p>
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
+
+function DiffFieldCard({ diff }) {
+  const Icon = diff.icon ?? PenSquare;
+  const hasOriginal =
+    typeof diff.original === "string" && diff.original.trim().length > 0;
+  const hasRefined =
+    typeof diff.refined === "string" && diff.refined.trim().length > 0;
+  const isAddition = !hasOriginal && hasRefined;
+  const isMissingBoth = !hasOriginal && !hasRefined;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+            {diff.label}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {diff.badge ? (
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+              {diff.badge}
+            </span>
+          ) : null}
+          {isAddition ? (
+            <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              Added by Wizard
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-5 grid gap-6 border-t border-slate-100 pt-5 md:grid-cols-2">
+        <div className="space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+            Original input
+          </p>
+          {hasOriginal ? (
+            <p
+              className={clsx(
+                "whitespace-pre-wrap text-sm",
+                diff.changed ? "text-slate-400 line-through" : "text-slate-500"
+              )}
+            >
+              {diff.original}
+            </p>
+          ) : (
+            <p className="text-sm italic text-slate-300">
+              {isAddition
+                ? "No content provided. Wizard filled this in for you."
+                : "No content provided"}
+            </p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-emerald-500">
+            Professional suggestion
+          </p>
+          <p
+            className={clsx(
+              "whitespace-pre-wrap text-sm",
+              hasRefined ? "font-semibold text-slate-900" : "text-slate-400"
+            )}
+          >
+            {hasRefined ? diff.refined : isMissingBoth ? "—" : diff.original}
+          </p>
+        </div>
+      </div>
+      {diff.explanation && (diff.changed || isAddition) ? (
+        <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-xs text-emerald-900">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-emerald-600">
+            Why we updated this
+          </p>
+          <p className="mt-1 text-sm text-emerald-900/90">{diff.explanation}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ChannelRecommendationList({
   recommendations,
   updatedAt,
   failure,
   selectable = false,
   selectedChannels = [],
-  onToggleChannel
+  onToggleChannel,
 }) {
   const selectedSet = useMemo(
     () => new Set(selectedChannels ?? []),
@@ -672,7 +1149,8 @@ function HeroImageOptIn({ checked, onToggle }) {
             Generate AI image?
           </span>
           <span className="text-sm text-neutral-500">
-            We’ll auto-create a single visual to reuse across channels once you continue to assets.
+            We’ll auto-create a single visual to reuse across channels once you
+            continue to assets.
           </span>
         </span>
       </label>
@@ -697,7 +1175,7 @@ const assetStatusStyles = {
   READY: "bg-emerald-100 text-emerald-700",
   GENERATING: "bg-amber-100 text-amber-700",
   PENDING: "bg-amber-50 text-amber-700",
-  FAILED: "bg-red-100 text-red-700"
+  FAILED: "bg-red-100 text-red-700",
 };
 
 const ASSET_VARIANT_MAP = {
@@ -711,7 +1189,7 @@ const ASSET_VARIANT_MAP = {
   SHORT_VIDEO_TIKTOK: "story",
   SHORT_VIDEO_INSTAGRAM: "story",
   SHORT_VIDEO_YOUTUBE: "story",
-  AI_HERO_IMAGE: "hero_image"
+  AI_HERO_IMAGE: "hero_image",
 };
 
 function AssetPreviewGrid({ assets = [], logoUrl }) {
@@ -735,11 +1213,10 @@ function AssetPreviewGrid({ assets = [], logoUrl }) {
 function AssetPreviewCard({ asset, logoUrl }) {
   const variant = ASSET_VARIANT_MAP[asset.formatId] ?? "generic";
   const content = asset.content ?? {};
-  const badgeClass = assetStatusStyles[asset.status] ?? assetStatusStyles.PENDING;
+  const badgeClass =
+    assetStatusStyles[asset.status] ?? assetStatusStyles.PENDING;
   const formatLabel =
-    variant === "hero_image"
-      ? "AI image"
-      : asset.formatId.replace(/_/g, " ");
+    variant === "hero_image" ? "AI image" : asset.formatId.replace(/_/g, " ");
   const channelLabel =
     variant === "hero_image"
       ? "Campaign visual"
@@ -759,7 +1236,7 @@ function AssetPreviewCard({ asset, logoUrl }) {
           <p className="text-sm font-semibold text-neutral-900">
             {formatLabel}
           </p>
-           <p className="text-xs text-neutral-500">{channelLabel}</p>
+          <p className="text-xs text-neutral-500">{channelLabel}</p>
         </div>
         <span
           className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase ${badgeClass}`}
@@ -771,32 +1248,40 @@ function AssetPreviewCard({ asset, logoUrl }) {
         <LinkedInJobCard content={content} logoUrl={finalLogo} />
       ) : variant === "linkedin_feed" ? (
         <LinkedInFeedCard content={content} logoUrl={finalLogo} />
-  ) : variant === "social_image" ? (
-    <SocialImageCard content={content} logoUrl={finalLogo} />
-  ) : variant === "story" ? (
-    <StoryCard content={content} logoUrl={finalLogo} />
-  ) : variant === "hero_image" ? (
-    <HeroImageCard content={content} status={asset.status} />
-  ) : variant === "image_caption" ? (
-    <ImageCaptionCard content={content} />
-  ) : (
-    <GenericAssetCard content={content} logoUrl={finalLogo} />
-  )}
+      ) : variant === "social_image" ? (
+        <SocialImageCard content={content} logoUrl={finalLogo} />
+      ) : variant === "story" ? (
+        <StoryCard content={content} logoUrl={finalLogo} />
+      ) : variant === "hero_image" ? (
+        <HeroImageCard content={content} status={asset.status} />
+      ) : variant === "image_caption" ? (
+        <ImageCaptionCard content={content} />
+      ) : (
+        <GenericAssetCard content={content} logoUrl={finalLogo} />
+      )}
     </div>
   );
 }
 
 function LinkedInJobCard({ content, logoUrl }) {
-  const bullets = Array.isArray(content.bullets) ? content.bullets.slice(0, 3) : [];
+  const bullets = Array.isArray(content.bullets)
+    ? content.bullets.slice(0, 3)
+    : [];
   return (
     <div className="overflow-hidden rounded-2xl border border-neutral-100">
       <div className="flex items-center gap-3 border-b border-neutral-100 bg-neutral-50 px-4 py-3">
         <div className="h-10 w-10 overflow-hidden rounded bg-primary-100">
           {logoUrl ? (
-            <img src={logoUrl} alt="Company logo" className="h-full w-full object-cover" />
+            <img
+              src={logoUrl}
+              alt="Company logo"
+              className="h-full w-full object-cover"
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-primary-700">
-              {(content.companyName ?? content.title ?? "J").charAt(0).toUpperCase()}
+              {(content.companyName ?? content.title ?? "J")
+                .charAt(0)
+                .toUpperCase()}
             </div>
           )}
         </div>
@@ -811,7 +1296,9 @@ function LinkedInJobCard({ content, logoUrl }) {
       </div>
       <div className="space-y-3 px-4 py-4">
         {content.body ? (
-          <p className="text-sm text-neutral-700 whitespace-pre-wrap">{content.body}</p>
+          <p className="text-sm text-neutral-700 whitespace-pre-wrap">
+            {content.body}
+          </p>
         ) : null}
         {bullets.length > 0 ? (
           <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
@@ -837,7 +1324,11 @@ function LinkedInFeedCard({ content, logoUrl }) {
       <div className="flex items-center gap-3">
         <div className="h-9 w-9 overflow-hidden rounded-full bg-primary-100">
           {logoUrl ? (
-            <img src={logoUrl} alt="Company logo" className="h-full w-full object-cover" />
+            <img
+              src={logoUrl}
+              alt="Company logo"
+              className="h-full w-full object-cover"
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-primary-700">
               {(content.companyName ?? "J").charAt(0).toUpperCase()}
@@ -850,13 +1341,17 @@ function LinkedInFeedCard({ content, logoUrl }) {
         </div>
       </div>
       {content.body ? (
-        <p className="text-sm text-neutral-800 whitespace-pre-wrap">{content.body}</p>
+        <p className="text-sm text-neutral-800 whitespace-pre-wrap">
+          {content.body}
+        </p>
       ) : (
         <p className="text-sm text-neutral-500">No copy provided.</p>
       )}
       {hashtags.length ? (
         <p className="text-xs text-neutral-500">
-          {hashtags.map((tag) => `#${String(tag).replace(/^#/g, "")}`).join(" ")}
+          {hashtags
+            .map((tag) => `#${String(tag).replace(/^#/g, "")}`)
+            .join(" ")}
         </p>
       ) : null}
     </div>
@@ -869,16 +1364,24 @@ function SocialImageCard({ content, logoUrl }) {
       <div className="relative h-64 w-40 rounded-[28px] border-4 border-neutral-900 bg-neutral-900 text-white shadow-lg">
         <div className="absolute inset-0 rounded-[24px] bg-gradient-to-b from-primary-500/70 to-neutral-900/80 px-3 py-4 text-xs font-semibold">
           <div className="flex items-center gap-2">
-            <p className="uppercase tracking-wide text-[10px] text-white/80">Story preview</p>
+            <p className="uppercase tracking-wide text-[10px] text-white/80">
+              Story preview
+            </p>
             {logoUrl ? (
               <span className="h-5 w-5 overflow-hidden rounded-full border border-white/30">
-                <img src={logoUrl} alt="Logo" className="h-full w-full object-cover" />
+                <img
+                  src={logoUrl}
+                  alt="Logo"
+                  className="h-full w-full object-cover"
+                />
               </span>
             ) : null}
           </div>
           <div className="mt-3 space-y-2 text-sm">
             <p className="font-semibold">{content.title ?? "Hook headline"}</p>
-            {content.body ? <p className="text-white/80">{content.body}</p> : null}
+            {content.body ? (
+              <p className="text-white/80">{content.body}</p>
+            ) : null}
           </div>
           {content.callToAction ? (
             <div className="absolute bottom-4 left-3 right-3 rounded-full bg-white/90 py-2 text-center text-xs font-bold uppercase text-neutral-900">
@@ -894,22 +1397,31 @@ function SocialImageCard({ content, logoUrl }) {
 function StoryCard({ content, logoUrl }) {
   const beats = Array.isArray(content.script)
     ? content.script
-    : content.script_beats ?? [];
+    : (content.script_beats ?? []);
   return (
     <div className="rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-4">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
         <span>Story beats</span>
         {logoUrl ? (
           <span className="h-5 w-5 overflow-hidden rounded-full border border-neutral-200 bg-white">
-            <img src={logoUrl} alt="Logo" className="h-full w-full object-cover" />
+            <img
+              src={logoUrl}
+              alt="Logo"
+              className="h-full w-full object-cover"
+            />
           </span>
         ) : null}
       </div>
       <ol className="mt-2 space-y-2 text-sm text-neutral-700">
         {beats.slice(0, 4).map((beat, index) => (
-          <li key={`beat-${index}`} className="rounded-lg bg-white/70 px-3 py-2 shadow-sm">
+          <li
+            key={`beat-${index}`}
+            className="rounded-lg bg-white/70 px-3 py-2 shadow-sm"
+          >
             <p className="font-semibold">{beat.beat ?? `Beat ${index + 1}`}</p>
-            {beat.dialogue ? <p className="text-neutral-600">{beat.dialogue}</p> : null}
+            {beat.dialogue ? (
+              <p className="text-neutral-600">{beat.dialogue}</p>
+            ) : null}
             {beat.visual ? (
               <p className="text-xs text-neutral-500">Visual: {beat.visual}</p>
             ) : null}
@@ -928,7 +1440,7 @@ function HeroImageCard({ content, status }) {
   const caption = content?.caption ?? null;
   const hashtags = Array.isArray(content?.hashtags)
     ? content.hashtags.filter(Boolean).join(" ")
-    : content?.hashtags ?? "";
+    : (content?.hashtags ?? "");
   const captionText = [caption, hashtags].filter(Boolean).join("\n\n");
 
   const handleCopyCaption = async () => {
@@ -1024,7 +1536,8 @@ function HeroImageCard({ content, status }) {
   if (status === "FAILED") {
     return (
       <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-        {failureMessage ?? "Image request failed. Try again from the Channels step."}
+        {failureMessage ??
+          "Image request failed. Try again from the Channels step."}
       </div>
     );
   }
@@ -1040,8 +1553,10 @@ function ImageCaptionCard({ content }) {
   const caption = content?.body ?? content?.caption ?? "";
   const hashtags = Array.isArray(content?.hashtags)
     ? content.hashtags.filter(Boolean).join(" ")
-    : content?.hashtags ?? "";
-  const fullText = [caption.trim(), hashtags.trim()].filter(Boolean).join("\n\n");
+    : (content?.hashtags ?? "");
+  const fullText = [caption.trim(), hashtags.trim()]
+    .filter(Boolean)
+    .join("\n\n");
 
   const handleCopy = async () => {
     if (!fullText) {
@@ -1080,7 +1595,9 @@ function ImageCaptionCard({ content }) {
         </button>
       </div>
       {fullText ? (
-        <p className="whitespace-pre-wrap text-sm text-neutral-800">{fullText}</p>
+        <p className="whitespace-pre-wrap text-sm text-neutral-800">
+          {fullText}
+        </p>
       ) : (
         <p className="text-sm text-neutral-400">
           Caption not available yet. Generate assets to populate it.
@@ -1096,7 +1613,11 @@ function GenericAssetCard({ content, logoUrl }) {
     <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 px-4 py-4 text-sm text-neutral-700">
       {logoUrl ? (
         <div className="mb-3 h-10 w-10 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-          <img src={logoUrl} alt="Logo" className="h-full w-full object-cover" />
+          <img
+            src={logoUrl}
+            alt="Logo"
+            className="h-full w-full object-cover"
+          />
         </div>
       ) : null}
       {content.body ? (
@@ -1115,13 +1636,22 @@ function GenericAssetCard({ content, logoUrl }) {
   );
 }
 
-function StepProgress({ steps, currentStep, maxEnabledIndex = 0, onStepChange }) {
+function StepProgress({
+  steps,
+  currentStep,
+  maxEnabledIndex = 0,
+  onStepChange,
+}) {
   const currentIndex = STEP_INDEX[currentStep] ?? 0;
   return (
     <ol className="grid grid-cols-1 gap-3 text-sm text-neutral-600 sm:grid-cols-3">
       {steps.map((step, index) => {
         const status =
-          index < currentIndex ? "done" : index === currentIndex ? "active" : "pending";
+          index < currentIndex
+            ? "done"
+            : index === currentIndex
+              ? "active"
+              : "pending";
         const isEnabled = index <= maxEnabledIndex;
         const handleClick = () => {
           if (!isEnabled || index === currentIndex) {
@@ -1130,10 +1660,7 @@ function StepProgress({ steps, currentStep, maxEnabledIndex = 0, onStepChange })
           onStepChange?.(step.id);
         };
         return (
-          <li
-            key={step.id}
-            className="w-full"
-          >
+          <li key={step.id} className="w-full">
             <button
               type="button"
               onClick={handleClick}
@@ -1143,8 +1670,8 @@ function StepProgress({ steps, currentStep, maxEnabledIndex = 0, onStepChange })
                 status === "done"
                   ? "border-primary-200 bg-primary-50"
                   : status === "active"
-                  ? "border-primary-600 bg-white shadow-sm"
-                  : "border-neutral-200 bg-neutral-50",
+                    ? "border-primary-600 bg-white shadow-sm"
+                    : "border-neutral-200 bg-neutral-50",
                 !isEnabled || index === currentIndex
                   ? "cursor-default"
                   : "cursor-pointer hover:shadow-sm hover:border-primary-300",
@@ -1158,8 +1685,8 @@ function StepProgress({ steps, currentStep, maxEnabledIndex = 0, onStepChange })
                     status === "done"
                       ? "bg-primary-600 text-white"
                       : status === "active"
-                      ? "bg-primary-100 text-primary-700"
-                      : "bg-neutral-200 text-neutral-600"
+                        ? "bg-primary-100 text-primary-700"
+                        : "bg-neutral-200 text-neutral-600"
                   )}
                 >
                   {index + 1}
@@ -1167,7 +1694,9 @@ function StepProgress({ steps, currentStep, maxEnabledIndex = 0, onStepChange })
                 <p
                   className={clsx(
                     "font-semibold",
-                    status === "active" ? "text-primary-700" : "text-neutral-700"
+                    status === "active"
+                      ? "text-primary-700"
+                      : "text-neutral-700"
                   )}
                 >
                   {step.label}
@@ -1177,8 +1706,8 @@ function StepProgress({ steps, currentStep, maxEnabledIndex = 0, onStepChange })
                 {status === "pending"
                   ? step.description
                   : status === "active"
-                  ? "In progress"
-                  : "Completed"}
+                    ? "In progress"
+                    : "Completed"}
               </p>
             </button>
           </li>
@@ -1210,11 +1739,16 @@ export default function RefineJobPage() {
   const [isRefining, setIsRefining] = useState(true);
   const [refineError, setRefineError] = useState(null);
   const [summary, setSummary] = useState("");
+  const [refinementInsights, setRefinementInsights] = useState(
+    DEFAULT_REFINE_INSIGHTS
+  );
   const [originalDraft, setOriginalDraft] = useState(DEFAULT_JOB_STATE);
   const [refinedDraft, setRefinedDraft] = useState(DEFAULT_JOB_STATE);
+  const [userDraftSnapshot, setUserDraftSnapshot] = useState(DEFAULT_JOB_STATE);
   const [initialOriginal, setInitialOriginal] = useState(DEFAULT_JOB_STATE);
   const [initialRefined, setInitialRefined] = useState(DEFAULT_JOB_STATE);
   const [viewMode, setViewMode] = useState("refined");
+  const [isManualEditing, setIsManualEditing] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [channelRecommendations, setChannelRecommendations] = useState([]);
   const [channelUpdatedAt, setChannelUpdatedAt] = useState(null);
@@ -1254,9 +1788,7 @@ export default function RefineJobPage() {
         return available;
       }
       const prevSet = new Set(prev);
-      const intersection = available.filter((channel) =>
-        prevSet.has(channel)
-      );
+      const intersection = available.filter((channel) => prevSet.has(channel));
       return intersection.length > 0 ? intersection : available;
     });
   }, []);
@@ -1266,7 +1798,7 @@ export default function RefineJobPage() {
     try {
       const response = await fetchJobAssets({
         authToken: user.authToken,
-        jobId
+        jobId,
       });
       setJobAssets(response.assets ?? []);
       setAssetRun(response.run ?? null);
@@ -1285,15 +1817,11 @@ export default function RefineJobPage() {
     try {
       const response = await fetchHeroImage({
         authToken: user.authToken,
-        jobId
+        jobId,
       });
       const hero = response.heroImage ?? null;
       setHeroImage(hero);
-      if (
-        hero &&
-        hero.status &&
-        hero.status !== "FAILED"
-      ) {
+      if (hero && hero.status && hero.status !== "FAILED") {
         setShouldGenerateHeroImage(true);
       }
     } catch (error) {
@@ -1310,7 +1838,7 @@ export default function RefineJobPage() {
         const response = await requestHeroImage({
           authToken: user.authToken,
           jobId,
-          forceRefresh
+          forceRefresh,
         });
         setHeroImage(response.heroImage ?? null);
         setShouldGenerateHeroImage(true);
@@ -1318,13 +1846,13 @@ export default function RefineJobPage() {
         setHeroImage((prev) => ({
           ...(prev ?? {
             jobId,
-            status: "FAILED"
+            status: "FAILED",
           }),
           status: "FAILED",
           failure: {
             reason: "request_failed",
-            message: error.message
-          }
+            message: error.message,
+          },
         }));
       } finally {
         setIsHeroImageLoading(false);
@@ -1362,26 +1890,18 @@ export default function RefineJobPage() {
     finalJobSource,
     channelRecommendations.length,
     jobAssets.length,
-    assetRun
+    assetRun,
   ]);
 
   const isStepTransitioning = useMemo(() => {
-    if (
-      currentStep === "channels" &&
-      (isFinalizing || isFetchingChannels)
-    ) {
+    if (currentStep === "channels" && (isFinalizing || isFetchingChannels)) {
       return true;
     }
     if (currentStep === "assets" && isGeneratingAssets) {
       return true;
     }
     return false;
-  }, [
-    currentStep,
-    isFinalizing,
-    isFetchingChannels,
-    isGeneratingAssets
-  ]);
+  }, [currentStep, isFinalizing, isFetchingChannels, isGeneratingAssets]);
 
   const activeStage = useMemo(() => {
     if (currentStep === "channels") {
@@ -1397,12 +1917,48 @@ export default function RefineJobPage() {
     () => (viewMode === "original" ? originalDraft : refinedDraft),
     [viewMode, originalDraft, refinedDraft]
   );
-  const chatTeaser =
-    copilotError ?? (currentStep === "refine" ? summary : "");
+  const normalizedInitialOriginal = useMemo(
+    () => normaliseJobDraft(initialOriginal),
+    [initialOriginal]
+  );
+  const normalizedUserSnapshot = useMemo(
+    () => normaliseJobDraft(userDraftSnapshot),
+    [userDraftSnapshot]
+  );
+  const normalizedRefinedJob = useMemo(
+    () => normaliseJobDraft(refinedDraft),
+    [refinedDraft]
+  );
+  const normalizedOriginalJob = useMemo(() => {
+    const hasInitial = jobHasContent(normalizedInitialOriginal);
+    const hasUserSnapshot = jobHasContent(normalizedUserSnapshot);
+    const isInitialSameAsRefined =
+      JSON.stringify(normalizedInitialOriginal) ===
+      JSON.stringify(normalizedRefinedJob);
+    if (!hasInitial && hasUserSnapshot) {
+      return normalizedUserSnapshot;
+    }
+    if (hasUserSnapshot && isInitialSameAsRefined) {
+      return normalizedUserSnapshot;
+    }
+    return hasInitial ? normalizedInitialOriginal : normalizedUserSnapshot;
+  }, [
+    normalizedInitialOriginal,
+    normalizedUserSnapshot,
+    normalizedRefinedJob,
+  ]);
+  const diffEntries = useMemo(
+    () => buildDiffEntries(normalizedOriginalJob, normalizedRefinedJob),
+    [normalizedOriginalJob, normalizedRefinedJob]
+  );
+  const completenessScore = useMemo(
+    () => calculateCompleteness(normalizedRefinedJob),
+    [normalizedRefinedJob]
+  );
+  const chatTeaser = copilotError ?? (currentStep === "refine" ? summary : "");
   const heroImageStatus = heroImage?.status ?? "IDLE";
   const heroImageInFlight =
-    isHeroImageLoading ||
-    ["PROMPTING", "GENERATING"].includes(heroImageStatus);
+    isHeroImageLoading || ["PROMPTING", "GENERATING"].includes(heroImageStatus);
   const heroImagePreviewSrc = useMemo(() => {
     if (heroImage?.imageBase64) {
       const mime = heroImage?.imageMimeType ?? "image/png";
@@ -1414,7 +1970,10 @@ export default function RefineJobPage() {
     if (!shouldGenerateHeroImage) {
       return null;
     }
-    const normalizedStatus = mapHeroImageStatus(heroImageStatus, heroImageInFlight);
+    const normalizedStatus = mapHeroImageStatus(
+      heroImageStatus,
+      heroImageInFlight
+    );
     return {
       id: `hero-image-${jobId ?? "new"}`,
       formatId: "AI_HERO_IMAGE",
@@ -1427,8 +1986,8 @@ export default function RefineJobPage() {
         provider: heroImage?.imageProvider ?? "pending",
         model: heroImage?.imageModel ?? "pending",
         caption: heroImage?.caption ?? null,
-        hashtags: heroImage?.captionHashtags ?? null
-      }
+        hashtags: heroImage?.captionHashtags ?? null,
+      },
     };
   }, [
     shouldGenerateHeroImage,
@@ -1436,7 +1995,7 @@ export default function RefineJobPage() {
     heroImageInFlight,
     heroImagePreviewSrc,
     heroImage,
-    jobId
+    jobId,
   ]);
   const assetsWithHero = useMemo(() => {
     if (heroImageAsset) {
@@ -1462,7 +2021,7 @@ export default function RefineJobPage() {
     shouldGenerateHeroImage,
     heroImageInFlight,
     heroImageStatus,
-    handleHeroImageRequest
+    handleHeroImageRequest,
   ]);
 
   const syncStepQuery = useCallback(
@@ -1489,7 +2048,12 @@ export default function RefineJobPage() {
     [pathname, router, searchParams]
   );
   const handleGenerateAssets = async () => {
-    if (!user?.authToken || !jobId || selectedChannels.length === 0 || !finalJobSource) {
+    if (
+      !user?.authToken ||
+      !jobId ||
+      selectedChannels.length === 0 ||
+      !finalJobSource
+    ) {
       return;
     }
     setIsGeneratingAssets(true);
@@ -1501,7 +2065,7 @@ export default function RefineJobPage() {
         authToken: user.authToken,
         jobId,
         channelIds: selectedChannels,
-        source: finalJobSource
+        source: finalJobSource,
       });
       setJobAssets(response.assets ?? []);
       setAssetRun(response.run ?? null);
@@ -1551,7 +2115,9 @@ export default function RefineJobPage() {
 
   useEffect(() => {
     const nextStepFromQuery = normalizeFlowStepId(searchParams?.get("step"));
-    setCurrentStep((prev) => (prev === nextStepFromQuery ? prev : nextStepFromQuery));
+    setCurrentStep((prev) =>
+      prev === nextStepFromQuery ? prev : nextStepFromQuery
+    );
 
     if (!hasSyncedInitialQueryStepRef.current) {
       hasSyncedInitialQueryStepRef.current = true;
@@ -1580,12 +2146,7 @@ export default function RefineJobPage() {
       return "Generating campaign assets…";
     }
     return null;
-  }, [
-    isFinalizing,
-    currentStep,
-    isFetchingChannels,
-    isGeneratingAssets
-  ]);
+  }, [isFinalizing, currentStep, isFetchingChannels, isGeneratingAssets]);
 
   useEffect(() => {
     const currentIndex = STEP_INDEX[currentStep] ?? 0;
@@ -1596,7 +2157,7 @@ export default function RefineJobPage() {
         navigateToStep(fallbackStep, {
           force: true,
           markManual: false,
-          replaceHistory: true
+          replaceHistory: true,
         });
       }
       return;
@@ -1611,7 +2172,7 @@ export default function RefineJobPage() {
         navigateToStep(targetStep, {
           force: true,
           markManual: false,
-          replaceHistory: true
+          replaceHistory: true,
         });
       }
     }
@@ -1624,9 +2185,11 @@ export default function RefineJobPage() {
       try {
         const response = await fetchJobDraft({
           authToken: user.authToken,
-          jobId
+          jobId,
         });
         if (cancelled) return;
+        const normalizedState = normaliseJobDraft(response?.state ?? {});
+        setUserDraftSnapshot(normalizedState);
         const nextLogoFromState = normalizeLogoUrl(response?.state?.logoUrl);
         setJobLogoUrl((prev) => {
           if (nextLogoFromState === prev) {
@@ -1664,8 +2227,8 @@ export default function RefineJobPage() {
     ensureLogo(setRefinedDraft);
   }, [jobLogoUrl]);
 
-useEffect(() => {
-  if (!user?.authToken || !jobId) return;
+  useEffect(() => {
+    if (!user?.authToken || !jobId) return;
 
     let cancelled = false;
     const runRefinement = async () => {
@@ -1684,11 +2247,11 @@ useEffect(() => {
         const originalLogo = normalizeLogoUrl(original.logoUrl);
         const refinedWithBranding = {
           ...refined,
-          logoUrl: refinedLogo || originalLogo || fallbackLogo
+          logoUrl: refinedLogo || originalLogo || fallbackLogo,
         };
         const originalWithBranding = {
           ...original,
-          logoUrl: originalLogo || refinedLogo || fallbackLogo
+          logoUrl: originalLogo || refinedLogo || fallbackLogo,
         };
         const appliedLogo =
           normalizeLogoUrl(refinedWithBranding.logoUrl) ||
@@ -1701,6 +2264,9 @@ useEffect(() => {
         setOriginalDraft(originalWithBranding);
         setRefinedDraft(refinedWithBranding);
         setSummary(response.summary ?? "");
+        setRefinementInsights(
+          deriveInsights(response.metadata, response.summary)
+        );
         setViewMode("refined");
         if (response.failure) {
           setRefineError(
@@ -1721,19 +2287,19 @@ useEffect(() => {
     return () => {
       cancelled = true;
     };
-}, [jobId, user?.authToken]);
+  }, [jobId, user?.authToken]);
 
-useEffect(() => {
-  loadAssets();
-}, [loadAssets]);
-
-useEffect(() => {
-  if (!shouldPollAssets) return undefined;
-  const interval = setInterval(() => {
+  useEffect(() => {
     loadAssets();
-  }, 5000);
-  return () => clearInterval(interval);
-}, [shouldPollAssets, loadAssets]);
+  }, [loadAssets]);
+
+  useEffect(() => {
+    if (!shouldPollAssets) return undefined;
+    const interval = setInterval(() => {
+      loadAssets();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [shouldPollAssets, loadAssets]);
 
   const handleToggleChannel = useCallback((channelId) => {
     setSelectedChannels((prev) => {
@@ -1744,22 +2310,24 @@ useEffect(() => {
     });
   }, []);
 
-  const handleFinalize = async () => {
+  const handleFinalize = async (modeOverride = null) => {
     if (!user?.authToken || !jobId) return;
+    const nextMode = modeOverride ?? viewMode;
+    setViewMode((prev) => (prev === nextMode ? prev : nextMode));
+    setIsManualEditing(false);
     setIsFinalizing(true);
     setChannelFailure(null);
     channelsInitializedRef.current = false;
     navigateToStep("channels", { force: true });
     try {
       const activeDraft =
-        viewMode === "original" ? originalDraft : refinedDraft;
+        nextMode === "original" ? originalDraft : refinedDraft;
       const baselineDraft =
-        viewMode === "original" ? initialOriginal : initialRefined;
+        nextMode === "original" ? initialOriginal : initialRefined;
       const finalJob = normaliseJobDraft(activeDraft);
       const baseline = normaliseJobDraft(baselineDraft);
-      const isEdited =
-        JSON.stringify(baseline) !== JSON.stringify(finalJob);
-      const submissionSource = isEdited ? "edited" : viewMode;
+      const isEdited = JSON.stringify(baseline) !== JSON.stringify(finalJob);
+      const submissionSource = isEdited ? "edited" : nextMode;
 
       const response = await finalizeJob({
         authToken: user.authToken,
@@ -1786,39 +2354,31 @@ useEffect(() => {
     }
   };
 
-  const loadChannelRecommendations = useCallback(
-    async () => {
-      if (!user?.authToken || !jobId) return;
-      if (isFetchingChannels) {
-        return;
-      }
-      setIsFetchingChannels(true);
-      try {
-        const response = await fetchChannelRecommendations({
-          authToken: user.authToken,
-          jobId,
-        });
-        const recommendations = response.recommendations ?? [];
-        setChannelRecommendations(recommendations);
-        setChannelUpdatedAt(response.updatedAt ?? null);
-        setChannelFailure(response.failure ?? null);
-        syncSelectedChannels(recommendations);
-      } catch (error) {
-        setChannelFailure({
-          reason: "load_failed",
-          message: error.message,
-        });
-      } finally {
-        setIsFetchingChannels(false);
-      }
-    },
-    [
-      user?.authToken,
-      jobId,
-      syncSelectedChannels,
-      isFetchingChannels,
-    ]
-  );
+  const loadChannelRecommendations = useCallback(async () => {
+    if (!user?.authToken || !jobId) return;
+    if (isFetchingChannels) {
+      return;
+    }
+    setIsFetchingChannels(true);
+    try {
+      const response = await fetchChannelRecommendations({
+        authToken: user.authToken,
+        jobId,
+      });
+      const recommendations = response.recommendations ?? [];
+      setChannelRecommendations(recommendations);
+      setChannelUpdatedAt(response.updatedAt ?? null);
+      setChannelFailure(response.failure ?? null);
+      syncSelectedChannels(recommendations);
+    } catch (error) {
+      setChannelFailure({
+        reason: "load_failed",
+        message: error.message,
+      });
+    } finally {
+      setIsFetchingChannels(false);
+    }
+  }, [user?.authToken, jobId, syncSelectedChannels, isFetchingChannels]);
 
   useEffect(() => {
     if (currentStep === "refine") {
@@ -1842,7 +2402,7 @@ useEffect(() => {
     isFetchingChannels,
     channelFailure,
     finalJobSource,
-    loadChannelRecommendations
+    loadChannelRecommendations,
   ]);
 
   const applyConversationUpdate = useCallback((messages) => {
@@ -1863,7 +2423,7 @@ useEffect(() => {
     try {
       const response = await fetchCopilotConversation({
         authToken: user.authToken,
-        jobId
+        jobId,
       });
       applyConversationUpdate(response.messages ?? []);
       setCopilotError(null);
@@ -1905,8 +2465,8 @@ useEffect(() => {
             type: "user",
             content: trimmed,
             metadata: { clientMessageId, optimistic: true },
-            createdAt: new Date()
-          }
+            createdAt: new Date(),
+          },
         ];
         const version = deriveConversationVersion(optimistic);
         if (Number.isFinite(version)) {
@@ -1923,19 +2483,20 @@ useEffect(() => {
           stage,
         });
         applyConversationUpdate(response.messages ?? []);
-        if (response.updatedJobSnapshot && typeof response.updatedJobSnapshot === "object") {
+        if (
+          response.updatedJobSnapshot &&
+          typeof response.updatedJobSnapshot === "object"
+        ) {
           const snapshot = response.updatedJobSnapshot;
           // eslint-disable-next-line no-console
           console.info("publish-copilot:apply-updated-snapshot", {
             keys: Object.keys(snapshot ?? {}),
-            stage
+            stage,
           });
           setOriginalDraft((prev) => mergeSnapshot(prev, snapshot));
           setInitialOriginal((prev) => mergeSnapshot(prev, snapshot));
         }
-        const actions = Array.isArray(response.actions)
-          ? response.actions
-          : [];
+        const actions = Array.isArray(response.actions) ? response.actions : [];
         if (actions.length > 0) {
           actions.forEach((action) => {
             if (!action || typeof action !== "object") {
@@ -1946,7 +2507,10 @@ useEffect(() => {
                 const applyField = (setter) => {
                   setter((prev) => {
                     let next = deepClone(prev);
-                    if (action.jobSnapshot && typeof action.jobSnapshot === "object") {
+                    if (
+                      action.jobSnapshot &&
+                      typeof action.jobSnapshot === "object"
+                    ) {
                       next = mergeSnapshot(next, action.jobSnapshot);
                     }
                     setDeep(next, action.fieldId, action.value);
@@ -1962,9 +2526,11 @@ useEffect(() => {
                   setter((prev) => {
                     let next = mergeSnapshot(prev, action.jobSnapshot);
                     if (action.fields && typeof action.fields === "object") {
-                      Object.entries(action.fields).forEach(([fieldId, value]) => {
-                        setDeep(next, fieldId, value);
-                      });
+                      Object.entries(action.fields).forEach(
+                        ([fieldId, value]) => {
+                          setDeep(next, fieldId, value);
+                        }
+                      );
                     }
                     return next;
                   });
@@ -1977,7 +2543,10 @@ useEffect(() => {
                 const applyField = (setter) => {
                   setter((prev) => {
                     let next = deepClone(prev);
-                    if (action.refinedJob && typeof action.refinedJob === "object") {
+                    if (
+                      action.refinedJob &&
+                      typeof action.refinedJob === "object"
+                    ) {
                       next = mergeSnapshot(next, action.refinedJob);
                     }
                     setDeep(next, action.fieldId, action.value);
@@ -1996,7 +2565,8 @@ useEffect(() => {
                       action.fields.forEach((entry) => {
                         if (entry?.fieldId) {
                           const incomingValue =
-                            action.refinedJob && action.refinedJob[entry.fieldId];
+                            action.refinedJob &&
+                            action.refinedJob[entry.fieldId];
                           if (entry.mode === "clear") {
                             setDeep(next, entry.fieldId, "");
                           } else if (incomingValue !== undefined) {
@@ -2004,10 +2574,15 @@ useEffect(() => {
                           }
                         }
                       });
-                    } else if (action.fields && typeof action.fields === "object") {
-                      Object.entries(action.fields).forEach(([fieldId, value]) => {
-                        setDeep(next, fieldId, value);
-                      });
+                    } else if (
+                      action.fields &&
+                      typeof action.fields === "object"
+                    ) {
+                      Object.entries(action.fields).forEach(
+                        ([fieldId, value]) => {
+                          setDeep(next, fieldId, value);
+                        }
+                      );
                     }
                     return next;
                   });
@@ -2036,9 +2611,9 @@ useEffect(() => {
                           ...asset,
                           content: {
                             ...(asset.content ?? {}),
-                            ...(action.content ?? {})
+                            ...(action.content ?? {}),
                           },
-                          updatedAt: new Date().toISOString()
+                          updatedAt: new Date().toISOString(),
                         }
                       : asset
                   )
@@ -2066,7 +2641,7 @@ useEffect(() => {
       applyConversationUpdate,
       activeStage,
       syncSelectedChannels,
-      loadChannelRecommendations
+      loadChannelRecommendations,
     ]
   );
 
@@ -2090,6 +2665,210 @@ useEffect(() => {
     return <LoadingState label="Polishing your job details…" />;
   }
 
+  if (currentStep === "refine") {
+    const proTipCopy =
+      typeof summary === "string" && summary.trim().length > 0
+        ? summary
+        : "Listings with transparent salary ranges receive up to 40% more applications from qualified candidates.";
+    const liftValue =
+      typeof refinementInsights.interestLift === "string" &&
+      refinementInsights.interestLift.length > 0
+        ? refinementInsights.interestLift
+        : "+15%";
+    return (
+      <div className="space-y-6">
+        <StepProgress
+          steps={FLOW_STEPS}
+          currentStep={currentStep}
+          maxEnabledIndex={maxEnabledIndex}
+          onStepChange={handleStepChange}
+        />
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 shadow-sm shadow-slate-200/60">
+            <div className="space-y-8">
+              <header className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-indigo-700">
+                    Analysis complete
+                  </span>
+                  <div>
+                    <h1 className="text-3xl font-semibold text-slate-900">
+                      Refine &amp; Optimize
+                    </h1>
+                    <p className="mt-2 max-w-2xl text-sm text-slate-500">
+                      Our AI reviewed your draft against industry benchmarks.
+                      Approve the upgraded fields to push straight into
+                      distribution channels.
+                    </p>
+                  </div>
+                  {refineError ? (
+                    <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                      {refineError}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsManualEditing((prev) => !prev)}
+                    className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                  >
+                    {isManualEditing ? "Close editor" : "Edit manually"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleFinalize("refined")}
+                    disabled={isFinalizing}
+                    className="rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm shadow-indigo-400/40 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                  >
+                    {isFinalizing
+                      ? "Preparing channels…"
+                      : "Approve improvements"}
+                  </button>
+                </div>
+              </header>
+
+              <div className="grid gap-6 lg:grid-cols-[360px,minmax(0,1fr)]">
+                <aside className="space-y-6">
+                  <OptimizationScoreCard insights={refinementInsights} />
+                  <InsightStats
+                    interestLift={liftValue}
+                    completeness={completenessScore}
+                  />
+                  <EnhancementsPanel
+                    items={refinementInsights.keyImprovements}
+                  />
+                  {/* <ProTipCard copy={proTipCopy} /> */}
+                </aside>
+                <main className="space-y-5">
+                  {diffEntries.map((diff) => (
+                    <DiffFieldCard key={diff.id} diff={diff} />
+                  ))}
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          Prefer your original draft?
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Continue with the unedited version while you iterate.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleFinalize("original")}
+                        disabled={isFinalizing}
+                        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Keep original
+                      </button>
+                    </div>
+                  </div>
+                  {isManualEditing ? (
+                    <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                      {summary ? (
+                        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-800">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-indigo-500">
+                            Summary of improvements
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm">
+                            {summary}
+                          </p>
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold uppercase tracking-wide">
+                          <button
+                            type="button"
+                            onClick={() => setViewMode("refined")}
+                            className={clsx(
+                              "rounded-full px-4 py-2 transition",
+                              viewMode === "refined"
+                                ? "bg-indigo-600 text-white shadow"
+                                : "text-slate-600 hover:text-indigo-600"
+                            )}
+                          >
+                            Refined version
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setViewMode("original")}
+                            className={clsx(
+                              "rounded-full px-4 py-2 transition",
+                              viewMode === "original"
+                                ? "bg-indigo-600 text-white shadow"
+                                : "text-slate-600 hover:text-indigo-600"
+                            )}
+                          >
+                            Original version
+                          </button>
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          {viewMode === "refined"
+                            ? "Editing AI optimized job"
+                            : "Editing original draft"}
+                        </span>
+                      </div>
+                      <JobEditorCard
+                        title={
+                          viewMode === "refined"
+                            ? "Refined job"
+                            : "Original job"
+                        }
+                        job={
+                          viewMode === "refined" ? refinedDraft : originalDraft
+                        }
+                        onChange={
+                          viewMode === "refined"
+                            ? setRefinedDraft
+                            : setOriginalDraft
+                        }
+                        showFieldRevert={viewMode === "refined"}
+                        originalValues={initialOriginal}
+                        refinedValues={initialRefined}
+                      />
+                      <div className="flex flex-wrap justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsManualEditing(false)}
+                          className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                        >
+                          Close editor
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleFinalize(viewMode)}
+                          disabled={isFinalizing}
+                          className="rounded-full bg-indigo-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                        >
+                          {isFinalizing
+                            ? "Preparing channels…"
+                            : "Save & continue"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </main>
+              </div>
+            </div>
+          </div>
+          <div className="self-start">
+            <WizardSuggestionPanel
+              jobId={jobId}
+              jobState={activeJobState}
+              copilotConversation={copilotConversation}
+              onSendMessage={handleCopilotSend}
+              isSending={isCopilotChatting}
+              nextStepTeaser={chatTeaser}
+              isJobTabEnabled
+              stage={activeStage}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <header className="space-y-3">
@@ -2097,13 +2876,9 @@ useEffect(() => {
           Refine & publish your job
         </h1>
         <p className="text-sm text-neutral-600">
-          Follow the guided steps to polish the draft, pick channels, and generate creative assets.
+          Follow the guided steps to polish the draft, pick channels, and
+          generate creative assets.
         </p>
-        {refineError ? (
-          <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-            {refineError}
-          </p>
-        ) : null}
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
@@ -2119,165 +2894,107 @@ useEffect(() => {
             <LoadingState label={blockingSpinnerLabel} />
           ) : (
             <>
-          {currentStep === "refine" ? (
-            <section className="space-y-6 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-              {summary ? (
-                <div className="rounded-2xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-700">
-                  <p className="font-semibold uppercase tracking-wide text-xs text-primary-500">
-                    Summary of improvements
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm">{summary}</p>
-                </div>
-              ) : null}
-
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs font-semibold uppercase tracking-wide">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("refined")}
-                    className={clsx(
-                      "rounded-full px-4 py-2 transition",
-                      viewMode === "refined"
-                        ? "bg-primary-600 text-white shadow"
-                        : "text-neutral-600 hover:text-primary-600"
-                    )}
-                  >
-                    Refined version
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("original")}
-                    className={clsx(
-                      "rounded-full px-4 py-2 transition",
-                      viewMode === "original"
-                        ? "bg-primary-600 text-white shadow"
-                        : "text-neutral-600 hover:text-primary-600"
-                    )}
-                  >
-                    Original version
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto]">
-                <div className="grid w-full max-w-4xl gap-5">
-                  <JobEditorCard
-                    title={viewMode === "refined" ? "Refined job" : "Original job"}
-                    job={viewMode === "refined" ? refinedDraft : originalDraft}
-                    onChange={viewMode === "refined" ? setRefinedDraft : setOriginalDraft}
-                    showFieldRevert={viewMode === "refined"}
-                    originalValues={initialOriginal}
-                    refinedValues={initialRefined}
+              {currentStep === "channels" ? (
+                <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-semibold text-neutral-900">
+                      Channel recommendations
+                    </h2>
+                    <p className="text-sm text-neutral-600">
+                      We suggest these channels based on the final job profile.
+                      Make edits in the previous step to refresh them.
+                    </p>
+                  </div>
+                  <ChannelRecommendationList
+                    recommendations={channelRecommendations}
+                    updatedAt={channelUpdatedAt}
+                    failure={channelFailure}
+                    selectable
+                    selectedChannels={selectedChannels}
+                    onToggleChannel={handleToggleChannel}
                   />
-                </div>
-                <div className="flex justify-end items-end">
-                  <button
-                    type="button"
-                    onClick={handleFinalize}
-                    disabled={isFinalizing}
-                    className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-                  >
-                    {isFinalizing ? "Gathering recommendations…" : "Confirm & pick channels"}
-                  </button>
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          {currentStep === "channels" ? (
-            <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-              <div className="space-y-1">
-                <h2 className="text-lg font-semibold text-neutral-900">
-                  Channel recommendations
-                </h2>
-                <p className="text-sm text-neutral-600">
-                  We suggest these channels based on the final job profile. Make edits in the previous step to refresh them.
-                </p>
-              </div>
-              <ChannelRecommendationList
-                recommendations={channelRecommendations}
-                updatedAt={channelUpdatedAt}
-                failure={channelFailure}
-                selectable
-                selectedChannels={selectedChannels}
-                onToggleChannel={handleToggleChannel}
-              />
-              <HeroImageOptIn
-                checked={shouldGenerateHeroImage}
-                onToggle={setShouldGenerateHeroImage}
-              />
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4">
-                <button
-                  type="button"
-                  onClick={() => navigateToStep("refine")}
-                  className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
-                >
-                  Back to refinement
-                </button>
-                <div className="flex flex-col items-end gap-1 text-xs text-neutral-500">
-                  <p>
-                    {selectedChannels.length > 0
-                      ? `${selectedChannels.length} channel${selectedChannels.length > 1 ? "s" : ""} selected.`
-                      : "Select at least one channel to continue."}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleGenerateAssets}
-                    disabled={
-                      isGeneratingAssets ||
-                      selectedChannels.length === 0 ||
-                      !finalJobSource
-                    }
-                    className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
-                  >
-                    {isGeneratingAssets ? "Generating assets…" : "Generate creative assets"}
-                  </button>
-                </div>
-              </div>
-              {assetError ? (
-                <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-                  {assetError}
-                </p>
-              ) : null}
-            </section>
-          ) : null}
-
-          {currentStep === "assets" ? (
-            <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
-              <div className="space-y-1">
-                <h2 className="text-lg font-semibold text-neutral-900">
-                  Publishing assets
-                </h2>
-                <p className="text-sm text-neutral-600">
-                  Monitor generation status and copy snippets for each channel.
-                </p>
-              </div>
-              {assetRun ? (
-                <div className="rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-                  <p className="font-semibold text-neutral-800">
-                    Latest run: {assetRun.status}
-                  </p>
-                  <p>
-                    {assetRun.stats?.assetsCompleted ?? 0} /{" "}
-                    {assetRun.stats?.assetsPlanned ?? 0} assets ready
-                  </p>
-                  {assetRun.error?.message ? (
-                    <p className="text-red-600">{assetRun.error.message}</p>
+                  <HeroImageOptIn
+                    checked={shouldGenerateHeroImage}
+                    onToggle={setShouldGenerateHeroImage}
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => navigateToStep("refine")}
+                      className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
+                    >
+                      Back to refinement
+                    </button>
+                    <div className="flex flex-col items-end gap-1 text-xs text-neutral-500">
+                      <p>
+                        {selectedChannels.length > 0
+                          ? `${selectedChannels.length} channel${selectedChannels.length > 1 ? "s" : ""} selected.`
+                          : "Select at least one channel to continue."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleGenerateAssets}
+                        disabled={
+                          isGeneratingAssets ||
+                          selectedChannels.length === 0 ||
+                          !finalJobSource
+                        }
+                        className="rounded-full bg-primary-600 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-300"
+                      >
+                        {isGeneratingAssets
+                          ? "Generating assets…"
+                          : "Generate creative assets"}
+                      </button>
+                    </div>
+                  </div>
+                  {assetError ? (
+                    <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                      {assetError}
+                    </p>
                   ) : null}
-                </div>
+                </section>
               ) : null}
-              <div className="flex justify-start">
-                <button
-                  type="button"
-                  onClick={() => navigateToStep("channels")}
-                  className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
-                >
-                  Back to channels
-                </button>
-              </div>
-              <AssetPreviewGrid assets={assetsWithHero} logoUrl={jobLogoUrl} />
-            </section>
-          ) : null}
+
+              {currentStep === "assets" ? (
+                <section className="space-y-4 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm shadow-neutral-100">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-semibold text-neutral-900">
+                      Publishing assets
+                    </h2>
+                    <p className="text-sm text-neutral-600">
+                      Monitor generation status and copy snippets for each
+                      channel.
+                    </p>
+                  </div>
+                  {assetRun ? (
+                    <div className="rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                      <p className="font-semibold text-neutral-800">
+                        Latest run: {assetRun.status}
+                      </p>
+                      <p>
+                        {assetRun.stats?.assetsCompleted ?? 0} /{" "}
+                        {assetRun.stats?.assetsPlanned ?? 0} assets ready
+                      </p>
+                      {assetRun.error?.message ? (
+                        <p className="text-red-600">{assetRun.error.message}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="flex justify-start">
+                    <button
+                      type="button"
+                      onClick={() => navigateToStep("channels")}
+                      className="rounded-full border border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 transition hover:bg-neutral-50"
+                    >
+                      Back to channels
+                    </button>
+                  </div>
+                  <AssetPreviewGrid
+                    assets={assetsWithHero}
+                    logoUrl={jobLogoUrl}
+                  />
+                </section>
+              ) : null}
             </>
           )}
         </div>
