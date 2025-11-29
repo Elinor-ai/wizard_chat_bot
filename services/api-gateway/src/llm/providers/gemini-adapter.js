@@ -430,6 +430,12 @@ export class GeminiAdapter {
     const responseTokenSum =
       (typeof candidateTokens === "number" ? candidateTokens : 0) +
       (typeof thoughtTokens === "number" ? thoughtTokens : 0);
+    const searchQueries =
+      response?.groundingMetadata?.webSearchQueries ??
+      response?.candidates?.[0]?.groundingMetadata?.webSearchQueries ??
+      null;
+    const searchQueryCount = Array.isArray(searchQueries) ? searchQueries.length : null;
+
     const metadata = usage
       ? {
           promptTokens: usage.promptTokenCount ?? null,
@@ -439,8 +445,11 @@ export class GeminiAdapter {
           thoughtsTokens: thoughtTokens || null,
           totalTokens: usage.totalTokenCount ?? null,
           finishReason: response?.candidates?.[0]?.finishReason ?? null,
+          searchQueries: searchQueryCount,
         }
-      : undefined;
+      : searchQueryCount !== null
+        ? { searchQueries: searchQueryCount }
+        : undefined;
     this.logUsageTokens({ taskType, model, usage });
 
     return { text, json: jsonPayload, metadata };

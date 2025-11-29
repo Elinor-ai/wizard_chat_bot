@@ -143,6 +143,11 @@ export function parseCompanyIntelResult(response) {
   const jobsPayload = Array.isArray(payload.jobs) ? payload.jobs : [];
   const jobs = jobsPayload.map(normalizeJob).filter(Boolean);
 
+  const metadata = {
+    ...(response?.metadata ?? {}),
+    rawPreview: safePreview(raw)
+  };
+
   return {
     profile: {
       officialName: coerceString(profile.officialName),
@@ -172,8 +177,6 @@ export function parseCompanyIntelResult(response) {
     },
     jobs,
     evidence: normalizeEvidence(payload.evidence ?? {}),
-    metadata: {
-      rawPreview: safePreview(raw)
-    }
+    metadata
   };
 }
