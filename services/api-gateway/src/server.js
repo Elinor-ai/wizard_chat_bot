@@ -16,6 +16,7 @@ import { requireAuth } from "./middleware/require-auth.js";
 import { videosRouter } from "./routes/videos.js";
 import { companiesRouter } from "./routes/companies.js";
 import { subscriptionsRouter } from "./routes/subscriptions.js";
+import { llmRouter } from "./routes/llm.js";
 import {
   getBaseUsdPerCredit,
   listSubscriptionPlans,
@@ -55,6 +56,12 @@ export function createApp({ logger, firestore, bigQuery, llmClient }) {
   app.locals.bigQuery = bigQuery;
 
   const authMiddleware = requireAuth({ logger });
+
+  app.use(
+    "/api/llm",
+    authMiddleware,
+    llmRouter({ llmClient, firestore, bigQuery, logger })
+  );
 
   app.use("/auth", authRouter({ firestore, bigQuery, logger }));
   app.use("/contact", contactRouter({ logger }));
@@ -117,6 +124,10 @@ export function createApp({ logger, firestore, bigQuery, llmClient }) {
     "/subscriptions",
     authMiddleware,
     subscriptionsRouter({ firestore, bigQuery, logger })
+  );
+
+  logger.warn(
+    "Legacy LLM endpoints (wizard/chat/copilot/assets/etc.) are deprecated; please route through POST /api/llm."
   );
 
   app.use(notFound);

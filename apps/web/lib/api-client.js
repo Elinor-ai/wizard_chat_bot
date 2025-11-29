@@ -833,7 +833,7 @@ export const WizardApi = {
       options.jobId === null || options.jobId === undefined
         ? payload.jobId
         : options.jobId;
-    const response = await fetch(`${API_BASE_URL}/wizard/suggestions`, {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       signal: options.signal,
       headers: {
@@ -841,8 +841,11 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        ...payload,
-        jobId: normalizedJobId,
+        taskType: "suggest",
+        context: {
+          ...payload,
+          jobId: normalizedJobId,
+        },
       }),
     });
 
@@ -859,20 +862,20 @@ export const WizardApi = {
       options.jobId === null || options.jobId === undefined
         ? payload.jobId
         : options.jobId;
-    const response = await fetch(
-      `${API_BASE_URL}/wizard/channels/recommendations`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders(options.authToken),
-        },
-        body: JSON.stringify({
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken),
+      },
+      body: JSON.stringify({
+        taskType: "channels",
+        context: {
           ...payload,
           jobId: normalizedJobId,
-        }),
-      }
-    );
+        },
+      }),
+    });
 
     if (!response.ok) {
       let message = "Channel recommendation fetch failed";
@@ -978,7 +981,8 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return jobAssetResponseSchema.parse(data);
+    const payload = data?.result ?? data;
+    return jobAssetResponseSchema.parse(payload);
   },
 
   async fetchGlobalAssets(options = {}) {
@@ -1004,13 +1008,16 @@ export const WizardApi = {
   },
 
   async generateJobAssets(payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/wizard/assets/generate`, {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        taskType: "generate_campaign_assets",
+        context: payload,
+      }),
     });
 
     if (!response.ok) {
@@ -1030,7 +1037,8 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return jobAssetResponseSchema.parse(data);
+    const resultPayload = data?.result ?? data;
+    return jobAssetResponseSchema.parse(resultPayload);
   },
 
   async refineJob(payload, options = {}) {
@@ -1038,15 +1046,18 @@ export const WizardApi = {
       options.jobId === null || options.jobId === undefined
         ? payload.jobId
         : options.jobId;
-    const response = await fetch(`${API_BASE_URL}/wizard/refine`, {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        ...payload,
-        jobId: normalizedJobId,
+        taskType: "refine",
+        context: {
+          ...payload,
+          jobId: normalizedJobId,
+        },
       }),
     });
 
@@ -1067,7 +1078,24 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return refinementResponseSchema.parse(data);
+    const raw = data?.result ?? data ?? {};
+    const mergedPayload = {
+      jobId:
+        raw.jobId ??
+        normalizedJobId ??
+        payload.jobId ??
+        (typeof options.jobId === "string" ? options.jobId : ""),
+      refinedJob: raw.refinedJob ?? {},
+      originalJob: raw.originalJob ?? {},
+      summary: raw.summary,
+      provider: raw.provider,
+      model: raw.model,
+      updatedAt: raw.updatedAt,
+      refreshed: raw.refreshed,
+      failure: raw.failure,
+      metadata: raw.metadata,
+    };
+    return refinementResponseSchema.parse(mergedPayload);
   },
 
   async finalizeJob(payload, options = {}) {
@@ -1174,13 +1202,16 @@ export const WizardApi = {
   },
 
   async sendCopilotMessage(payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/wizard/copilot/chat`, {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        taskType: "copilot_agent",
+        context: payload,
+      }),
     });
 
     if (!response.ok) {
@@ -1790,20 +1821,24 @@ export const VideoLibraryApi = {
   },
 
   async createItem(payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/videos`, {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        taskType: "video_create_manifest",
+        context: payload,
+      }),
     });
     if (!response.ok) {
       const message = await response.text();
       throw new Error(message || "Failed to create video asset");
     }
     const data = await response.json();
-    return videoDetailSchema.parse(data.item);
+    const item = data?.result?.item ?? data.item;
+    return videoDetailSchema.parse(item);
   },
 
   async fetchItem(itemId, options = {}) {
@@ -1816,56 +1851,68 @@ export const VideoLibraryApi = {
       throw new Error("Failed to load video item");
     }
     const data = await response.json();
-    return videoDetailSchema.parse(data.item);
+    const item = data?.result?.item ?? data.item;
+    return videoDetailSchema.parse(item);
   },
 
   async regenerate(itemId, payload, options = {}) {
-    const response = await fetch(
-      `${API_BASE_URL}/videos/${itemId}/regenerate`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders(options.authToken),
-        },
-        body: JSON.stringify(payload),
-      }
-    );
-    if (!response.ok) {
-      throw new Error("Failed to regenerate manifest");
-    }
-    const data = await response.json();
-    return videoDetailSchema.parse(data.item);
-  },
-
-  async triggerRender(itemId, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/videos/${itemId}/render`, {
-      method: "POST",
-      headers: {
-        ...authHeaders(options.authToken),
-      },
-    });
-    if (!response.ok) {
-      throw new Error("Failed to trigger render");
-    }
-    const data = await response.json();
-    return videoDetailSchema.parse(data.item);
-  },
-
-  async updateCaption(itemId, payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/videos/${itemId}/caption`, {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        taskType: "video_regenerate",
+        context: { itemId, ...payload },
+      }),
     });
     if (!response.ok) {
+      throw new Error("Failed to regenerate manifest");
+    }
+    const data = await response.json();
+    const item = data?.result?.item ?? data.item;
+    return videoDetailSchema.parse(item);
+  },
+
+  async triggerRender(itemId, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken),
+      },
+      body: JSON.stringify({
+        taskType: "video_render",
+        context: { itemId },
+      }),
+   });
+   if (!response.ok) {
+      throw new Error("Failed to trigger render");
+    }
+    const data = await response.json();
+    const item = data?.result?.item ?? data.item;
+    return videoDetailSchema.parse(item);
+  },
+
+  async updateCaption(itemId, payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken),
+      },
+      body: JSON.stringify({
+        taskType: "video_caption_update",
+        context: { itemId, ...payload },
+      }),
+   });
+   if (!response.ok) {
       throw new Error("Failed to update caption");
     }
     const data = await response.json();
-    return videoDetailSchema.parse(data.item);
+    const item = data?.result?.item ?? data.item;
+    return videoDetailSchema.parse(item);
   },
 
   async approve(itemId, options = {}) {

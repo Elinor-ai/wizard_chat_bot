@@ -1451,6 +1451,123 @@ async function runAssetGenerationPipeline({
   };
 }
 
+export async function generateCampaignAssets({
+  firestore,
+  bigQuery,
+  llmClient,
+  logger,
+  payload,
+  userId,
+}) {
+  const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
+  if (!job) {
+    throw httpError(404, "Job not found");
+  }
+  if (job.ownerUserId && job.ownerUserId !== userId) {
+    throw httpError(403, "You do not have access to this job");
+  }
+
+  const finalJob = await loadFinalJobDocument(firestore, payload.jobId);
+  if (!finalJob?.job) {
+    throw httpError(409, "Finalize the job before generating assets.");
+  }
+
+  const channelIds = Array.from(new Set(payload.channelIds));
+  const plan = createAssetPlan({ channelIds });
+  if (!plan.items || plan.items.length === 0) {
+    throw httpError(
+      400,
+      "No asset formats available for the selected channels."
+    );
+  }
+
+  const now = new Date();
+  const sourceJobVersion = payload.source ?? finalJob.source ?? "refined";
+  const jobSnapshot = finalJob.job ?? buildJobSnapshot(job);
+  const companyProfile =
+    job.companyId && job.companyId.trim().length > 0
+      ? await loadCompanyProfile({
+          firestore,
+          companyId: job.companyId,
+          logger,
+        })
+      : null;
+  const assetRecords = createAssetRecordsFromPlan({
+    jobId: payload.jobId,
+    ownerUserId: job.ownerUserId ?? userId,
+    companyId: job.companyId ?? null,
+    plan,
+    sourceJobVersion,
+    now,
+  });
+
+  for (const record of assetRecords.values()) {
+    await persistAssetRecord({ firestore, record });
+  }
+
+  let run = {
+    id: `run_${uuid()}`,
+    jobId: payload.jobId,
+    companyId: job.companyId ?? null,
+    ownerUserId: job.ownerUserId ?? userId,
+    blueprintVersion: plan.version,
+    channelIds,
+    formatIds: plan.items.map((item) => item.formatId),
+    status: RUN_STATUS.RUNNING,
+    stats: {
+      assetsPlanned: plan.items.length,
+      assetsCompleted: 0,
+      promptTokens: 0,
+      responseTokens: 0,
+    },
+    startedAt: now,
+    completedAt: null,
+  };
+
+  run = await persistAssetRun({ firestore, run });
+
+  const trackUsage = (result, usageContext) =>
+    recordLlmUsageFromResult({
+      firestore,
+      bigQuery,
+      logger,
+      usageContext,
+      result,
+    });
+
+  const { stats, hasFailures, records } = await runAssetGenerationPipeline({
+    firestore,
+    llmClient,
+    plan,
+    assetRecords,
+    jobSnapshot,
+    channelMetaMap: buildChannelMetaMap(plan.channelMeta),
+    logger,
+    usageContext: { userId, jobId: payload.jobId },
+    trackUsage,
+    companyProfile,
+  });
+
+  run.stats = stats;
+  run.status = hasFailures ? RUN_STATUS.FAILED : RUN_STATUS.COMPLETED;
+  run.completedAt = new Date();
+  if (!hasFailures) {
+    run.error = undefined;
+  } else {
+    run.error = {
+      reason: "partial_failure",
+      message: "One or more assets failed to generate",
+    };
+  }
+  run = await persistAssetRun({ firestore, run });
+
+  return {
+    jobId: payload.jobId,
+    run: serializeAssetRun(run),
+    assets: records.map(serializeJobAsset),
+  };
+}
+
 function valueProvided(value) {
   if (Array.isArray(value)) {
     return value.length > 0;
@@ -2300,123 +2417,10 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
   router.post(
     "/assets/generate",
     wrapAsync(async (req, res) => {
-      const userId = getAuthenticatedUserId(req);
-      const payload = assetGenerationRequestSchema.parse(req.body ?? {});
-
-      const job = await firestore.getDocument(JOB_COLLECTION, payload.jobId);
-      if (!job) {
-        throw httpError(404, "Job not found");
-      }
-      if (job.ownerUserId && job.ownerUserId !== userId) {
-        throw httpError(403, "You do not have access to this job");
-      }
-
-      const finalJob = await loadFinalJobDocument(firestore, payload.jobId);
-      if (!finalJob?.job) {
-        throw httpError(409, "Finalize the job before generating assets.");
-      }
-
-      const channelIds = Array.from(new Set(payload.channelIds));
-      const plan = createAssetPlan({ channelIds });
-      if (!plan.items || plan.items.length === 0) {
-        throw httpError(
-          400,
-          "No asset formats available for the selected channels."
-        );
-      }
-
-      const now = new Date();
-      const sourceJobVersion = payload.source ?? finalJob.source ?? "refined";
-      const jobSnapshot = finalJob.job ?? buildJobSnapshot(job);
-      const companyProfile =
-        job.companyId && job.companyId.trim().length > 0
-          ? await loadCompanyProfile({
-              firestore,
-              companyId: job.companyId,
-              logger,
-            })
-          : null;
-      const assetRecords = createAssetRecordsFromPlan({
-        jobId: payload.jobId,
-        ownerUserId: job.ownerUserId ?? userId,
-        companyId: job.companyId ?? null,
-        plan,
-        sourceJobVersion,
-        now,
-      });
-
-      for (const record of assetRecords.values()) {
-        await persistAssetRecord({ firestore, record });
-      }
-
-      let run = {
-        id: `run_${uuid()}`,
-        jobId: payload.jobId,
-        companyId: job.companyId ?? null,
-        ownerUserId: job.ownerUserId ?? userId,
-        blueprintVersion: plan.version,
-        channelIds,
-        formatIds: plan.items.map((item) => item.formatId),
-        status: RUN_STATUS.RUNNING,
-        stats: {
-          assetsPlanned: plan.items.length,
-          assetsCompleted: 0,
-          promptTokens: 0,
-          responseTokens: 0,
-        },
-        startedAt: now,
-        completedAt: null,
-      };
-
-      run = await persistAssetRun({ firestore, run });
-
-      try {
-        const { stats, hasFailures, records } =
-          await runAssetGenerationPipeline({
-            firestore,
-            llmClient,
-            plan,
-            assetRecords,
-            jobSnapshot,
-            channelMetaMap: buildChannelMetaMap(plan.channelMeta),
-            logger,
-            usageContext: { userId, jobId: payload.jobId },
-            trackUsage: trackLlmUsage,
-            companyProfile,
-          });
-
-        run.stats = stats;
-        run.status = hasFailures ? RUN_STATUS.FAILED : RUN_STATUS.COMPLETED;
-        run.completedAt = new Date();
-        if (!hasFailures) {
-          run.error = undefined;
-        } else {
-          run.error = {
-            reason: "partial_failure",
-            message: "One or more assets failed to generate",
-          };
-        }
-        run = await persistAssetRun({ firestore, run });
-
-        res.json({
-          jobId: payload.jobId,
-          run: serializeAssetRun(run),
-          assets: records.map(serializeJobAsset),
-        });
-      } catch (error) {
-        logger.error(
-          { err: error, jobId: payload.jobId },
-          "Asset generation pipeline crashed"
-        );
-        run.status = RUN_STATUS.FAILED;
-        run.completedAt = new Date();
-        run.error = {
-          reason: "asset_pipeline_failed",
-          message: error?.message ?? "Asset pipeline failed",
-        };
-        await persistAssetRun({ firestore, run });
-        throw httpError(500, "Asset generation failed");
-      }
+      throw httpError(
+        410,
+        "This endpoint is deprecated. Use POST /api/llm with taskType=generate_campaign_assets."
+      );
     })
   );
 

@@ -9,6 +9,8 @@ import { buildVideoManifest } from "./manifest-builder.js";
 import { incrementMetric } from "./metrics.js";
 import { recordLlmUsage, recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 import { VERTEX_DEFAULTS } from "../vertex/constants.js";
+import { createRenderer } from "./renderer.js";
+import { createPublisherRegistry } from "./publishers.js";
 
 const COLLECTION = "videoLibraryItems";
 const AUTO_RENDER = process.env.VIDEO_RENDER_AUTOSTART !== "false";
@@ -573,4 +575,111 @@ export function createVideoLibraryService({
     bulkUpdate,
     updateCaption,
   };
+}
+
+export async function renderVideo({
+  firestore,
+  bigQuery,
+  llmClient,
+  logger,
+  ownerUserId,
+  itemId,
+}) {
+  const renderer = createRenderer({ logger });
+  const publisherRegistry = createPublisherRegistry({ logger });
+  const service = createVideoLibraryService({
+    firestore,
+    bigQuery,
+    llmClient,
+    renderer,
+    publisherRegistry,
+    logger,
+  });
+  const outcome = await service.triggerRender({ ownerUserId, itemId });
+  return outcome?.item ?? null;
+}
+
+export async function updateVideoCaption({
+  firestore,
+  bigQuery,
+  llmClient,
+  logger,
+  ownerUserId,
+  itemId,
+  caption,
+}) {
+  const renderer = createRenderer({ logger });
+  const publisherRegistry = createPublisherRegistry({ logger });
+  const service = createVideoLibraryService({
+    firestore,
+    bigQuery,
+    llmClient,
+    renderer,
+    publisherRegistry,
+    logger,
+  });
+  const item = await service.updateCaption({
+    ownerUserId,
+    itemId,
+    caption,
+  });
+  return item;
+}
+
+export async function createVideoManifest({
+  firestore,
+  bigQuery,
+  llmClient,
+  logger,
+  job,
+  channelId,
+  recommendedMedium,
+  ownerUserId,
+}) {
+  const renderer = createRenderer({ logger });
+  const publisherRegistry = createPublisherRegistry({ logger });
+  const service = createVideoLibraryService({
+    firestore,
+    bigQuery,
+    llmClient,
+    renderer,
+    publisherRegistry,
+    logger,
+  });
+  const item = await service.createItem({
+    job,
+    channelId,
+    recommendedMedium,
+    ownerUserId,
+  });
+  return item;
+}
+
+export async function regenerateVideoManifest({
+  firestore,
+  bigQuery,
+  llmClient,
+  logger,
+  ownerUserId,
+  itemId,
+  job,
+  recommendedMedium,
+}) {
+  const renderer = createRenderer({ logger });
+  const publisherRegistry = createPublisherRegistry({ logger });
+  const service = createVideoLibraryService({
+    firestore,
+    bigQuery,
+    llmClient,
+    renderer,
+    publisherRegistry,
+    logger,
+  });
+  const item = await service.regenerateManifest({
+    ownerUserId,
+    itemId,
+    job,
+    recommendedMedium,
+  });
+  return item;
 }
