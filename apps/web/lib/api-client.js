@@ -880,7 +880,61 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return copilotSuggestionResponseSchema.parse(data);
+    const responsePayload = data?.result ?? data ?? {};
+    const suggestionCandidates =
+      responsePayload.suggestions ??
+      responsePayload.autofill_candidates ??
+      responsePayload.autofillCandidates ??
+      responsePayload.candidates ??
+      [];
+    const failure =
+      responsePayload.failure ??
+      (responsePayload.error
+        ? {
+            reason: responsePayload.error.reason ?? "llm_error",
+            rawPreview:
+              responsePayload.error.rawPreview ??
+              responsePayload.error.raw ??
+              null,
+            error:
+              responsePayload.error.message ??
+              responsePayload.error.error ??
+              null,
+            occurredAt: responsePayload.error.occurredAt ?? new Date(),
+          }
+        : null);
+    // Debug: log raw server response for suggestions
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.log("[API] fetchSuggestions:raw-response", {
+        hasSuggestions: Array.isArray(responsePayload?.suggestions),
+        hasAutofillCandidates: Array.isArray(responsePayload?.autofill_candidates),
+        hasCandidates: Array.isArray(responsePayload?.candidates),
+        suggestionsCount: responsePayload?.suggestions?.length ?? 0,
+        autofillCandidatesCount: responsePayload?.autofill_candidates?.length ?? 0,
+        candidatesCount: responsePayload?.candidates?.length ?? 0,
+        rawData: responsePayload,
+      });
+    }
+    // Handle both legacy and new /api/llm response formats
+    const normalizedData = {
+      ...responsePayload,
+      jobId: responsePayload.jobId ?? data?.jobId ?? normalizedJobId ?? null,
+      suggestions: suggestionCandidates,
+      updatedAt: responsePayload.updatedAt ?? data?.updatedAt ?? null,
+      refreshed: Boolean(responsePayload.refreshed ?? data?.refreshed),
+      failure,
+    };
+    try {
+      return copilotSuggestionResponseSchema.parse(normalizedData);
+    } catch (parseError) {
+      // eslint-disable-next-line no-console
+      console.error("[API] fetchSuggestions:parse-error", {
+        error: parseError,
+        rawData: data,
+      });
+      throw parseError;
+    }
   },
 
   async fetchChannelRecommendations(payload, options = {}) {
@@ -1224,20 +1278,18 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return copilotConversationResponseSchema.parse(data);
+    const payload = data?.result ?? data;
+    return copilotConversationResponseSchema.parse(payload);
   },
 
-  async sendCopilotMessage(payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/api/llm`, {
+  async sendCopilotMessage(messagePayload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/wizard/copilot/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.authToken),
       },
-      body: JSON.stringify({
-        taskType: "copilot_agent",
-        context: payload,
-      }),
+      body: JSON.stringify(messagePayload),
     });
 
     if (!response.ok) {
@@ -1245,7 +1297,32 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return copilotConversationResponseSchema.parse(data);
+    // Debug: log raw server response
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.log("[API] sendCopilotMessage:raw-response", {
+        jobId: data?.jobId,
+        hasMessages: Array.isArray(data?.messages),
+        messageCount: data?.messages?.length ?? 0,
+        messages: data?.messages?.map((m) => ({
+          id: m?.id,
+          role: m?.role,
+          hasContent: Boolean(m?.content),
+          contentPreview: typeof m?.content === "string" ? m.content.slice(0, 100) : typeof m?.content,
+        })),
+        rawData: data,
+      });
+    }
+    try {
+      return copilotConversationResponseSchema.parse(data);
+    } catch (parseError) {
+      // eslint-disable-next-line no-console
+      console.error("[API] sendCopilotMessage:parse-error", {
+        error: parseError,
+        rawData: data,
+      });
+      throw parseError;
+    }
   },
 
   async fetchCompanyOverview(options = {}) {

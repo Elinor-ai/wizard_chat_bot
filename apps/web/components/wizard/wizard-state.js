@@ -1,4 +1,10 @@
-import { deepClone, deepEqual, getDeep, setDeep } from "./wizard-utils";
+import {
+  deepClone,
+  deepEqual,
+  findFieldDefinition,
+  getDeep,
+  setDeep,
+} from "./wizard-utils";
 
 export const INTRO_ASSISTANT_MESSAGE = {
   id: "intro",
@@ -27,6 +33,93 @@ function applyPatch(state, patch) {
     ...patch,
   };
   return withUnsavedChanges(merged, patch);
+}
+
+export function normalizeSuggestedValueForField(fieldOrFieldId, suggestedValue) {
+  if (suggestedValue === undefined || suggestedValue === null) {
+    return suggestedValue;
+  }
+
+  const field =
+    typeof fieldOrFieldId === "string" || !fieldOrFieldId
+      ? findFieldDefinition(fieldOrFieldId)
+      : fieldOrFieldId;
+  const options = Array.isArray(field?.options) ? field.options : [];
+  if (options.length === 0) {
+    return suggestedValue;
+  }
+
+  const normalizeString = (input) =>
+    typeof input === "string" || typeof input === "number" || typeof input === "boolean"
+      ? String(input).trim().toLowerCase().replace(/[\s-]+/g, "_")
+      : null;
+
+  const tryMatch = (candidate) => {
+    const normalizedCandidate = normalizeString(candidate);
+    if (!normalizedCandidate) {
+      return null;
+    }
+
+    const byValue = options.find(
+      (option) =>
+        normalizeString(option.value) === normalizedCandidate ||
+        option.value === candidate
+    );
+    if (byValue) {
+      return byValue.value;
+    }
+
+    const byLabel = options.find(
+      (option) =>
+        typeof option.label === "string" &&
+        normalizeString(option.label) === normalizedCandidate
+    );
+    if (byLabel) {
+      return byLabel.value;
+    }
+
+    return null;
+  };
+
+  const directMatch = tryMatch(suggestedValue);
+  if (directMatch !== null) {
+    return directMatch;
+  }
+
+  if (Array.isArray(suggestedValue)) {
+    for (const entry of suggestedValue) {
+      const match = tryMatch(entry);
+      if (match !== null) {
+        return match;
+      }
+    }
+  }
+
+  if (suggestedValue && typeof suggestedValue === "object") {
+    const candidateKeys = ["value", "label", "option", "name", "title"];
+    for (const key of candidateKeys) {
+      const keyValue = suggestedValue[key];
+      if (keyValue && typeof keyValue === "object" && key === "option") {
+        const nestedMatch = tryMatch(keyValue.value ?? keyValue.label);
+        if (nestedMatch !== null) {
+          return nestedMatch;
+        }
+      }
+      const match = tryMatch(keyValue);
+      if (match !== null) {
+        return match;
+      }
+    }
+
+    for (const value of Object.values(suggestedValue)) {
+      const match = tryMatch(value);
+      if (match !== null) {
+        return match;
+      }
+    }
+  }
+
+  return suggestedValue;
 }
 
 export function createInitialWizardState() {
@@ -62,20 +155,53 @@ function resolveConversationVersion(messages) {
     return 0;
   }
   return messages.reduce((latest, message) => {
-    if (!message) {
+    const timestamp = getMessageTimestamp(message);
+    if (!Number.isFinite(timestamp)) {
       return latest;
     }
-    const createdAt =
-      message.createdAt instanceof Date
-        ? message.createdAt.getTime()
-        : typeof message.createdAt === "string"
-          ? Date.parse(message.createdAt)
-          : 0;
-    if (!Number.isFinite(createdAt)) {
-      return latest;
-    }
-    return Math.max(latest, createdAt);
+    return Math.max(latest, timestamp);
   }, 0);
+}
+
+function getMessageTimestamp(message) {
+  if (!message) return null;
+  const createdAt = message.createdAt;
+  if (createdAt instanceof Date) {
+    return createdAt.getTime();
+  }
+  if (typeof createdAt === "string") {
+    const parsed = Date.parse(createdAt);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof createdAt === "number") {
+    return createdAt;
+  }
+  return null;
+}
+
+function mergeConversationMessages(existing = [], incoming = []) {
+  const seen = new Set();
+  const merged = [];
+  const push = (message) => {
+    if (!message || !message.id) return;
+    if (seen.has(message.id)) return;
+    seen.add(message.id);
+    merged.push(message);
+  };
+
+  existing.forEach(push);
+  incoming.forEach(push);
+
+  merged.sort((a, b) => {
+    const aTs = getMessageTimestamp(a);
+    const bTs = getMessageTimestamp(b);
+    if (aTs === bTs) return 0;
+    if (aTs === null) return -1;
+    if (bTs === null) return 1;
+    return aTs - bTs;
+  });
+
+  return merged;
 }
 
 export function wizardReducer(state, action) {
@@ -124,11 +250,12 @@ export function wizardReducer(state, action) {
         return state;
       }
 
+      const normalizedValue = normalizeSuggestedValueForField(fieldId, value);
       const nextDraft = deepClone(state.state);
-      if (value === undefined) {
+      if (normalizedValue === undefined) {
         setDeep(nextDraft, fieldId, undefined);
       } else {
-        setDeep(nextDraft, fieldId, value);
+        setDeep(nextDraft, fieldId, normalizedValue);
       }
 
       const nextAutofilled = deepClone(state.autofilledFields);
@@ -136,7 +263,7 @@ export function wizardReducer(state, action) {
       setDeep(nextAutofilled, fieldId, {
         ...existing,
         ...meta,
-        value,
+        value: normalizedValue,
         accepted: true,
         appliedAt,
       });
@@ -326,6 +453,7 @@ export function wizardReducer(state, action) {
         : Array.isArray(action.payload?.messages)
           ? action.payload.messages
           : [];
+      const source = action.payload?.source ?? "unknown";
       const incomingVersion =
         typeof action.payload?.version === "number"
           ? action.payload.version
@@ -333,27 +461,20 @@ export function wizardReducer(state, action) {
       const currentVersion = Number.isFinite(state.copilotConversationVersion)
         ? state.copilotConversationVersion
         : 0;
-      const shouldIgnore =
-        Number.isFinite(incomingVersion) && incomingVersion < currentVersion;
-      if (process.env.NODE_ENV !== "production") {
-        // eslint-disable-next-line no-console
-        console.log("[WizardState] copilot:update", {
-          source: action.payload?.source ?? "unknown",
-          incomingVersion,
-          currentVersion,
-          messageCount: messages.length,
-          ignored: shouldIgnore,
-        });
-      }
-      if (shouldIgnore) {
-        return state;
-      }
+      const mergedMessages = mergeConversationMessages(
+        state.copilotConversation,
+        messages
+      );
+      const mergedVersion = Math.max(
+        currentVersion,
+        Number.isFinite(incomingVersion)
+          ? incomingVersion
+          : resolveConversationVersion(mergedMessages)
+      );
       return {
         ...state,
-        copilotConversation: messages,
-        copilotConversationVersion: Number.isFinite(incomingVersion)
-          ? incomingVersion
-          : currentVersion,
+        copilotConversation: mergedMessages,
+        copilotConversationVersion: mergedVersion,
       };
     }
 

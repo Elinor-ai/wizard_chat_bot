@@ -5,7 +5,12 @@ import { clsx } from "../../lib/cn";
 import { useUser } from "../user-context";
 import { WizardSuggestionPanel } from "./wizard-suggestion-panel";
 import { OPTIONAL_STEPS } from "./wizard-schema";
-import { findFieldDefinition, getDeep, isFieldValueProvided } from "./wizard-utils";
+import {
+  findFieldDefinition,
+  getDeep,
+  isFieldValueProvided,
+} from "./wizard-utils";
+import { normalizeSuggestedValueForField } from "./wizard-state";
 import { useWizardController } from "./use-wizard-controller";
 
 function capsuleClassName(isActive, isHovered) {
@@ -54,16 +59,32 @@ function summarizeSuggestionValue(value) {
 }
 
 function InlineSuggestionList({ suggestions = [], onApply }) {
-  if (!suggestions.length) {
+  // Debug logging
+  if (process.env.NODE_ENV !== "production") {
+    // eslint-disable-next-line no-console
+    console.log("[InlineSuggestionList] render", {
+      count: suggestions?.length ?? 0,
+      suggestions: suggestions?.map((s) => ({
+        id: s?.id,
+        fieldId: s?.meta?.fieldId,
+        hasRationale: Boolean(s?.meta?.rationale),
+      })),
+    });
+  }
+
+  if (!Array.isArray(suggestions) || suggestions.length === 0) {
     return null;
   }
+
   return (
     <div className="flex flex-col gap-2 pt-2">
       {suggestions.map((message) => {
+        if (!message || !message.id) {
+          return null;
+        }
         const canApply = Boolean(message.meta?.fieldId);
-        const preview = summarizeSuggestionValue(
-          message.meta?.value ?? message.content ?? ""
-        );
+        const suggestionValue = message.meta?.value ?? message.content ?? "";
+        const preview = summarizeSuggestionValue(suggestionValue);
         const rationale = message.meta?.rationale;
         return (
           <div key={message.id} className="flex flex-col gap-1">
@@ -81,7 +102,13 @@ function InlineSuggestionList({ suggestions = [], onApply }) {
               disabled={!canApply}
               onClick={() => {
                 if (canApply) {
-                  onApply?.(message.meta);
+                  onApply?.({
+                    fieldId: message.meta?.fieldId,
+                    value: suggestionValue,
+                    rationale: message.meta?.rationale,
+                    confidence: message.meta?.confidence,
+                    source: message.meta?.source ?? "copilot",
+                  });
                 }
               }}
               className={clsx(
@@ -173,8 +200,36 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
       ? 0
       : Math.round((progressCompletedCount / totalProgressFields) * 100);
   const isGeneratingPack = isSaving;
+  const handleApplySuggestion = (meta, field) => {
+    if (!meta) return;
+    const fieldId = field?.id ?? meta.fieldId;
+    if (!fieldId) return;
+
+    const rawSuggestedValue = meta.value ?? meta.proposal ?? meta.content ?? null;
+    const normalizedValue = normalizeSuggestedValueForField(
+      field ?? fieldId,
+      rawSuggestedValue
+    );
+
+    if (field?.type === "capsule") {
+      setCustomCapsuleActive(field.id, false);
+    }
+
+    handleAcceptSuggestion({
+      ...meta,
+      fieldId,
+      value: normalizedValue,
+    });
+  };
   const suggestionMap = useMemo(() => {
     const map = {};
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.log("[WizardShell] suggestionMap:building", {
+        visibleAssistantMessagesCount: visibleAssistantMessages?.length ?? 0,
+        suggestionMessages: visibleAssistantMessages?.filter((m) => m.kind === "suggestion").length ?? 0,
+      });
+    }
     visibleAssistantMessages.forEach((message) => {
       if (message.kind !== "suggestion") {
         return;
@@ -188,6 +243,13 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
       if (fieldDefinition) {
         const currentValue = getDeep(state, fieldId);
         if (isFieldValueProvided(currentValue, fieldDefinition)) {
+          if (process.env.NODE_ENV !== "production") {
+            // eslint-disable-next-line no-console
+            console.log("[WizardShell] suggestionMap:skipped-has-value", {
+              fieldId,
+              currentValue,
+            });
+          }
           return;
         }
       }
@@ -197,6 +259,13 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
       }
       map[fieldId].push(message);
     });
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.log("[WizardShell] suggestionMap:result", {
+        fieldIds: Object.keys(map),
+        totalSuggestions: Object.values(map).flat().length,
+      });
+    }
     return map;
   }, [state, visibleAssistantMessages]);
 
@@ -751,7 +820,7 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
                 )}
                   <InlineSuggestionList
                     suggestions={fieldSuggestions}
-                    onApply={handleAcceptSuggestion}
+                    onApply={(meta) => handleApplySuggestion(meta, field)}
                   />
                 </FieldContainer>
               );

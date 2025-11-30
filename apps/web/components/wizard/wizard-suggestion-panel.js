@@ -397,7 +397,15 @@ export function WizardSuggestionPanel({
     // eslint-disable-next-line no-console
     console.log("[WizardSuggestionPanel] conversation:update", {
       count: conversationMessages.length,
-      ids: conversationMessages.map((message) => message.id),
+      ids: conversationMessages.map((message) => message?.id),
+      messages: conversationMessages.map((message) => ({
+        id: message?.id,
+        role: message?.role,
+        hasContent: Boolean(message?.content),
+        contentPreview: typeof message?.content === "string"
+          ? message.content.slice(0, 50)
+          : typeof message?.content,
+      })),
     });
   }, [conversationMessages]);
 
@@ -535,35 +543,41 @@ export function WizardSuggestionPanel({
                 Ask your copilot for definitions, rewrites, or next steps.
               </p>
             ) : (
-              conversationMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={clsx(
-                    "flex w-full",
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  )}
-                >
-                  <article
+              conversationMessages.map((message) => {
+                if (!message || !message.id) {
+                  return null;
+                }
+                const messageContent = message.content ?? "";
+                return (
+                  <div
+                    key={message.id}
                     className={clsx(
-                      "max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm transition",
-                      message.role === "user"
-                        ? "rounded-br-lg bg-primary-600 text-white"
-                        : message.role === "assistant"
-                          ? "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-800"
-                          : "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-600"
+                      "flex w-full",
+                      message.role === "user" ? "justify-end" : "justify-start"
                     )}
                   >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                    {message.metadata?.actions?.length ? (
-                      <div className="mt-2 text-xs text-primary-300">
-                        Applied {message.metadata.actions.length} update
-                        {message.metadata.actions.length > 1 ? "s" : ""} to the
-                        form.
-                      </div>
-                    ) : null}
-                  </article>
-                </div>
-              ))
+                    <article
+                      className={clsx(
+                        "max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm transition",
+                        message.role === "user"
+                          ? "rounded-br-lg bg-primary-600 text-white"
+                          : message.role === "assistant"
+                            ? "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-800"
+                            : "rounded-bl-lg border border-neutral-200 bg-neutral-100 text-neutral-600"
+                      )}
+                    >
+                      <p className="whitespace-pre-wrap">{messageContent}</p>
+                      {message.metadata?.actions?.length ? (
+                        <div className="mt-2 text-xs text-primary-300">
+                          Applied {message.metadata.actions.length} update
+                          {message.metadata.actions.length > 1 ? "s" : ""} to the
+                          form.
+                        </div>
+                      ) : null}
+                    </article>
+                  </div>
+                );
+              })
             )}
             {isSending ? <TypingIndicatorBubble /> : null}
           </div>
