@@ -135,6 +135,13 @@ export function createInitialWizardState() {
     assistantMessages: [INTRO_ASSISTANT_MESSAGE],
     isChatting: false,
     isFetchingSuggestions: false,
+    suggestions: {
+      status: "idle",
+      baseHash: null,
+      byFieldId: {},
+      lastError: null,
+      lastFetchedAt: null,
+    },
     hiddenFields: {},
     autofilledFields: {},
     copilotNextTeaser: "",
@@ -399,27 +406,113 @@ export function wizardReducer(state, action) {
       };
     }
 
-    case "SET_SUGGESTIONS_LOADING": {
+    case "SET_SUGGESTIONS_BASE_HASH": {
+      const payload =
+        action.payload && typeof action.payload === "object"
+          ? action.payload
+          : {};
+      const { baseHash = null } = payload;
       return {
         ...state,
-        isFetchingSuggestions: Boolean(action.payload),
+        suggestions: {
+          ...state.suggestions,
+          baseHash,
+        },
       };
     }
 
-    case "SET_SUGGESTIONS_DONE": {
-      const {
-        hiddenFields = state.hiddenFields,
-        autofilledFields = state.autofilledFields,
-        assistantMessages = state.assistantMessages,
-        copilotNextTeaser = state.copilotNextTeaser,
-      } = action.payload ?? {};
+    case "MARK_SUGGESTIONS_STALE": {
+      const payload =
+        action.payload && typeof action.payload === "object"
+          ? action.payload
+          : {};
+      const { baseHash = state.suggestions.baseHash, preserveAutofill = false } =
+        payload;
       return {
         ...state,
         isFetchingSuggestions: false,
+        suggestions: {
+          ...state.suggestions,
+          status: "stale",
+          baseHash,
+          byFieldId: {},
+          lastError: null,
+          lastFetchedAt: null,
+        },
+        autofilledFields: preserveAutofill ? state.autofilledFields : {},
+      };
+    }
+
+    case "SET_SUGGESTIONS_LOADING": {
+      const payload =
+        action.payload && typeof action.payload === "object"
+          ? action.payload
+          : {};
+      const { baseHash = state.suggestions.baseHash } = payload;
+      return {
+        ...state,
+        isFetchingSuggestions: true,
+        suggestions: {
+          ...state.suggestions,
+          status: "loading",
+          baseHash,
+          lastError: null,
+        },
+      };
+    }
+
+    case "SET_SUGGESTIONS_RESULT": {
+      const payload =
+        action.payload && typeof action.payload === "object"
+          ? action.payload
+          : {};
+      const {
+        baseHash = state.suggestions.baseHash,
+        byFieldId = {},
+        autofilledFields = state.autofilledFields,
+        hiddenFields = state.hiddenFields,
+        assistantMessages = state.assistantMessages,
+        copilotNextTeaser = state.copilotNextTeaser,
+        fetchedAt = Date.now(),
+      } = payload;
+      return {
+        ...state,
+        isFetchingSuggestions: false,
+        suggestions: {
+          ...state.suggestions,
+          status: "ready",
+          baseHash,
+          byFieldId,
+          lastError: null,
+          lastFetchedAt: fetchedAt,
+        },
         hiddenFields,
         autofilledFields,
         assistantMessages,
         copilotNextTeaser,
+      };
+    }
+
+    case "SET_SUGGESTIONS_ERROR": {
+      const payload =
+        action.payload && typeof action.payload === "object"
+          ? action.payload
+          : {};
+      const {
+        baseHash = state.suggestions.baseHash,
+        error = null,
+        assistantMessages = state.assistantMessages,
+      } = payload;
+      return {
+        ...state,
+        isFetchingSuggestions: false,
+        suggestions: {
+          ...state.suggestions,
+          status: "error",
+          baseHash,
+          lastError: error,
+        },
+        assistantMessages,
       };
     }
 
@@ -482,7 +575,6 @@ export function wizardReducer(state, action) {
       return {
         ...state,
         hiddenFields: {},
-        autofilledFields: {},
         copilotNextTeaser: "",
       };
     }

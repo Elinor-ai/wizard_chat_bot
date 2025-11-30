@@ -115,6 +115,29 @@ export function findFieldDefinition(fieldId) {
   return null;
 }
 
+const CORE_SUGGESTION_STEPS = REQUIRED_STEPS.slice(0, 3);
+export const SUGGESTION_CORE_FIELD_IDS = CORE_SUGGESTION_STEPS.flatMap((step) =>
+  step.fields.map((field) => field.id)
+);
+export const OPTIONAL_FIELD_IDS = OPTIONAL_STEPS.flatMap((step) =>
+  step.fields.map((field) => field.id)
+);
+
+export function computeSuggestionsBaseHash(state) {
+  if (!state) {
+    return null;
+  }
+  const snapshot = SUGGESTION_CORE_FIELD_IDS.map((fieldId) => [
+    fieldId,
+    getDeep(state, fieldId),
+  ]);
+  try {
+    return JSON.stringify(snapshot);
+  } catch (_error) {
+    return null;
+  }
+}
+
 export function isFieldValueProvided(value, field) {
   if (field?.valueAs === "boolean") {
     return value === true || value === false;

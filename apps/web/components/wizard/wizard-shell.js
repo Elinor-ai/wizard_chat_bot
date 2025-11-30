@@ -66,8 +66,8 @@ function InlineSuggestionList({ suggestions = [], onApply }) {
       count: suggestions?.length ?? 0,
       suggestions: suggestions?.map((s) => ({
         id: s?.id,
-        fieldId: s?.meta?.fieldId,
-        hasRationale: Boolean(s?.meta?.rationale),
+        fieldId: s?.meta?.fieldId ?? s?.fieldId,
+        hasRationale: Boolean(s?.meta?.rationale ?? s?.rationale),
       })),
     });
   }
@@ -78,16 +78,21 @@ function InlineSuggestionList({ suggestions = [], onApply }) {
 
   return (
     <div className="flex flex-col gap-2 pt-2">
-      {suggestions.map((message) => {
-        if (!message || !message.id) {
+      {suggestions.map((message, index) => {
+        if (!message) {
           return null;
         }
-        const canApply = Boolean(message.meta?.fieldId);
-        const suggestionValue = message.meta?.value ?? message.content ?? "";
+        const fieldId = message.meta?.fieldId ?? message.fieldId;
+        const suggestionValue =
+          message.meta?.value ?? message.value ?? message.content ?? "";
         const preview = summarizeSuggestionValue(suggestionValue);
-        const rationale = message.meta?.rationale;
+        const rationale = message.meta?.rationale ?? message.rationale;
+        const confidence = message.meta?.confidence ?? message.confidence;
+        const source = message.meta?.source ?? message.source ?? "copilot";
+        const itemId = message.id ?? `${fieldId ?? "suggestion"}-${index}`;
+        const canApply = Boolean(fieldId);
         return (
-          <div key={message.id} className="flex flex-col gap-1">
+          <div key={itemId} className="flex flex-col gap-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-primary-500">
               Suggested by your copilot
             </span>
@@ -103,11 +108,11 @@ function InlineSuggestionList({ suggestions = [], onApply }) {
               onClick={() => {
                 if (canApply) {
                   onApply?.({
-                    fieldId: message.meta?.fieldId,
+                    fieldId,
                     value: suggestionValue,
-                    rationale: message.meta?.rationale,
-                    confidence: message.meta?.confidence,
-                    source: message.meta?.source ?? "copilot",
+                    rationale,
+                    confidence,
+                    source,
                   });
                 }
               }}
@@ -177,10 +182,10 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
     handleGenerateHiringPack,
     handleSendMessage,
     handleAcceptSuggestion,
-    visibleAssistantMessages,
     copilotConversation,
     isChatting,
     isFetchingSuggestions,
+    suggestions,
     copilotNextTeaser,
     committedState,
     allRequiredStepsCompleteInState,
@@ -223,51 +228,37 @@ export function WizardShell({ jobId = null, initialCompanyId = null, mode = "cre
   };
   const suggestionMap = useMemo(() => {
     const map = {};
-    if (process.env.NODE_ENV !== "production") {
-      // eslint-disable-next-line no-console
-      console.log("[WizardShell] suggestionMap:building", {
-        visibleAssistantMessagesCount: visibleAssistantMessages?.length ?? 0,
-        suggestionMessages: visibleAssistantMessages?.filter((m) => m.kind === "suggestion").length ?? 0,
-      });
-    }
-    visibleAssistantMessages.forEach((message) => {
-      if (message.kind !== "suggestion") {
-        return;
-      }
-      const fieldId = message.meta?.fieldId;
-      if (!fieldId) {
-        return;
-      }
+    const byFieldId = suggestions?.byFieldId ?? {};
 
+    Object.entries(byFieldId).forEach(([fieldId, entry]) => {
+      if (getDeep(hiddenFields, fieldId)) {
+        return;
+      }
       const fieldDefinition = findFieldDefinition(fieldId);
       if (fieldDefinition) {
         const currentValue = getDeep(state, fieldId);
         if (isFieldValueProvided(currentValue, fieldDefinition)) {
-          if (process.env.NODE_ENV !== "production") {
-            // eslint-disable-next-line no-console
-            console.log("[WizardShell] suggestionMap:skipped-has-value", {
-              fieldId,
-              currentValue,
-            });
-          }
           return;
         }
       }
 
-      if (!map[fieldId]) {
-        map[fieldId] = [];
+      const items = Array.isArray(entry?.items) ? entry.items : [];
+      if (items.length > 0) {
+        map[fieldId] = items;
       }
-      map[fieldId].push(message);
     });
+
     if (process.env.NODE_ENV !== "production") {
       // eslint-disable-next-line no-console
       console.log("[WizardShell] suggestionMap:result", {
         fieldIds: Object.keys(map),
         totalSuggestions: Object.values(map).flat().length,
+        status: suggestions?.status,
       });
     }
+
     return map;
-  }, [state, visibleAssistantMessages]);
+  }, [hiddenFields, state, suggestions]);
 
   if (!user?.authToken) {
     return (

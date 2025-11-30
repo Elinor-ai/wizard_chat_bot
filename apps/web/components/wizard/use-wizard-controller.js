@@ -25,8 +25,14 @@ import {
   isStepComplete,
   normalizeValueForField,
   setDeep,
+  computeSuggestionsBaseHash,
+  OPTIONAL_FIELD_IDS,
 } from "./wizard-utils";
-import { createInitialWizardState, wizardReducer } from "./wizard-state";
+import {
+  createInitialWizardState,
+  normalizeSuggestedValueForField,
+  wizardReducer,
+} from "./wizard-state";
 import {
   fetchJobDraft,
   fetchStepSuggestions,
@@ -295,9 +301,6 @@ export function useWizardController({
   const jobIdRef = useRef(wizardState.jobId);
   const currentStepIdRef = useRef(null);
   const previousFieldValuesRef = useRef({});
-  const lastSuggestionSnapshotRef = useRef({});
-  const suggestionsCacheRef = useRef({});
-  const SUGGESTIONS_CACHE_TTL_MS = 5 * 60 * 1000;
   const toastTimeoutRef = useRef(null);
   const draftPersistTimeoutRef = useRef(null);
   const hydrationKey = `${user?.id ?? "anon"}:${initialJobId ?? "new"}`;
@@ -322,6 +325,10 @@ export function useWizardController({
   const resolvedDefaultCompanyId = useMemo(
     () => initialCompanyId ?? user?.profile?.mainCompanyId ?? null,
     [initialCompanyId, user?.profile?.mainCompanyId]
+  );
+  const suggestionBaseHash = useMemo(
+    () => computeSuggestionsBaseHash(wizardState.state),
+    [wizardState.state]
   );
 
   useEffect(() => {
@@ -418,10 +425,6 @@ export function useWizardController({
       });
     }
   }, [dispatch, resolvedDefaultCompanyId, wizardState.companyId]);
-
-  useEffect(() => {
-    lastSuggestionSnapshotRef.current = {};
-  }, [wizardState.jobId, user?.id]);
 
   useEffect(
     () => () => {
@@ -902,6 +905,25 @@ useEffect(() => {
   ]);
 
   useEffect(() => {
+    if (!suggestionBaseHash) {
+      return;
+    }
+    if (!wizardState.suggestions.baseHash) {
+      dispatch({
+        type: "SET_SUGGESTIONS_BASE_HASH",
+        payload: { baseHash: suggestionBaseHash },
+      });
+      return;
+    }
+    if (wizardState.suggestions.baseHash !== suggestionBaseHash) {
+      dispatch({
+        type: "MARK_SUGGESTIONS_STALE",
+        payload: { baseHash: suggestionBaseHash },
+      });
+    }
+  }, [dispatch, suggestionBaseHash, wizardState.suggestions.baseHash]);
+
+  useEffect(() => {
     dispatch({ type: "RESET_STEP_CONTEXT" });
     const filteredMessages = wizardState.assistantMessages.filter(
       (message) => !["followUp", "skip", "improved"].includes(message.kind)
@@ -1239,238 +1261,20 @@ useEffect(() => {
     dispatch({ type: "STEP_GOTO", payload: { index } });
   }, []);
 
+  const optionalFieldIds = OPTIONAL_FIELD_IDS;
+  const optionalStartIndex = REQUIRED_STEPS.length;
+
   const fetchSuggestionsForStep = useCallback(
     async ({
       stepId = currentStep?.id,
       intentOverrides = {},
       jobIdOverride,
-      updatedFieldId,
-      updatedValue,
     } = {}) => {
-      const workingState = stateRef.current ?? {};
-      const applySuggestionResponse = (response, { source, refreshed, visibleFieldIds, snapshotKey }) => {
-        lastSuggestionSnapshotRef.current[stepId] = snapshotKey;
-        if (source !== "cache") {
-          suggestionsCacheRef.current[stepId] = {
-            snapshotKey,
-            timestamp: Date.now(),
-            response,
-          };
-        }
+      const workingState = stateRef.current ?? wizardState.state ?? {};
+      const effectiveStepId = stepId ?? currentStep?.id;
+      const stepIndex = steps.findIndex((step) => step.id === effectiveStepId);
+      const isOptionalStep = stepIndex >= optionalStartIndex;
 
-        debug("suggestions:response-received", {
-          stepId,
-          suggestionsCount: response.suggestions?.length ?? 0,
-          refreshed: refreshed ?? response.refreshed,
-          failure: response.failure,
-          source,
-        });
-
-        const failure = response.failure ?? null;
-        const visibleFieldSet = new Set(visibleFieldIds);
-        const suggestions = response.suggestions ?? [];
-
-        const enrichedSuggestions = suggestions
-          .map((suggestion) => {
-            if (
-              visibleFieldIds.length > 0 &&
-              !visibleFieldSet.has(suggestion.fieldId)
-            ) {
-              return null;
-            }
-            const fieldDefinition = findFieldDefinition(suggestion.fieldId);
-            const existingValue = getDeep(workingState, suggestion.fieldId);
-            if (
-              fieldDefinition &&
-              isFieldValueProvided(existingValue, fieldDefinition)
-            ) {
-              return null;
-            }
-            const normalized = normalizeValueForField(
-              fieldDefinition,
-              suggestion.value
-            );
-            if (normalized === undefined) {
-              return null;
-            }
-            return {
-              fieldId: suggestion.fieldId,
-              value: normalized,
-              rationale:
-                suggestion.rationale ??
-                "Suggested so candidates understand the opportunity immediately.",
-              confidence: suggestion.confidence ?? 0.5,
-              source: suggestion.source ?? "copilot",
-            };
-          })
-          .filter(Boolean);
-
-        const fieldOrderIndex = new Map(
-          visibleFieldIds.map((fieldId, index) => [fieldId, index])
-        );
-        const orderedSuggestions = enrichedSuggestions
-          .slice()
-          .sort(
-            (a, b) =>
-              (fieldOrderIndex.get(a.fieldId) ?? Number.MAX_SAFE_INTEGER) -
-              (fieldOrderIndex.get(b.fieldId) ?? Number.MAX_SAFE_INTEGER)
-          );
-
-        debug("suggestions:processed", {
-          stepId,
-          rawCount: suggestions.length,
-          enrichedCount: enrichedSuggestions.length,
-          orderedCount: orderedSuggestions.length,
-          fieldIds: orderedSuggestions.map((s) => s.fieldId),
-          source,
-        });
-
-        const nextAutofilledFields = deepClone(
-          wizardState.autofilledFields
-        );
-        if (visibleFieldIds.length > 0) {
-          visibleFieldIds.forEach((fieldId) => {
-            const hasSuggestion = orderedSuggestions.some(
-              (candidate) => candidate.fieldId === fieldId
-            );
-            if (!hasSuggestion) {
-              const existing = getDeep(nextAutofilledFields, fieldId);
-              if (existing && !existing.accepted) {
-                setDeep(nextAutofilledFields, fieldId, undefined);
-              }
-            }
-          });
-        }
-        orderedSuggestions.forEach((suggestion) => {
-          const existing = getDeep(nextAutofilledFields, suggestion.fieldId);
-          if (existing?.accepted) {
-            return;
-          }
-          setDeep(nextAutofilledFields, suggestion.fieldId, {
-            ...existing,
-            value: suggestion.value,
-            rationale: suggestion.rationale,
-            confidence: suggestion.confidence,
-            source: suggestion.source,
-            accepted: false,
-            suggestedAt: Date.now(),
-          });
-        });
-
-        const baseAssistantMessages = wizardState.assistantMessages.filter(
-          (message) => {
-            if (
-              message.kind === "suggestion" &&
-              message.meta?.stepId === stepId
-            ) {
-              return false;
-            }
-            if (
-              !failure &&
-              message.kind === "error" &&
-              message.meta?.type === "suggestion-failure"
-            ) {
-              return false;
-            }
-            return true;
-          }
-        );
-
-        const suggestionMessages = orderedSuggestions.map(
-          (candidate, index) => ({
-            id: `autofill-${candidate.fieldId}-${Date.now()}-${index}`,
-            role: "assistant",
-            kind: "suggestion",
-            content:
-              typeof candidate.value === "string" ||
-              typeof candidate.value === "number"
-                ? String(candidate.value)
-                : JSON.stringify(candidate.value),
-            meta: {
-              fieldId: candidate.fieldId,
-              confidence: candidate.confidence ?? 0.5,
-              rationale: candidate.rationale,
-              value: candidate.value,
-              mode: "autofill",
-              stepId,
-            },
-          })
-        );
-
-        let nextAssistantMessages = [...baseAssistantMessages, ...suggestionMessages];
-
-        if (failure) {
-          nextAssistantMessages = nextAssistantMessages.filter(
-            (message) =>
-              !(
-                message.kind === "error" &&
-                message.meta?.type === "suggestion-failure"
-              )
-          );
-          nextAssistantMessages = [
-            ...nextAssistantMessages,
-            {
-              id: `suggestion-failure-${Date.now()}`,
-              role: "assistant",
-              kind: "error",
-              content: failure.error
-                ? `I couldn't refresh suggestions (${failure.reason}). ${failure.error}`
-                : `I couldn't refresh suggestions (${failure.reason}). Please try again soon.`,
-              meta: { type: "suggestion-failure" },
-            },
-          ];
-        }
-
-        dispatch({
-          type: "SET_SUGGESTIONS_DONE",
-          payload: {
-            hiddenFields: {},
-            autofilledFields: nextAutofilledFields,
-            assistantMessages: nextAssistantMessages,
-            copilotNextTeaser: failure
-              ? "I hit a snag fetching fresh suggestions. Tap refresh to try again."
-              : "",
-          },
-        });
-      };
-
-      if (!user || !stepId) {
-        if (!user) {
-          announceAuthRequired();
-        }
-        return;
-      }
-
-      const effectiveJobId = jobIdOverride ?? wizardState.jobId;
-      if (!effectiveJobId) {
-        return;
-      }
-
-      const targetStep =
-        steps.find((step) => step.id === stepId) ??
-        OPTIONAL_STEPS.find((step) => step.id === stepId) ??
-        REQUIRED_STEPS.find((step) => step.id === stepId) ??
-        null;
-
-      const emptyFieldIds = [];
-      if (targetStep) {
-        for (const field of targetStep.fields) {
-          const value = getDeep(workingState, field.id);
-          if (!isFieldValueProvided(value, field)) {
-            emptyFieldIds.push(field.id);
-          }
-        }
-      }
-
-      const stepIndex = steps.findIndex((step) => step.id === stepId);
-      const upcomingFieldIds =
-        stepIndex === -1
-          ? []
-          : steps
-              .slice(stepIndex + 1)
-              .flatMap((step) => step.fields.map((field) => field.id));
-
-      const isOptionalStep = OPTIONAL_STEPS.some((step) => step.id === stepId);
       if (!isOptionalStep) {
         return;
       }
@@ -1484,136 +1288,221 @@ useEffect(() => {
       });
 
       if (!requiredComplete) {
+        dispatch({
+          type: "MARK_SUGGESTIONS_STALE",
+        payload: { baseHash: null, preserveAutofill: false },
+        });
+        return;
+      }
+
+      const baseHash = computeSuggestionsBaseHash(workingState);
+      const currentSuggestions = wizardState.suggestions ?? {};
+      const shouldForceFetch = intentOverrides?.forceRefresh === true;
+
+      if (
+        !shouldForceFetch &&
+        baseHash &&
+        (currentSuggestions.status === "ready" ||
+          currentSuggestions.status === "loading") &&
+        currentSuggestions.baseHash === baseHash
+      ) {
+        return;
+      }
+
+      if (
+        baseHash &&
+        currentSuggestions.baseHash &&
+        currentSuggestions.baseHash !== baseHash
+      ) {
+        dispatch({
+          type: "MARK_SUGGESTIONS_STALE",
+          payload: { baseHash, preserveAutofill: false },
+        });
+      } else if (baseHash && !currentSuggestions.baseHash) {
+        dispatch({
+          type: "SET_SUGGESTIONS_BASE_HASH",
+          payload: { baseHash },
+        });
+      }
+
+      if (!user) {
+        announceAuthRequired();
+        return;
+      }
+
+      const effectiveJobId = jobIdOverride ?? wizardState.jobId;
+      if (!effectiveJobId || !baseHash) {
         return;
       }
 
       if (suggestionsAbortRef.current) {
         suggestionsAbortRef.current.abort();
       }
-
-      const visibleFieldIds = targetStep
-        ? targetStep.fields.map((field) => field.id)
-        : [];
-      if (visibleFieldIds.length === 0) {
-        return;
-      }
-
-      const shouldForceFetch = Boolean(intentOverrides?.forceRefresh);
-      const snapshotEntries = visibleFieldIds.map((fieldId) => {
-        const rawValue =
-          fieldId === updatedFieldId
-            ? updatedValue
-            : getDeep(workingState, fieldId);
-        if (rawValue === undefined) {
-          return [fieldId, { __defined: false }];
-        }
-        return [fieldId, { __defined: true, value: deepClone(rawValue) }];
-      });
-      const snapshotKey = JSON.stringify(snapshotEntries);
-
-      const cachedEntry = suggestionsCacheRef.current[stepId];
-      const cacheMatchesSnapshot =
-        cachedEntry && cachedEntry.snapshotKey === snapshotKey;
-      const cacheAgeMs = cacheMatchesSnapshot
-        ? Date.now() - cachedEntry.timestamp
-        : Number.POSITIVE_INFINITY;
-      const cacheIsFresh =
-        cacheMatchesSnapshot && cacheAgeMs < SUGGESTIONS_CACHE_TTL_MS;
-
-      if (cacheMatchesSnapshot && cachedEntry?.response) {
-        applySuggestionResponse(cachedEntry.response, {
-          source: "cache",
-          refreshed: cachedEntry.response?.refreshed,
-          visibleFieldIds,
-          snapshotKey,
-        });
-        debug("suggestions:cache-primed", {
-          stepId,
-          age: cacheAgeMs,
-          fresh: cacheIsFresh,
-        });
-      }
-
-      if (!shouldForceFetch && cacheIsFresh) {
-        debug("suggestions:cache-hit", { stepId, age: cacheAgeMs });
-        return;
-      }
-
       const controller = new AbortController();
       suggestionsAbortRef.current = controller;
-      dispatch({ type: "SET_SUGGESTIONS_LOADING", payload: true });
 
-      debug("suggestions:fetch-start", {
-        stepId,
-        jobId: effectiveJobId,
-        visibleFieldIds,
-        emptyFieldIds,
+      dispatch({
+        type: "SET_SUGGESTIONS_LOADING",
+        payload: { baseHash },
+      });
+
+      const visibleFieldIds = optionalFieldIds.filter(
+        (fieldId) => !getDeep(wizardState.hiddenFields, fieldId)
+      );
+      const emptyFieldIds = visibleFieldIds.filter((fieldId) => {
+        const fieldDefinition = findFieldDefinition(fieldId);
+        return !isFieldValueProvided(
+          getDeep(workingState, fieldId),
+          fieldDefinition
+        );
       });
 
       try {
-        if (!user?.authToken) {
-          announceAuthRequired();
-          return;
-        }
         const response = await fetchStepSuggestions({
           authToken: user.authToken,
           jobId: effectiveJobId,
-          stepId,
+          stepId: effectiveStepId,
           state: workingState,
           includeOptional: wizardState.includeOptional,
           intentOverrides,
-          updatedFieldId,
-          updatedValue,
           emptyFieldIds,
-          upcomingFieldIds,
+          upcomingFieldIds: [],
           visibleFieldIds,
           signal: controller.signal,
         });
 
-        applySuggestionResponse(response, {
-          source: "network",
-          refreshed: response.refreshed,
-          visibleFieldIds,
-          snapshotKey,
+        const rawSuggestions = Array.isArray(response?.suggestions)
+          ? response.suggestions
+          : [];
+        const fieldOrderIndex = new Map(
+          visibleFieldIds.map((fieldId, index) => [fieldId, index])
+        );
+        const normalizedSuggestions = rawSuggestions
+          .filter(
+            (candidate) =>
+              candidate?.fieldId && visibleFieldIds.includes(candidate.fieldId)
+          )
+          .map((candidate, index) => {
+            const fieldDefinition = findFieldDefinition(candidate.fieldId);
+            const normalizedValue = normalizeSuggestedValueForField(
+              fieldDefinition,
+              candidate.value
+            );
+            if (normalizedValue === undefined) {
+              return null;
+            }
+            return {
+              id: candidate.id ?? `${candidate.fieldId}-${index}`,
+              fieldId: candidate.fieldId,
+              value: normalizedValue,
+              rationale:
+                candidate.rationale ??
+                "Suggested so candidates understand the opportunity immediately.",
+              confidence: candidate.confidence ?? 0.5,
+              source: candidate.source ?? "copilot",
+            };
+          })
+          .filter(Boolean)
+          .sort(
+            (a, b) =>
+              (fieldOrderIndex.get(a.fieldId) ?? Number.MAX_SAFE_INTEGER) -
+              (fieldOrderIndex.get(b.fieldId) ?? Number.MAX_SAFE_INTEGER)
+          );
+
+        const suggestionsByFieldId = {};
+        const nextAutofilledFields = deepClone(
+          wizardState.autofilledFields ?? {}
+        );
+
+        normalizedSuggestions.forEach((suggestion) => {
+          if (!suggestionsByFieldId[suggestion.fieldId]) {
+            suggestionsByFieldId[suggestion.fieldId] = { items: [] };
+          }
+          suggestionsByFieldId[suggestion.fieldId].items.push(suggestion);
+
+          const existing = getDeep(nextAutofilledFields, suggestion.fieldId);
+          if (existing?.accepted) {
+            return;
+          }
+          setDeep(nextAutofilledFields, suggestion.fieldId, {
+            ...existing,
+            value: suggestion.value,
+            rationale: suggestion.rationale,
+            confidence: suggestion.confidence,
+            source: suggestion.source,
+            accepted: existing?.accepted ?? false,
+            suggestedAt: Date.now(),
+          });
+        });
+
+        dispatch({
+          type: "SET_SUGGESTIONS_RESULT",
+          payload: {
+            baseHash,
+            byFieldId: suggestionsByFieldId,
+            autofilledFields: nextAutofilledFields,
+            copilotNextTeaser: response?.failure
+              ? "I hit a snag fetching fresh suggestions. Tap refresh to try again."
+              : "",
+          },
         });
       } catch (error) {
         if (error?.name === "AbortError") {
           return;
         }
 
-        const isTimeout = error?.message?.includes("timed out");
-        debug("suggestions:error", { stepId, isTimeout, error: error?.message });
-
-        if (!isTimeout) {
-          dispatch({
-            type: "PUSH_ASSISTANT_MESSAGE",
-            payload: {
-              id: `suggestion-error-${Date.now()}`,
-              role: "assistant",
-              kind: "error",
-              content: error?.message ?? "Failed to load suggestions.",
-            },
-          });
-        }
+        dispatch({
+          type: "SET_SUGGESTIONS_ERROR",
+          payload: {
+            baseHash,
+            error: error?.message ?? "Failed to load suggestions.",
+          },
+        });
       } finally {
         if (suggestionsAbortRef.current === controller) {
           suggestionsAbortRef.current = null;
         }
-        dispatch({ type: "SET_SUGGESTIONS_LOADING", payload: false });
       }
     },
     [
       announceAuthRequired,
       currentStep?.id,
-      debug,
+      optionalFieldIds,
+      optionalStartIndex,
       steps,
       user,
       wizardState.autofilledFields,
-      wizardState.includeOptional,
+      wizardState.hiddenFields,
       wizardState.jobId,
-      wizardState.assistantMessages,
+      wizardState.includeOptional,
+      wizardState.suggestions.baseHash,
+      wizardState.suggestions.status,
     ]
   );
+
+  useEffect(() => {
+    const atSuggestionPhase =
+      wizardState.currentStepIndex >= optionalStartIndex &&
+      optionalStartIndex < steps.length;
+    if (
+      atSuggestionPhase &&
+      allRequiredStepsCompleteInState &&
+      (wizardState.suggestions.status === "idle" ||
+        wizardState.suggestions.status === "stale") &&
+      suggestionBaseHash
+    ) {
+      fetchSuggestionsForStep({ stepId: currentStep?.id });
+    }
+  }, [
+    allRequiredStepsCompleteInState,
+    currentStep?.id,
+    fetchSuggestionsForStep,
+    optionalStartIndex,
+    suggestionBaseHash,
+    steps.length,
+    wizardState.currentStepIndex,
+    wizardState.suggestions.status,
+  ]);
 
   const persistCurrentDraft = useCallback(
     async (intentOverrides = {}, stepId = currentStep?.id) => {
@@ -2509,6 +2398,7 @@ useEffect(() => {
     copilotConversation: wizardState.copilotConversation,
     isChatting: wizardState.isChatting,
     isFetchingSuggestions: wizardState.isFetchingSuggestions,
+    suggestions: wizardState.suggestions,
     hiddenFields: wizardState.hiddenFields,
     autofilledFields: wizardState.autofilledFields,
     copilotNextTeaser: wizardState.copilotNextTeaser,
