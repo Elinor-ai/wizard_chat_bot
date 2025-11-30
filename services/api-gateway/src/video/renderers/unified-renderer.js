@@ -2,6 +2,7 @@ import { VeoClient } from "./clients/veo-client.js";
 import { SoraClient } from "./clients/sora-client.js";
 import { VideoRendererError } from "./contracts.js";
 import { persistRemoteVideo } from "../storage.js";
+import { logRawTraffic } from "../../llm/raw-traffic-logger.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,10 +36,28 @@ export class UnifiedVideoRenderer {
 
   async renderVideo(provider, request, context = {}) {
     const { client, key } = this.selectClient(provider);
+    const trafficContext = {
+      provider: key,
+      jobId: context.jobId,
+      itemId: context.itemId,
+      ownerUserId: context.ownerUserId,
+      manifestVersion: context.manifestVersion,
+    };
+
     this.logger?.info?.(
       { provider: key, aspectRatio: request.aspectRatio, duration: request.duration, jobId: context.jobId, itemId: context.itemId },
       "[Renderer] Starting generation"
     );
+
+    try {
+      await logRawTraffic({
+        taskId: "video_render",
+        direction: "REQUEST",
+        payload: { provider: key, request, context: trafficContext },
+      });
+    } catch (err) {
+      this.logger?.debug?.({ err, provider: key }, "[Renderer] Failed to log video_render request");
+    }
 
     const start = await client.startGeneration(request);
     if (!start?.id) {
@@ -52,6 +71,16 @@ export class UnifiedVideoRenderer {
       { provider: key, jobId: context.jobId, itemId: context.itemId, opId: start.id },
       "[Renderer] Job started"
     );
+
+    try {
+      await logRawTraffic({
+        taskId: "video_render",
+        direction: "RESPONSE",
+        payload: { provider: key, response: start, context: trafficContext },
+      });
+    } catch (err) {
+      this.logger?.debug?.({ err, provider: key }, "[Renderer] Failed to log video_render response");
+    }
 
     const deadline = Date.now() + this.pollTimeoutMs;
     let status = start;
