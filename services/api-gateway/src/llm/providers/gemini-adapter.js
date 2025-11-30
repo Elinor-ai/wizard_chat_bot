@@ -445,10 +445,12 @@ export class GeminiAdapter {
           thoughtsTokens: thoughtTokens || null,
           totalTokens: usage.totalTokenCount ?? null,
           finishReason: response?.candidates?.[0]?.finishReason ?? null,
-          searchQueries: searchQueryCount,
+          searchQueries: searchQueryCount
         }
       : searchQueryCount !== null
-        ? { searchQueries: searchQueryCount }
+        ? {
+            searchQueries: searchQueryCount ?? undefined
+          }
         : undefined;
     this.logUsageTokens({ taskType, model, usage });
 
