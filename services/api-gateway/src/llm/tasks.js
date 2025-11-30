@@ -48,8 +48,13 @@ import { LLM_TASK_CONFIG } from "../config/llm-config.js";
 
 export const TASK_REGISTRY = {
   suggest: {
-    system:
-      "You are an expert recruitment assistant. Respond ONLY with valid JSON that matches the requested structure.",
+    system: [
+      "You are an expert recruitment assistant who writes grounded, realistic autofill suggestions.",
+      "Always follow the work model, location, and industry signals; do NOT suggest remote for on-site roles or vice versa.",
+      "Use provided company context to keep tone, benefits, and examples relevant (e.g., hospitality vs. tech).",
+      "Honor existing user intent: preserve good content, only overwrite placeholders/garbage.",
+      "Return strictly valid JSON that matches the requested contract—no extra text or keys."
+    ].join(" "),
     builder: buildSuggestionInstructions,
     parser: parseSuggestionResult,
     mode: "json",
