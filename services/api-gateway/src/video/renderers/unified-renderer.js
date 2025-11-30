@@ -17,7 +17,8 @@ export class UnifiedVideoRenderer {
       sora: new SoraClient({ apiToken: soraToken }),
     };
     this.pollIntervalMs = Number(process.env.RENDER_POLL_INTERVAL_MS ?? 2000);
-    this.pollTimeoutMs = Number(process.env.RENDER_POLL_TIMEOUT_MS ?? 240000);
+    // Default timeout bumped to 10 minutes to accommodate slower providers
+    this.pollTimeoutMs = Number(process.env.RENDER_POLL_TIMEOUT_MS ?? 600000);
     this.logger = options.logger ?? console;
   }
 
@@ -34,7 +35,10 @@ export class UnifiedVideoRenderer {
 
   async renderVideo(provider, request, context = {}) {
     const { client, key } = this.selectClient(provider);
-    console.log(`[Renderer] Starting generation with ${key}...`);
+    this.logger?.info?.(
+      { provider: key, aspectRatio: request.aspectRatio, duration: request.duration, jobId: context.jobId, itemId: context.itemId },
+      "[Renderer] Starting generation"
+    );
 
     const start = await client.startGeneration(request);
     if (!start?.id) {
@@ -44,7 +48,10 @@ export class UnifiedVideoRenderer {
       });
     }
 
-    console.log(`[Renderer] Job started. ID: ${start.id}`);
+    this.logger?.info?.(
+      { provider: key, jobId: context.jobId, itemId: context.itemId, opId: start.id },
+      "[Renderer] Job started"
+    );
 
     const deadline = Date.now() + this.pollTimeoutMs;
     let status = start;
@@ -55,12 +62,10 @@ export class UnifiedVideoRenderer {
       try {
         status = await client.checkStatus(status.id ?? start.id);
 
-        if (status.status === "completed" || status.status === "failed") {
-          console.log(
-            `[Renderer] Status update from ${key}:`,
-            JSON.stringify(status)
-          );
-        }
+        this.logger?.debug?.(
+          { provider: key, status: status.status, opId: status.id, jobId: context.jobId, itemId: context.itemId, videoUrl: status.videoUrl },
+          "[Renderer] Poll status"
+        );
 
         if (status.status === "completed") {
           if (!status.videoUrl) {
@@ -80,14 +85,20 @@ export class UnifiedVideoRenderer {
               context,
             });
           }
-          console.log(`[Renderer] Success! Video URL: ${finalUrl}`);
+          this.logger?.info?.(
+            { provider: key, opId: status.id, jobId: context.jobId, itemId: context.itemId, videoUrl: finalUrl },
+            "[Renderer] Success"
+          );
           return finalUrl;
         }
 
         if (status.status === "failed") {
           const errorMessage =
             status.error?.message ?? "Video generation failed";
-          console.error(`[Renderer] Failed: ${errorMessage}`);
+          this.logger?.error?.(
+            { provider: key, opId: status.id, jobId: context.jobId, itemId: context.itemId, error: status.error },
+            "[Renderer] Failed"
+          );
           throw new VideoRendererError(errorMessage, {
             code: "PROVIDER_ERROR",
             context: { provider: key, details: status.error },
@@ -96,7 +107,10 @@ export class UnifiedVideoRenderer {
       } catch (err) {
         if (err instanceof VideoRendererError) throw err;
 
-        console.error(`[Renderer] Error during polling:`, err);
+        this.logger?.error?.(
+          { err, provider: key, jobId: context.jobId, itemId: context.itemId },
+          "[Renderer] Error during polling"
+        );
         throw new VideoRendererError(err.message || "Polling failed", {
           code: "PROVIDER_ERROR",
           context: { provider: key },
@@ -104,6 +118,10 @@ export class UnifiedVideoRenderer {
       }
     }
 
+    this.logger?.error?.(
+      { provider: key, jobId: context.jobId, itemId: context.itemId },
+      "[Renderer] Timeout"
+    );
     throw new VideoRendererError("Video generation timed out", {
       code: "TIMEOUT",
       context: { provider: key },

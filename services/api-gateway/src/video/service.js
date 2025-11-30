@@ -346,9 +346,14 @@ export function createVideoLibraryService({
   async function enqueueAsyncRender({ ownerUserId, itemId }) {
     const existing = await getItem({ ownerUserId, itemId });
     if (!existing) {
+      logger?.warn?.({ itemId, ownerUserId }, "render.enqueue.missing_item");
       return null;
     }
     const provider = resolveRenderProvider(existing);
+    logger?.info?.(
+      { itemId, ownerUserId, provider, manifestVersion: existing.manifestVersion },
+      "render.enqueue.start"
+    );
     const renderTask = {
       id: existing.renderTask?.id ?? uuid(),
       manifestVersion: existing.activeManifest.version,
@@ -389,9 +394,20 @@ export function createVideoLibraryService({
   async function triggerRender({ ownerUserId, itemId }) {
     let existing = await getItem({ ownerUserId, itemId });
     if (!existing) {
+      logger?.warn?.({ itemId, ownerUserId }, "render.trigger.missing_item");
       return null;
     }
     const provider = resolveRenderProvider(existing);
+    logger?.info?.(
+      {
+        itemId,
+        ownerUserId,
+        provider,
+        manifestVersion: existing.activeManifest?.version,
+        status: existing.status,
+      },
+      "render.trigger.start"
+    );
 
     const renderTask = await renderer.render({
       manifest: existing.activeManifest,
@@ -416,6 +432,17 @@ export function createVideoLibraryService({
         status: renderTask.status,
         veoStatus: veo.status,
       }
+    );
+    logger?.info?.(
+      {
+        itemId,
+        ownerUserId,
+        provider,
+        renderTaskStatus: renderTask.status,
+        renderTaskId: renderTask.id,
+        renderTaskResult: renderTask.result,
+      },
+      "render.trigger.completed"
     );
     const updated = await updateItem(
       existing,

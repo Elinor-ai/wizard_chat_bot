@@ -752,6 +752,32 @@ function authHeaders(authToken) {
   };
 }
 
+async function extractErrorMessage(response, fallbackMessage) {
+  try {
+    const data = await response.clone().json();
+    const message =
+      data?.error ||
+      data?.message ||
+      data?.details ||
+      data?.result?.message ||
+      null;
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  } catch (_err) {
+    /* ignore json parse errors */
+  }
+  try {
+    const text = await response.text();
+    if (text?.trim()) {
+      return text;
+    }
+  } catch (_err) {
+    /* ignore text parse errors */
+  }
+  return fallbackMessage;
+}
+
 export const WizardApi = {
   async fetchJob(jobId, options = {}) {
     const response = await fetch(`${API_BASE_URL}/wizard/${jobId}`, {
@@ -1718,7 +1744,8 @@ const videoDetailSchema = z.object({
   placementName: z.string(),
   status: z.string(),
   manifestVersion: z.number(),
-  manifest: videoManifestSchema,
+  // Manifest may be absent immediately after creation (generated async)
+  manifest: videoManifestSchema.optional().nullable(),
   veo: veoStateSchema,
   renderTask: z.record(z.string(), z.unknown()).nullable().optional(),
   publishTask: z.record(z.string(), z.unknown()).nullable().optional(),
@@ -1821,6 +1848,7 @@ export const VideoLibraryApi = {
   },
 
   async createItem(payload, options = {}) {
+    console.info("[video] createItem -> payload", payload);
     const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
@@ -1833,11 +1861,24 @@ export const VideoLibraryApi = {
       }),
     });
     if (!response.ok) {
-      const message = await response.text();
-      throw new Error(message || "Failed to create video asset");
+      const message = await extractErrorMessage(
+        response,
+        "Failed to create video asset"
+      );
+      throw new Error(message);
     }
     const data = await response.json();
-    const item = data?.result?.item ?? data.item;
+    console.info("[video] createItem <- response", data);
+    const resultBlock = data?.result;
+    // server may return nested: { result: { item: { item: {...}, renderQueued } } }
+    const item =
+      resultBlock?.item?.item?.item ?? // overly nested just in case
+      resultBlock?.item?.item ??
+      resultBlock?.item ??
+      data.item;
+    if (!item) {
+      throw new Error("Video creation did not return an item");
+    }
     return videoDetailSchema.parse(item);
   },
 
@@ -1856,6 +1897,7 @@ export const VideoLibraryApi = {
   },
 
   async regenerate(itemId, payload, options = {}) {
+    console.info("[video] regenerate -> itemId", itemId, "payload", payload);
     const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
@@ -1868,14 +1910,23 @@ export const VideoLibraryApi = {
       }),
     });
     if (!response.ok) {
-      throw new Error("Failed to regenerate manifest");
+      const message = await extractErrorMessage(
+        response,
+        "Failed to regenerate manifest"
+      );
+      throw new Error(message);
     }
     const data = await response.json();
+    console.info("[video] regenerate <- response", data);
     const item = data?.result?.item ?? data.item;
+    if (!item) {
+      throw new Error("Video regenerate did not return an item");
+    }
     return videoDetailSchema.parse(item);
   },
 
   async triggerRender(itemId, options = {}) {
+    console.info("[video] triggerRender -> itemId", itemId);
     const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
@@ -1888,14 +1939,23 @@ export const VideoLibraryApi = {
       }),
    });
    if (!response.ok) {
-      throw new Error("Failed to trigger render");
+      const message = await extractErrorMessage(
+        response,
+        "Failed to trigger render"
+      );
+      throw new Error(message);
     }
     const data = await response.json();
+    console.info("[video] triggerRender <- response", data);
     const item = data?.result?.item ?? data.item;
+    if (!item) {
+      throw new Error("Video render did not return an item");
+    }
     return videoDetailSchema.parse(item);
   },
 
   async updateCaption(itemId, payload, options = {}) {
+    console.info("[video] updateCaption -> itemId", itemId, "payload", payload);
     const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
@@ -1908,10 +1968,18 @@ export const VideoLibraryApi = {
       }),
    });
    if (!response.ok) {
-      throw new Error("Failed to update caption");
+      const message = await extractErrorMessage(
+        response,
+        "Failed to update caption"
+      );
+      throw new Error(message);
     }
     const data = await response.json();
+    console.info("[video] updateCaption <- response", data);
     const item = data?.result?.item ?? data.item;
+    if (!item) {
+      throw new Error("Video caption update did not return an item");
+    }
     return videoDetailSchema.parse(item);
   },
 

@@ -50,9 +50,15 @@ export class SoraClient extends IVideoClient {
       if (size) {
         payload.size = size;
       }
+      // Note: keeping payload small in logs to avoid leaking prompt
+      console.debug("[Sora] startGeneration request", {
+        model: payload.model,
+        size: payload.size,
+      });
       const response = await axios.post(`${this.baseUrl}/videos`, payload, {
         headers: this.headers,
       });
+      console.debug("[Sora] startGeneration response", response.data);
       return {
         id: response.data?.id,
         status: "pending",
@@ -73,6 +79,7 @@ export class SoraClient extends IVideoClient {
         headers: this.headers,
       });
       const data = response.data ?? {};
+      console.debug("[Sora] checkStatus response", data);
       if (data.status === "succeeded") {
         return {
           id,
@@ -99,6 +106,14 @@ export class SoraClient extends IVideoClient {
   }
 
   handleAxiosError(error) {
+    const serverMessage =
+      error?.response?.data?.error?.message ??
+      error?.response?.data?.message ??
+      null;
+    const baseMessage = serverMessage
+      ? `Sora error: ${serverMessage}`
+      : error.message;
+
     if (error.response?.status === 429) {
       throw new VideoRendererError("Sora rate limited", {
         code: "RATE_LIMITED",
@@ -111,7 +126,7 @@ export class SoraClient extends IVideoClient {
         context: { provider: "sora" },
       });
     }
-    throw new VideoRendererError(error.message, {
+    throw new VideoRendererError(baseMessage, {
       code: "PROVIDER_ERROR",
       context: { provider: "sora", details: error.response?.data },
     });

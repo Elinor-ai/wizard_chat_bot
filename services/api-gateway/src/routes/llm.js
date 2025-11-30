@@ -9,6 +9,7 @@ import {
   createVideoManifest,
   regenerateVideoManifest,
 } from "../video/service.js";
+import { VideoRendererError } from "../video/renderers/contracts.js";
 
 const requestSchema = z.object({
   taskType: z.string().min(1),
@@ -69,18 +70,29 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         if (!userId) {
           throw httpError(401, "Unauthorized");
         }
-        const result = await renderVideo({
-          firestore,
-          bigQuery,
-          llmClient,
-          logger,
-          ownerUserId: userId,
-          itemId: context.itemId,
-        });
-        if (!result) {
-          throw httpError(404, "Video item not found");
+        try {
+          const result = await renderVideo({
+            firestore,
+            bigQuery,
+            llmClient,
+            logger,
+            ownerUserId: userId,
+            itemId: context.itemId,
+          });
+          if (!result) {
+            throw httpError(404, "Video item not found");
+          }
+          return res.json({ taskType, result: { item: result } });
+        } catch (error) {
+          if (error instanceof VideoRendererError) {
+            logger?.error?.(
+              { err: error, itemId: context.itemId, userId },
+              "video.render.failed"
+            );
+            throw httpError(502, error.message);
+          }
+          throw error;
         }
-        return res.json({ taskType, result: { item: result } });
       }
 
       if (taskType === "video_caption_update") {
