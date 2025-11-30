@@ -223,8 +223,13 @@ export function createBigQueryAdapter(options = {}) {
     if (row.usdPerCredit !== undefined && row.usdPerCredit !== null) {
       transformed.usd_per_credit = Number(row.usdPerCredit);
     }
-    if (row.tokenCreditRatio !== undefined && row.tokenCreditRatio !== null) {
-      transformed.token_credit_ratio = Number(row.tokenCreditRatio);
+
+    // Image and video generation fields
+    if (row.imageCount !== undefined && row.imageCount !== null) {
+      transformed.image_count = Number(row.imageCount);
+    }
+    if (row.secondsGenerated !== undefined && row.secondsGenerated !== null) {
+      transformed.seconds_generated = Number(row.secondsGenerated);
     }
 
     // String fields
