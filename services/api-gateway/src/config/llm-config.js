@@ -35,4 +35,11 @@ config.image_prompt_generation = {
   model: GEMINI_DEFAULT_MODEL
 };
 
+// Video render (Veo via Vertex) still goes through the shared LLM usage pipeline for pricing/logging.
+// Provider remains "gemini" for consistency with the rest of the stack; the specific model is Veo.
+config.video_generation = {
+  provider: "gemini",
+  model: "veo-3.1-generate-preview"
+};
+
 export const LLM_TASK_CONFIG = Object.freeze(config);

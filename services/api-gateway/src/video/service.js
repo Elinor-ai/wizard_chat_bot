@@ -9,6 +9,7 @@ import { buildVideoManifest } from "./manifest-builder.js";
 import { incrementMetric } from "./metrics.js";
 import { recordLlmUsage, recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 import { VERTEX_DEFAULTS } from "../vertex/constants.js";
+import { LLM_TASK_CONFIG } from "../config/llm-config.js";
 import { createRenderer } from "./renderer.js";
 import { createPublisherRegistry } from "./publishers.js";
 
@@ -457,8 +458,14 @@ export function createVideoLibraryService({
       const secondsGenerated = Number.isFinite(Number(renderTask.metrics?.secondsGenerated))
         ? Number(renderTask.metrics.secondsGenerated)
         : Number(existing?.activeManifest?.generator?.targetDurationSeconds ?? 0) || 0;
+
+      const videoTaskConfig = LLM_TASK_CONFIG.video_generation ?? {};
+      const videoProvider =
+        videoTaskConfig.provider ??
+        "gemini";
       const videoModel =
         renderTask.metrics?.model ??
+        videoTaskConfig.model ??
         process.env.VIDEO_MODEL ??
         VERTEX_DEFAULTS.VEO_MODEL_ID;
       try {
@@ -470,7 +477,7 @@ export function createVideoLibraryService({
             jobId: existing.jobId,
             taskType: "video_generation"
           },
-          provider: "veo",
+          provider: videoProvider,
           model: videoModel,
           metadata: {},
           status: "success",

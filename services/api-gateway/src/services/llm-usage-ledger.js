@@ -92,6 +92,7 @@ function maybeLogPricingDebug({
   resolvedUsageType,
   inputTokens,
   outputTokens,
+  thoughtsTokens,
   cachedTokens,
   totalTokens,
   usageMetrics,
@@ -117,6 +118,7 @@ function maybeLogPricingDebug({
       usageType: resolvedUsageType,
       inputTokens,
       outputTokens,
+      thoughtsTokens,
       cachedTokens,
       totalTokens,
       usageMetrics,
@@ -152,15 +154,46 @@ export async function recordLlmUsage({
     return;
   }
 
-  const inputTokens = normalizeTokens(metadata?.promptTokens);
-  const outputTokens = normalizeTokens(metadata?.responseTokens);
-  const thoughtsTokens = normalizeTokens(
-    usageMetrics.thoughtsTokens ?? metadata?.thoughtsTokens
+  const inputTokens = normalizeTokens(
+    metadata?.promptTokens ?? metadata?.promptTokenCount
   );
-  const derivedTotal = inputTokens + outputTokens;
-  const totalTokens = normalizeTokens(metadata?.totalTokens ?? derivedTotal);
+  const thoughtsTokens = normalizeTokens(
+    usageMetrics.thoughtsTokens ?? metadata?.thoughtsTokens ?? metadata?.thoughtsTokenCount
+  );
   const cachedTokens = normalizeTokens(
     usageMetrics.cachedTokens ?? metadata?.cachedTokens ?? metadata?.cachedPromptTokens
+  );
+  const responseTokensSource = metadata?.responseTokens ?? metadata?.outputTokens;
+  const hasResponseTokens = responseTokensSource !== undefined && responseTokensSource !== null;
+  const responseTokens = hasResponseTokens ? normalizeTokens(responseTokensSource) : 0;
+  const candidateTokensSource =
+    metadata?.candidatesTokenCount ?? metadata?.candidateTokens;
+  const hasCandidateTokens =
+    candidateTokensSource !== undefined && candidateTokensSource !== null;
+  const candidateTokens = hasCandidateTokens ? normalizeTokens(candidateTokensSource) : 0;
+  const totalTokensSource = metadata?.totalTokens ?? metadata?.totalTokenCount;
+  const hasTotalTokens = totalTokensSource !== undefined && totalTokensSource !== null;
+  const reportedTotalTokens = hasTotalTokens ? normalizeTokens(totalTokensSource) : 0;
+
+  // Some providers bundle thinking tokens into responseTokens; detect and strip them out.
+  const responseIncludesThoughts =
+    !hasCandidateTokens &&
+    hasResponseTokens &&
+    thoughtsTokens > 0 &&
+    (
+      (hasTotalTokens &&
+        normalizeTokens(reportedTotalTokens - inputTokens - cachedTokens) === responseTokens) ||
+      (!hasTotalTokens && responseTokens === thoughtsTokens)
+    );
+
+  let outputTokens = hasCandidateTokens
+    ? candidateTokens
+    : responseIncludesThoughts
+      ? normalizeTokens(responseTokens - thoughtsTokens)
+      : responseTokens;
+  const derivedTotal = inputTokens + outputTokens + thoughtsTokens;
+  const totalTokens = normalizeTokens(
+    hasTotalTokens ? reportedTotalTokens : derivedTotal
   );
   const timestamp = new Date();
   const resolvedUsageType = usageType ?? usageContext.usageType ?? "text";
@@ -249,10 +282,11 @@ export async function recordLlmUsage({
     cachedInputCostPerMillionUsd =
       textPricing.cachedUsdPerMillionTokens ?? inputCostPerMillionUsd ?? 0;
 
+    const billableOutputTokens = outputTokens + thoughtsTokens;
     const inputCost =
       (inputCostPerMillionUsd * inputTokens) / MILLION;
     const outputCost =
-      (outputCostPerMillionUsd * outputTokens) / MILLION;
+      (outputCostPerMillionUsd * billableOutputTokens) / MILLION;
     const cachedCost =
       (cachedInputCostPerMillionUsd * cachedTokens) / MILLION;
     estimatedCostUsd = inputCost + outputCost + cachedCost;
@@ -272,33 +306,66 @@ export async function recordLlmUsage({
       : null;
 
   const entryPayload = {
+    // always-present fields
     userId: usageContext.userId ?? null,
     jobId: usageContext.jobId ?? null,
     taskType: usageContext.taskType ?? "unspecified",
     provider: provider ?? "unknown",
     model: model ?? "unknown",
-    inputTokens,
-    outputTokens,
-    totalTokens,
-    thoughtsTokens,
-    cachedTokens,
-    inputCostPerMillionUsd,
-    outputCostPerMillionUsd,
-    cachedInputCostPerMillionUsd,
-    imageCostPerUnitUsd,
-    videoCostPerSecondUsd,
-    groundingSearchQueries,
-    groundingSearchCostPerQueryUsd,
     estimatedCostUsd: Number(estimatedCostUsd.toFixed(6)),
     creditsUsed,
     pricingPlan,
     usdPerCredit,
-    tokenCreditRatio,
     status,
     errorReason,
     timestamp,
     metadata: sanitizeMetadata(metadata)
   };
+
+  const isTextOrImage = resolvedUsageType === "text" || resolvedUsageType === "image";
+  const isImage = resolvedUsageType === "image";
+  const isVideo = resolvedUsageType === "video";
+
+  if (isTextOrImage) {
+    entryPayload.inputTokens = inputTokens;
+    entryPayload.outputTokens = outputTokens;
+    entryPayload.totalTokens = totalTokens;
+    entryPayload.thoughtsTokens = thoughtsTokens;
+    entryPayload.cachedTokens = cachedTokens;
+    entryPayload.inputCostPerMillionUsd = inputCostPerMillionUsd;
+    entryPayload.outputCostPerMillionUsd = outputCostPerMillionUsd;
+    entryPayload.cachedInputCostPerMillionUsd = cachedInputCostPerMillionUsd;
+    if (groundingSearchQueries > 0) {
+      entryPayload.groundingSearchQueries = groundingSearchQueries;
+      entryPayload.groundingSearchCostPerQueryUsd = groundingSearchCostPerQueryUsd;
+    }
+  }
+
+  if (isImage) {
+    const imageCount =
+      typeof usageMetrics.units === "number" && usageMetrics.units > 0
+        ? usageMetrics.units
+        : undefined;
+    if (typeof imageCount === "number") {
+      entryPayload.imageCount = imageCount;
+    }
+    if (typeof imageCostPerUnitUsd === "number") {
+      entryPayload.imageCostPerUnitUsd = imageCostPerUnitUsd;
+    }
+  }
+
+  if (isVideo) {
+    if (typeof videoCostPerSecondUsd === "number") {
+      entryPayload.videoCostPerSecondUsd = videoCostPerSecondUsd;
+    }
+    const seconds =
+      typeof usageMetrics.seconds === "number" && usageMetrics.seconds > 0
+        ? usageMetrics.seconds
+        : undefined;
+    if (typeof seconds === "number") {
+      entryPayload.secondsGenerated = seconds;
+    }
+  }
 
   maybeLogPricingDebug({
     logger,
@@ -308,6 +375,7 @@ export async function recordLlmUsage({
     resolvedUsageType,
     inputTokens,
     outputTokens,
+    thoughtsTokens,
     cachedTokens,
     totalTokens,
     usageMetrics,

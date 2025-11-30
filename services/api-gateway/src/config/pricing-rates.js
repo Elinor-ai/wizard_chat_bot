@@ -83,6 +83,16 @@ const BASE_RATE_CARD = {
           outputUsdPerMillionTokens: 120,
           cachedUsdPerMillionTokens: 0.20
         }
+      },
+      video: {
+        models: {
+          "veo-3.1-generate-preview": {
+            costPerSecondUsd: 0.40
+          }
+        },
+        default: {
+          costPerSecondUsd: 0.40
+        }
       }
     },
     veo: {

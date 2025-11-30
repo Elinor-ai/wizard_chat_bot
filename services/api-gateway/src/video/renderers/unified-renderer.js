@@ -3,9 +3,55 @@ import { SoraClient } from "./clients/sora-client.js";
 import { VideoRendererError } from "./contracts.js";
 import { persistRemoteVideo } from "../storage.js";
 import { logRawTraffic } from "../../llm/raw-traffic-logger.js";
+import fs from "fs";
+import path from "path";
+import { execFile } from "child_process";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function probeDurationSeconds(localPath) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "ffprobe",
+      [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        localPath,
+      ],
+      (error, stdout) => {
+        if (error) return reject(error);
+        const seconds = Number.parseFloat(String(stdout).trim());
+        if (Number.isFinite(seconds)) return resolve(seconds);
+        reject(new Error("Invalid duration"));
+      }
+    );
+  });
+}
+
+function resolveLocalPathFromUrl(finalUrl) {
+  try {
+    if (!finalUrl) return null;
+    if (finalUrl.startsWith("file://")) {
+      return new URL(finalUrl).pathname;
+    }
+    const url = new URL(finalUrl);
+    const candidate = path.resolve(
+      process.cwd(),
+      decodeURIComponent(url.pathname.replace(/^\/+/, ""))
+    );
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  } catch (_err) {
+    // ignore
+  }
+  return null;
 }
 
 export class UnifiedVideoRenderer {
@@ -114,11 +160,34 @@ export class UnifiedVideoRenderer {
               context,
             });
           }
+          const fallbackPlanned =
+            Number.isFinite(Number(request?.duration)) &&
+            Number(request.duration) > 0
+              ? Math.min(Number(request.duration), 8)
+              : null;
+
+          let measuredSeconds = Number(status.seconds) || null;
+          if (!measuredSeconds) {
+            const localPath = resolveLocalPathFromUrl(finalUrl);
+            if (localPath) {
+              try {
+                measuredSeconds = await probeDurationSeconds(localPath);
+              } catch (err) {
+                this.logger?.debug?.(
+                  { err, provider: key, jobId: context.jobId, itemId: context.itemId },
+                  "[Renderer] ffprobe duration failed"
+                );
+              }
+            }
+          }
+
+          const seconds = measuredSeconds ?? fallbackPlanned ?? null;
+
           this.logger?.info?.(
-            { provider: key, opId: status.id, jobId: context.jobId, itemId: context.itemId, videoUrl: finalUrl },
+            { provider: key, opId: status.id, jobId: context.jobId, itemId: context.itemId, videoUrl: finalUrl, seconds },
             "[Renderer] Success"
           );
-          return finalUrl;
+          return { videoUrl: finalUrl, seconds };
         }
 
         if (status.status === "failed") {

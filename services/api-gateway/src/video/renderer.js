@@ -86,9 +86,14 @@ export function createRenderer(options = {}) {
     async render({ manifest, provider, jobId, itemId, ownerUserId }) {
       const requestedAt = new Date().toISOString();
       const videoModel = process.env.VIDEO_MODEL ?? VERTEX_DEFAULTS.VEO_MODEL_ID;
+      const requestedDuration = calculateDuration(manifest);
+      const cappedDuration =
+        provider === "veo" && Number.isFinite(requestedDuration)
+          ? Math.min(requestedDuration, 8)
+          : requestedDuration;
       const request = {
         prompt: buildPrompt(manifest),
-        duration: calculateDuration(manifest),
+        duration: cappedDuration,
         aspectRatio: manifest?.spec?.aspectRatio,
       };
       const renderContext = {
@@ -97,17 +102,20 @@ export function createRenderer(options = {}) {
         ownerUserId: ownerUserId ?? null,
       };
       try {
-        let videoUrl = await unified.renderVideo(
+        let renderResult = await unified.renderVideo(
           provider,
           request,
           renderContext
         );
+        let videoUrl = renderResult?.videoUrl ?? renderResult;
         if (!/^https?:\/\//i.test(String(videoUrl ?? ""))) {
           videoUrl = toAbsoluteUrl(videoUrl);
         }
 
         const renderMetrics = {
-          secondsGenerated: request.duration ?? 0,
+          secondsGenerated:
+            Number(renderResult?.seconds) ||
+            Number(request.duration ?? 0),
           model: videoModel,
           tier: "standard"
         };

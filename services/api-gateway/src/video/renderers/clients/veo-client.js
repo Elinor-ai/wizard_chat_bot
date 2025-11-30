@@ -3,6 +3,7 @@ import { GoogleAuth } from "google-auth-library";
 import { IVideoClient, VideoRendererError } from "../contracts.js";
 import fs from "fs";
 import path from "path";
+import { logRawTraffic } from "../../../llm/raw-traffic-logger.js";
 
 function findVideoDataRecursive(obj) {
   try {
@@ -84,10 +85,31 @@ export class VeoClient extends IVideoClient {
       if (request.duration)
         payload.parameters.durationSeconds = request.duration.toString();
 
+      try {
+        await logRawTraffic({
+          taskId: "video_render",
+          direction: "REQUEST",
+          payload: { provider: "veo", payload },
+        });
+      } catch (err) {
+        console.debug("Failed to log Veo request", err);
+      }
+
       const response = await axios.post(this.buildPredictUrl(), payload, {
         headers,
       });
       console.log("⏳ Generation started. Op ID:", response.data?.name);
+
+      try {
+        await logRawTraffic({
+          taskId: "video_render",
+          direction: "RESPONSE",
+          payload: { provider: "veo", response: response.data },
+        });
+      } catch (err) {
+        console.debug("Failed to log Veo start response", err);
+      }
+
       return { id: response.data?.name, status: "pending" };
     } catch (error) {
       this._handleError(error);
@@ -115,6 +137,30 @@ export class VeoClient extends IVideoClient {
       if (data.error) throw new Error(data.error.message || "Vertex AI Error");
 
       const videoData = findVideoDataRecursive(data.response);
+      if (data.done) {
+        const sanitized = JSON.parse(JSON.stringify(data));
+        try {
+          const videos = sanitized?.response?.videos;
+          if (Array.isArray(videos)) {
+            videos.forEach((vid) => {
+              if (vid && "bytesBase64Encoded" in vid) {
+                delete vid.bytesBase64Encoded;
+              }
+            });
+          }
+        } catch (_err) {
+          // ignore sanitization errors
+        }
+        try {
+          await logRawTraffic({
+            taskId: "video_render",
+            direction: "RESPONSE",
+            payload: { provider: "veo", response: sanitized },
+          });
+        } catch (err) {
+          console.debug("Failed to log Veo completion response", err);
+        }
+      }
 
       if (videoData && videoData.type === "base64") {
         try {
