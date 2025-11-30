@@ -189,6 +189,7 @@ export function createBigQueryAdapter(options = {}) {
     if (row.inputTokens !== undefined && row.inputTokens !== null) transformed.input_tokens = Number(row.inputTokens);
     if (row.outputTokens !== undefined && row.outputTokens !== null) transformed.output_tokens = Number(row.outputTokens);
     if (row.totalTokens !== undefined && row.totalTokens !== null) transformed.total_tokens = Number(row.totalTokens);
+    if (row.thoughtsTokens !== undefined && row.thoughtsTokens !== null) transformed.thoughts_tokens = Number(row.thoughtsTokens);
     if (row.cachedTokens !== undefined && row.cachedTokens !== null) transformed.cached_tokens = Number(row.cachedTokens);
 
     // Cost fields (floats)
@@ -206,6 +207,12 @@ export function createBigQueryAdapter(options = {}) {
     }
     if (row.videoCostPerSecondUsd !== undefined && row.videoCostPerSecondUsd !== null) {
       transformed.video_cost_per_second_usd = Number(row.videoCostPerSecondUsd);
+    }
+    if (row.groundingSearchQueries !== undefined && row.groundingSearchQueries !== null) {
+      transformed.grounding_search_queries = Number(row.groundingSearchQueries);
+    }
+    if (row.groundingSearchCostPerQueryUsd !== undefined && row.groundingSearchCostPerQueryUsd !== null) {
+      transformed.grounding_search_cost_per_query_usd = Number(row.groundingSearchCostPerQueryUsd);
     }
     if (row.estimatedCostUsd !== undefined && row.estimatedCostUsd !== null) {
       transformed.estimated_cost_usd = Number(row.estimatedCostUsd);
