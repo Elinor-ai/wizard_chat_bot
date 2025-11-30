@@ -859,7 +859,7 @@ export const WizardApi = {
       options.jobId === null || options.jobId === undefined
         ? payload.jobId
         : options.jobId;
-    const response = await fetch(`${API_BASE_URL}/api/llm`, {
+    const response = await fetch(`${API_BASE_URL}/wizard/suggestions`, {
       method: "POST",
       signal: options.signal,
       headers: {
@@ -867,64 +867,51 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "suggest",
-        context: {
-          ...payload,
-          jobId: normalizedJobId,
-        },
+        ...payload,
+        jobId: normalizedJobId,
       }),
     });
 
     if (!response.ok) {
-      throw new Error("Suggestion fetch failed");
+      let message = "Suggestion fetch failed";
+      try {
+        const errorData = await response.json();
+        if (typeof errorData?.error === "string") {
+          message = errorData.error;
+        }
+      } catch (_error) {
+        const text = await response.text();
+        if (text) {
+          message = text;
+        }
+      }
+      throw new Error(message);
     }
 
     const data = await response.json();
     const responsePayload = data?.result ?? data ?? {};
-    const suggestionCandidates =
-      responsePayload.suggestions ??
-      responsePayload.autofill_candidates ??
-      responsePayload.autofillCandidates ??
-      responsePayload.candidates ??
-      [];
-    const failure =
-      responsePayload.failure ??
-      (responsePayload.error
-        ? {
-            reason: responsePayload.error.reason ?? "llm_error",
-            rawPreview:
-              responsePayload.error.rawPreview ??
-              responsePayload.error.raw ??
-              null,
-            error:
-              responsePayload.error.message ??
-              responsePayload.error.error ??
-              null,
-            occurredAt: responsePayload.error.occurredAt ?? new Date(),
-          }
-        : null);
-    // Debug: log raw server response for suggestions
+    const suggestionCandidates = responsePayload.suggestions ?? [];
+    const failure = responsePayload.failure ?? null;
+
     if (process.env.NODE_ENV !== "production") {
       // eslint-disable-next-line no-console
       console.log("[API] fetchSuggestions:raw-response", {
         hasSuggestions: Array.isArray(responsePayload?.suggestions),
-        hasAutofillCandidates: Array.isArray(responsePayload?.autofill_candidates),
-        hasCandidates: Array.isArray(responsePayload?.candidates),
         suggestionsCount: responsePayload?.suggestions?.length ?? 0,
-        autofillCandidatesCount: responsePayload?.autofill_candidates?.length ?? 0,
-        candidatesCount: responsePayload?.candidates?.length ?? 0,
+        refreshed: responsePayload?.refreshed,
         rawData: responsePayload,
       });
     }
-    // Handle both legacy and new /api/llm response formats
+
     const normalizedData = {
       ...responsePayload,
-      jobId: responsePayload.jobId ?? data?.jobId ?? normalizedJobId ?? null,
+      jobId: responsePayload.jobId ?? normalizedJobId ?? null,
       suggestions: suggestionCandidates,
-      updatedAt: responsePayload.updatedAt ?? data?.updatedAt ?? null,
-      refreshed: Boolean(responsePayload.refreshed ?? data?.refreshed),
+      updatedAt: responsePayload.updatedAt ?? null,
+      refreshed: Boolean(responsePayload.refreshed),
       failure,
     };
+
     try {
       return copilotSuggestionResponseSchema.parse(normalizedData);
     } catch (parseError) {
