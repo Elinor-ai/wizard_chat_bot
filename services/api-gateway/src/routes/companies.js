@@ -389,7 +389,9 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        Connection: "keep-alive"
+        Connection: "keep-alive",
+        "Access-Control-Allow-Origin": req.headers.origin || "*",
+        "Access-Control-Allow-Credentials": "true"
       });
       res.flushHeaders?.();
 

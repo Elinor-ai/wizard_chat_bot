@@ -141,14 +141,14 @@ export function CompanyIntelWatcher() {
       // Otherwise keep it closed
       return null;
     });
-  }, [stage, stageSignature, dismissedMap, autoOpenStage]);
+  }, [stage, stageSignature, dismissedMap, autoOpenStage, company?.enrichmentStatus]);
 
   useEffect(() => {
-    if (!company?.id || typeof window === "undefined") {
+    if (!company?.id || !authToken || typeof window === "undefined") {
       return undefined;
     }
     const source = new EventSource(
-      `${API_BASE_URL}/companies/stream/${company.id}`,
+      `${API_BASE_URL}/companies/stream/${company.id}?token=${encodeURIComponent(authToken)}`,
       { withCredentials: true }
     );
 
@@ -198,7 +198,7 @@ export function CompanyIntelWatcher() {
       source.removeEventListener("jobs_updated", handleJobsUpdate);
       source.close();
     };
-  }, [company?.id, queryClient]);
+  }, [company?.id, authToken, queryClient]);
 
   const persistDismissed = useCallback(
     (next) => {

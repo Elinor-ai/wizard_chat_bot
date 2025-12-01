@@ -3,11 +3,21 @@ import { verifyAuthToken } from "../utils/auth-tokens.js";
 
 export function requireAuth({ logger }) {
   return (req, _res, next) => {
+    // Try Authorization header first
     const header = req.headers.authorization;
-    if (!header || !header.toLowerCase().startsWith("bearer ")) {
-      return next(httpError(401, "Missing Authorization header"));
+    let token = null;
+
+    if (header && header.toLowerCase().startsWith("bearer ")) {
+      token = header.slice(7).trim();
+    } else if (req.query.token) {
+      // Fallback to query parameter for EventSource/SSE endpoints
+      token = req.query.token;
     }
-    const token = header.slice(7).trim();
+
+    if (!token) {
+      return next(httpError(401, "Missing Authorization header or token parameter"));
+    }
+
     try {
       const payload = verifyAuthToken(token);
       req.user = {
