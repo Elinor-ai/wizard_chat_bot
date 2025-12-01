@@ -121,25 +121,27 @@ export function CompanyIntelWatcher() {
       return;
     }
 
-    // If modal is already open, update it to the new stage (unless dismissed)
-    if (activeStage) {
-      if (dismissedMap[stageSignature]) {
-        return;
-      }
-      // Update activeStage to reflect current stage (e.g., searching → profile-review)
-      setActiveStage(stage);
-      return;
-    }
-
-    // If modal is not open, only open it if auto-open is enabled
-    if (!autoOpenStage) {
-      return;
-    }
+    // Check if already dismissed
     if (dismissedMap[stageSignature]) {
       return;
     }
-    setActiveStage(stage);
-  }, [stage, stageSignature, dismissedMap, autoOpenStage, activeStage]);
+
+    // Update activeStage to match current stage, whether modal is open or not
+    // This handles: searching → profile-review transitions while modal is open
+    // and auto-opening when stage becomes available
+    setActiveStage((prev) => {
+      // If modal is already open (prev !== null), always update to current stage
+      if (prev !== null) {
+        return stage;
+      }
+      // If modal is not open, only open if auto-open is enabled
+      if (autoOpenStage) {
+        return stage;
+      }
+      // Otherwise keep it closed
+      return null;
+    });
+  }, [stage, stageSignature, dismissedMap, autoOpenStage]);
 
   useEffect(() => {
     if (!company?.id || typeof window === "undefined") {
