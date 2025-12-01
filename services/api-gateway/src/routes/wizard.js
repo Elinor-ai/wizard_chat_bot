@@ -7,7 +7,6 @@ import {
   CampaignSchema,
   JobChannelRecommendationSchema,
   JobFinalSchema,
-  JobRefinementSchema,
   JobSchema,
   ConfirmedJobDetailsSchema,
   JobSuggestionSchema,
@@ -30,16 +29,11 @@ import {
 } from "../services/company-context.js";
 import { listCompaniesForUser } from "./companies.js";
 import { buildJobSnapshot } from "../wizard/job-intake.js";
-import {
-  loadSuggestionDocument,
-  loadRefinementDocument,
-  mapCandidatesByField,
-} from "../wizard/job-helpers.js";
+import { loadSuggestionDocument } from "../wizard/job-helpers.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
 const CHANNEL_RECOMMENDATION_COLLECTION = "jobChannelRecommendations";
-const REFINEMENT_COLLECTION = "jobRefinements";
 const FINAL_JOB_COLLECTION = "jobFinalJobs";
 const JOB_ASSET_COLLECTION = "jobAssets";
 const JOB_ASSET_RUN_COLLECTION = "jobAssetRuns";
@@ -545,84 +539,6 @@ function normalizeStateMachine(rawState, now) {
   };
 }
 
-async function overwriteSuggestionDocument({
-  firestore,
-  logger,
-  jobId,
-  companyId = null,
-  candidates,
-  provider,
-  model,
-  metadata,
-  now,
-}) {
-  const telemetry =
-    metadata && Object.keys(metadata).length > 0
-      ? {
-          promptTokens:
-            metadata.promptTokens ?? metadata.promptTokenCount ?? null,
-          candidateTokens:
-            metadata.candidateTokens ?? metadata.candidatesTokenCount ?? null,
-          totalTokens: metadata.totalTokens ?? metadata.totalTokenCount ?? null,
-          finishReason: metadata.finishReason ?? null,
-        }
-      : undefined;
-  const payload = JobSuggestionSchema.parse({
-    id: jobId,
-    jobId,
-    companyId: companyId ?? null,
-    schema_version: "3",
-    candidates: mapCandidatesByField(candidates),
-    provider,
-    model,
-    metadata: telemetry,
-    updatedAt: now,
-  });
-
-  await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
-  logger.info(
-    { jobId, suggestions: candidates.length, provider, model },
-    "Persisted LLM suggestions"
-  );
-
-  return payload;
-}
-
-async function persistSuggestionFailure({
-  firestore,
-  logger,
-  jobId,
-  companyId = null,
-  reason,
-  rawPreview,
-  error,
-  now,
-}) {
-  const existing = await loadSuggestionDocument(firestore, jobId);
-
-  const payload = JobSuggestionSchema.parse({
-    id: jobId,
-    jobId,
-    companyId: companyId ?? existing?.companyId ?? null,
-    schema_version: "3",
-    candidates: existing?.candidates ?? {},
-    provider: existing?.provider,
-    model: existing?.model,
-    metadata: existing?.metadata,
-    lastFailure: {
-      reason,
-      rawPreview,
-      error,
-      occurredAt: now,
-    },
-    updatedAt: existing?.updatedAt ?? now,
-  });
-
-  await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
-  logger.warn({ jobId, reason }, "Persisted suggestion failure");
-  return payload;
-}
-
 async function acknowledgeSuggestionField({
   firestore,
   jobId,
@@ -654,71 +570,6 @@ async function acknowledgeSuggestionField({
 
   await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
   logger.info({ jobId, fieldId }, "Suggestion removed after merge");
-}
-
-async function overwriteRefinementDocument({
-  firestore,
-  logger,
-  jobId,
-  companyId = null,
-  refinedJob,
-  summary,
-  provider,
-  model,
-  metadata,
-  now,
-}) {
-  const payload = JobRefinementSchema.parse({
-    id: jobId,
-    jobId,
-    companyId: companyId ?? existing?.companyId ?? null,
-    schema_version: "1",
-    refinedJob,
-    summary: summary ?? null,
-    provider,
-    model,
-    metadata,
-    updatedAt: now,
-  });
-
-  await firestore.saveDocument(REFINEMENT_COLLECTION, jobId, payload);
-  logger.info({ jobId, provider, model }, "Persisted job refinement");
-  return payload;
-}
-
-async function persistRefinementFailure({
-  firestore,
-  logger,
-  jobId,
-  companyId = null,
-  reason,
-  message,
-  rawPreview,
-  now,
-}) {
-  const existing = await loadRefinementDocument(firestore, jobId);
-  const payload = JobRefinementSchema.parse({
-    id: jobId,
-    jobId,
-    companyId,
-    schema_version: "1",
-    refinedJob: existing?.refinedJob ?? {},
-    summary: existing?.summary ?? null,
-    provider: existing?.provider,
-    model: existing?.model,
-    metadata: existing?.metadata,
-    lastFailure: {
-      reason,
-      message: message ?? null,
-      rawPreview: rawPreview ?? null,
-      occurredAt: now,
-    },
-    updatedAt: existing?.updatedAt ?? now,
-  });
-
-  await firestore.saveDocument(REFINEMENT_COLLECTION, jobId, payload);
-  logger.warn({ jobId, reason }, "Persisted refinement failure");
-  return payload;
 }
 
 async function loadFinalJobDocument(firestore, jobId) {
