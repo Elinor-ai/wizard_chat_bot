@@ -161,24 +161,3 @@ export function buildCopilotMessage({ role, type, content, metadata, stage, cont
   };
 }
 
-/**
- * Build basic message object (simplified version for backwards compatibility)
- * This is a convenience wrapper around buildCopilotMessage without stage/contextId
- *
- * @param {Object} params - Message parameters
- * @param {string} params.role - Message role (user/assistant)
- * @param {string} params.type - Message type
- * @param {string} params.content - Message content
- * @param {Object} params.metadata - Optional metadata
- * @returns {Object} Message object
- */
-export function buildMessage({ role, type, content, metadata }) {
-  return buildCopilotMessage({
-    role,
-    type,
-    content,
-    metadata,
-    stage: null,
-    contextId: null
-  });
-}
