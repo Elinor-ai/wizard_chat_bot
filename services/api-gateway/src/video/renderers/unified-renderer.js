@@ -89,6 +89,12 @@ export class UnifiedVideoRenderer {
       ownerUserId: context.ownerUserId,
       manifestVersion: context.manifestVersion,
     };
+    const requestEndpoint =
+      typeof client?.buildPredictUrl === "function"
+        ? client.buildPredictUrl()
+        : client?.baseUrl
+        ? `${client.baseUrl}/videos`
+        : null;
 
     this.logger?.info?.(
       { provider: key, aspectRatio: request.aspectRatio, duration: request.duration, jobId: context.jobId, itemId: context.itemId },
@@ -99,6 +105,7 @@ export class UnifiedVideoRenderer {
       await logRawTraffic({
         taskId: "video_render",
         direction: "REQUEST",
+        providerEndpoint: requestEndpoint,
         payload: { provider: key, request, context: trafficContext },
       });
     } catch (err) {
@@ -122,6 +129,7 @@ export class UnifiedVideoRenderer {
       await logRawTraffic({
         taskId: "video_render",
         direction: "RESPONSE",
+        providerEndpoint: requestEndpoint,
         payload: { provider: key, response: start, context: trafficContext },
       });
     } catch (err) {

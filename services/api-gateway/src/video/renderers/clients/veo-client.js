@@ -89,6 +89,7 @@ export class VeoClient extends IVideoClient {
         await logRawTraffic({
           taskId: "video_render",
           direction: "REQUEST",
+          providerEndpoint: this.buildPredictUrl(),
           payload: { provider: "veo", payload },
         });
       } catch (err) {
@@ -104,6 +105,7 @@ export class VeoClient extends IVideoClient {
         await logRawTraffic({
           taskId: "video_render",
           direction: "RESPONSE",
+          providerEndpoint: this.buildPredictUrl(),
           payload: { provider: "veo", response: response.data },
         });
       } catch (err) {
@@ -155,6 +157,7 @@ export class VeoClient extends IVideoClient {
           await logRawTraffic({
             taskId: "video_render",
             direction: "RESPONSE",
+            providerEndpoint: fetchUrl,
             payload: { provider: "veo", response: sanitized },
           });
         } catch (err) {

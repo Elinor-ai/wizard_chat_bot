@@ -21,6 +21,7 @@ import {
   getBaseUsdPerCredit,
   listSubscriptionPlans,
 } from "./config/subscription-plans.js";
+import { requestContextMiddleware } from "./llm/request-context.js";
 
 const corsConfig = {
   origin: "http://localhost:3000",
@@ -35,6 +36,7 @@ export function createApp({ logger, firestore, bigQuery, llmClient }) {
   app.options("*", cors(corsConfig));
 
   app.use(express.json({ limit: "2mb" }));
+  app.use(requestContextMiddleware);
   app.use(
     morgan("tiny", {
       stream: {

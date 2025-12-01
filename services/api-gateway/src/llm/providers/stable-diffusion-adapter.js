@@ -1,4 +1,5 @@
 import { llmLogger } from "../logger.js";
+import { logRawTraffic } from "../raw-traffic-logger.js";
 
 export class StableDiffusionAdapter {
   constructor({ apiKey, apiUrl } = {}) {
@@ -46,7 +47,7 @@ export class StableDiffusionAdapter {
     }
   }
 
-  async invoke({ user, model }) {
+  async invoke({ user, model, route = null }) {
     this.ensureKey();
     const payload = this.parsePayload(user);
     const prompt = payload.prompt;
@@ -70,6 +71,22 @@ export class StableDiffusionAdapter {
     formData.append("width", payload.width ?? "512");
     formData.append("height", payload.height ?? "512");
     formData.append("model", selectedModel);
+
+    await logRawTraffic({
+      taskId: "image_generation",
+      direction: "REQUEST",
+      endpoint: route ?? null,
+      providerEndpoint: this.apiUrl,
+      payload: {
+        model: selectedModel,
+        aspectRatio,
+        hasNegativePrompt: Boolean(negativePrompt),
+        seed: payload.seed ?? null,
+        width: payload.width ?? "512",
+        height: payload.height ?? "512",
+        output_format: payload.output_format ?? "png"
+      }
+    });
 
     const response = await fetch(this.apiUrl, {
       method: "POST",
@@ -95,7 +112,36 @@ export class StableDiffusionAdapter {
       );
     }
 
+    const responseClone = response.clone();
     const contentType = response.headers.get("content-type") ?? "";
+    const responseLogPayload = {
+      status: response.status,
+      contentType
+    };
+    try {
+      if (contentType.includes("application/json")) {
+        responseLogPayload.body = await responseClone.json();
+      } else if (contentType.includes("image/")) {
+        const contentLength = response.headers.get("content-length");
+        responseLogPayload.body = {
+          notice: "binary image omitted",
+          contentLength: contentLength ? Number(contentLength) : null
+        };
+      } else {
+        const text = await responseClone.text();
+        responseLogPayload.body = text ? { snippet: text.slice(0, 200) } : null;
+      }
+    } catch (_err) {
+      // ignore logging errors
+    }
+    await logRawTraffic({
+      taskId: "image_generation",
+      direction: "RESPONSE",
+      endpoint: route ?? null,
+      providerEndpoint: this.apiUrl,
+      payload: responseLogPayload
+    });
+
     if (contentType.includes("application/json")) {
       const data = await response.json();
       if (data?.error) {

@@ -1,4 +1,5 @@
 import { llmLogger } from "../logger.js";
+import { logRawTraffic } from "../raw-traffic-logger.js";
 
 export class OpenAIAdapter {
   constructor({ apiKey, apiUrl }) {
@@ -19,6 +20,8 @@ export class OpenAIAdapter {
     mode = "text",
     temperature = 0.2,
     maxTokens = 800,
+    taskType = null,
+    route = null,
   }) {
     this.ensureKey();
 
@@ -43,6 +46,14 @@ export class OpenAIAdapter {
       payload.response_format = { type: "json_object" };
     }
 
+    await logRawTraffic({
+      taskId: taskType ?? "text",
+      direction: "REQUEST",
+      endpoint: route ?? null,
+      providerEndpoint: this.apiUrl,
+      payload,
+    });
+
     const response = await fetch(this.apiUrl, {
       method: "POST",
       headers: {
@@ -58,6 +69,13 @@ export class OpenAIAdapter {
     }
 
     const data = await response.json();
+    await logRawTraffic({
+      taskId: taskType ?? "text",
+      direction: "RESPONSE",
+      endpoint: route ?? null,
+      providerEndpoint: this.apiUrl,
+      payload: data,
+    });
     const content = data?.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error("OpenAI response missing content");

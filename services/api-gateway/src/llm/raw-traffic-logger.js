@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getRequestContext } from "./request-context.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "../../../..");
@@ -90,7 +91,13 @@ function sanitizePayload(payload, { redactImages = false } = {}) {
   return visit(payload);
 }
 
-export async function logRawTraffic({ taskId = "unknown", direction, payload }) {
+export async function logRawTraffic({
+  taskId = "unknown",
+  direction,
+  payload,
+  endpoint,
+  providerEndpoint,
+}) {
   try {
     await ensureLogDir();
     const shouldRedactImages =
@@ -98,10 +105,13 @@ export async function logRawTraffic({ taskId = "unknown", direction, payload }) 
     const safePayload = sanitizePayload(payload, {
       redactImages: shouldRedactImages,
     });
+    const routePath = endpoint ?? getRequestContext()?.route ?? null;
     const entry = {
       timestamp: new Date().toISOString(),
       taskId,
       direction,
+      ...(routePath ? { endpoint: routePath } : {}),
+      ...(providerEndpoint ? { providerEndpoint } : {}),
       payload: safePayload
     };
     const line = `${JSON.stringify(entry)}\n`;

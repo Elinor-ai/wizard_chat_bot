@@ -859,7 +859,7 @@ export const WizardApi = {
       options.jobId === null || options.jobId === undefined
         ? payload.jobId
         : options.jobId;
-    const response = await fetch(`${API_BASE_URL}/wizard/suggestions`, {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       signal: options.signal,
       headers: {
@@ -867,8 +867,11 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        ...payload,
-        jobId: normalizedJobId,
+        taskType: "suggest",
+        context: {
+          ...payload,
+          jobId: normalizedJobId,
+        },
       }),
     });
 
@@ -961,39 +964,52 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return channelRecommendationResponseSchema.parse(data);
+    const payloadData = data?.result ?? data ?? {};
+    return channelRecommendationResponseSchema.parse(payloadData);
   },
 
   async fetchHeroImage(jobId, options = {}) {
     if (!jobId) {
       throw new Error("jobId is required to fetch image");
     }
-    const response = await fetch(
-      `${API_BASE_URL}/wizard/hero-image?jobId=${encodeURIComponent(jobId)}`,
-      {
-        headers: {
-          ...authHeaders(options.authToken),
-        },
-      }
-    );
-    if (!response.ok) {
-      throw new Error("Failed to fetch image");
-    }
-    const data = await response.json();
-    return {
-      jobId: data.jobId,
-      heroImage: data.heroImage ? heroImageSchema.parse(data.heroImage) : null,
-    };
-  },
-
-  async requestHeroImage(payload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/wizard/hero-image`, {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        taskType: "hero_image",
+        context: {
+          jobId,
+          forceRefresh: false,
+        },
+      }),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch image");
+    }
+    const data = await response.json();
+    const payloadData = data?.result ?? data ?? {};
+    return {
+      jobId: payloadData.jobId ?? jobId,
+      heroImage: payloadData.heroImage
+        ? heroImageSchema.parse(payloadData.heroImage)
+        : null,
+    };
+  },
+
+  async requestHeroImage(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken),
+      },
+      body: JSON.stringify({
+        taskType: "hero_image",
+        context: payload,
+      }),
     });
     if (!response.ok) {
       let message = "Image generation failed";
@@ -1011,9 +1027,12 @@ export const WizardApi = {
       throw new Error(message);
     }
     const data = await response.json();
+    const payloadData = data?.result ?? data ?? {};
     return {
-      jobId: data.jobId,
-      heroImage: data.heroImage ? heroImageSchema.parse(data.heroImage) : null,
+      jobId: payloadData.jobId,
+      heroImage: payloadData.heroImage
+        ? heroImageSchema.parse(payloadData.heroImage)
+        : null,
     };
   },
 
@@ -1199,7 +1218,46 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return finalizeResponseSchema.parse(data);
+    const finalizeResult = finalizeResponseSchema.parse(data);
+
+    let channelResult = {
+      recommendations: [],
+      updatedAt: null,
+      failure: null,
+    };
+
+    try {
+      const channelsResponse = await this.fetchChannelRecommendations(
+        { jobId: finalizeResult.jobId, forceRefresh: true },
+        options
+      );
+      channelResult = {
+        recommendations: channelsResponse.recommendations ?? [],
+        updatedAt: channelsResponse.updatedAt ?? null,
+        failure: channelsResponse.failure ?? null,
+      };
+    } catch (channelError) {
+      channelResult = {
+        recommendations: [],
+        updatedAt: null,
+        failure: {
+          reason: "channel_fetch_failed",
+          message:
+            channelError instanceof Error
+              ? channelError.message
+              : `${channelError}`,
+          rawPreview: null,
+          occurredAt: null,
+        },
+      };
+    }
+
+    return {
+      ...finalizeResult,
+      channelRecommendations: channelResult.recommendations,
+      channelUpdatedAt: channelResult.updatedAt,
+      channelFailure: channelResult.failure,
+    };
   },
 
   async persistJob(state, options = {}) {
@@ -1270,13 +1328,16 @@ export const WizardApi = {
   },
 
   async sendCopilotMessage(messagePayload, options = {}) {
-    const response = await fetch(`${API_BASE_URL}/wizard/copilot/chat`, {
+    const response = await fetch(`${API_BASE_URL}/api/llm`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(options.authToken),
       },
-      body: JSON.stringify(messagePayload),
+      body: JSON.stringify({
+        taskType: "copilot_agent",
+        context: messagePayload,
+      }),
     });
 
     if (!response.ok) {
@@ -1284,29 +1345,30 @@ export const WizardApi = {
     }
 
     const data = await response.json();
+    const payload = data?.result ?? data;
     // Debug: log raw server response
     if (process.env.NODE_ENV !== "production") {
       // eslint-disable-next-line no-console
       console.log("[API] sendCopilotMessage:raw-response", {
-        jobId: data?.jobId,
-        hasMessages: Array.isArray(data?.messages),
-        messageCount: data?.messages?.length ?? 0,
-        messages: data?.messages?.map((m) => ({
+        jobId: payload?.jobId,
+        hasMessages: Array.isArray(payload?.messages),
+        messageCount: payload?.messages?.length ?? 0,
+        messages: payload?.messages?.map((m) => ({
           id: m?.id,
           role: m?.role,
           hasContent: Boolean(m?.content),
           contentPreview: typeof m?.content === "string" ? m.content.slice(0, 100) : typeof m?.content,
         })),
-        rawData: data,
+        rawData: payload,
       });
     }
     try {
-      return copilotConversationResponseSchema.parse(data);
+      return copilotConversationResponseSchema.parse(payload);
     } catch (parseError) {
       // eslint-disable-next-line no-console
       console.error("[API] sendCopilotMessage:parse-error", {
         error: parseError,
-        rawData: data,
+        rawData: payload,
       });
       throw parseError;
     }
@@ -1424,7 +1486,8 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return companyOverviewResponseSchema.parse(data);
+    const base = companyOverviewResponseSchema.parse(data);
+    return base;
   },
 
   async confirmCompanyProfile(payload, options = {}) {
@@ -1455,7 +1518,8 @@ export const WizardApi = {
     }
 
     const data = await response.json();
-    return companyOverviewResponseSchema.parse(data);
+    const base = companyOverviewResponseSchema.parse(data);
+    return base;
   },
 
   async fetchMyCompanies(options = {}) {

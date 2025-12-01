@@ -1689,7 +1689,7 @@ async function markEnrichmentFailed({ firestore, companyId, reason, message }) {
   });
 }
 
-export async function runCompanyEnrichmentOnce({
+async function runCompanyEnrichmentCore({
   firestore,
   bigQuery,
   logger,
@@ -2132,6 +2132,27 @@ export async function runCompanyEnrichmentOnce({
     updatedAt: new Date()
   });
   return { jobs };
+}
+
+export async function runCompanyEnrichmentOnce(args) {
+  const { firestore, logger, company } = args ?? {};
+  if (!company?.id) {
+    throw new Error("Company context required for enrichment");
+  }
+  try {
+    return await runCompanyEnrichmentCore(args);
+  } catch (error) {
+    const reason = error?.name ?? "company_enrichment_error";
+    const message = error?.message ?? "Company enrichment failed";
+    logger?.error?.({ companyId: company.id, err: message }, "company.intel.failed");
+    await markEnrichmentFailed({
+      firestore,
+      companyId: company.id,
+      reason,
+      message
+    });
+    throw error;
+  }
 }
 
 export async function retryStuckEnrichments({ firestore, bigQuery, logger, llmClient }) {

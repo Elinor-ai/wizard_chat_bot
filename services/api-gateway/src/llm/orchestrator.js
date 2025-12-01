@@ -1,5 +1,6 @@
 import { llmLogger } from "./logger.js";
 import { safePreview } from "./utils/parsing.js";
+import { getRequestContext } from "./request-context.js";
 
 export class LlmOrchestrator {
   constructor({ adapters, policy, tasks }) {
@@ -55,6 +56,12 @@ export class LlmOrchestrator {
         throw new Error(`Task ${taskName} builder returned an empty prompt`);
       }
 
+      const requestRoute =
+        context?.__routePath ??
+        context?.routePath ??
+        getRequestContext()?.route ??
+        null;
+
       const options = {
         model: selection.model,
         system: task.system,
@@ -63,6 +70,7 @@ export class LlmOrchestrator {
         temperature: task.temperature ?? 0.2,
         maxTokens: this.resolveValue(task.maxTokens, selection.provider),
         taskType: taskName,
+        route: requestRoute,
       };
 
       llmLogger.info(

@@ -1,3 +1,5 @@
+import { logRawTraffic } from "../raw-traffic-logger.js";
+
 function normalizeAliases(map = {}) {
   return Object.entries(map).reduce((acc, [key, value]) => {
     if (key && value) {
@@ -38,7 +40,7 @@ export class ImagenImageAdapter {
     return model ?? this.modelAliases.nano ?? "imagen-4.0-generate-preview-06-06";
   }
 
-  async invoke({ user, model }) {
+  async invoke({ user, model, route = null }) {
     this.ensureKey();
     const payload = this.parsePayload(user);
     const prompt = payload.prompt;
@@ -61,6 +63,14 @@ export class ImagenImageAdapter {
       }
     };
 
+    await logRawTraffic({
+      taskId: "image_generation",
+      direction: "REQUEST",
+      endpoint: route ?? null,
+      providerEndpoint: url,
+      payload: body,
+    });
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -75,6 +85,13 @@ export class ImagenImageAdapter {
     }
 
     const data = await response.json();
+    await logRawTraffic({
+      taskId: "image_generation",
+      direction: "RESPONSE",
+      endpoint: route ?? null,
+      providerEndpoint: url,
+      payload: data,
+    });
     const prediction = data?.predictions?.[0] ?? {};
     const base64 =
       prediction.bytesBase64Encoded ??

@@ -1,4 +1,5 @@
 import { llmLogger } from "../logger.js";
+import { logRawTraffic } from "../raw-traffic-logger.js";
 
 export class DalleImageAdapter {
   constructor({ apiKey, apiUrl }) {
@@ -23,7 +24,7 @@ export class DalleImageAdapter {
     }
   }
 
-  async invoke({ user, model }) {
+  async invoke({ user, model, route = null }) {
     this.ensureKey();
     const payload = this.parsePayload(user);
     const prompt = payload.prompt;
@@ -45,6 +46,14 @@ export class DalleImageAdapter {
       requestBody.style = payload.style;
     }
 
+    await logRawTraffic({
+      taskId: "image_generation",
+      direction: "REQUEST",
+      endpoint: route ?? null,
+      providerEndpoint: this.apiUrl,
+      payload: requestBody
+    });
+
     const response = await fetch(this.apiUrl, {
       method: "POST",
       headers: {
@@ -60,6 +69,13 @@ export class DalleImageAdapter {
     }
 
     const data = await response.json();
+    await logRawTraffic({
+      taskId: "image_generation",
+      direction: "RESPONSE",
+      endpoint: route ?? null,
+      providerEndpoint: this.apiUrl,
+      payload: data
+    });
     const first = Array.isArray(data?.data) ? data.data[0] : null;
     if (!first) {
       throw new Error("DALL-E response missing data");

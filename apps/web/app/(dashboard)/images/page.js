@@ -5,43 +5,6 @@ import { useUser } from "../../../components/user-context";
 import { WizardApi } from "../../../lib/api-client";
 import { clsx } from "../../../lib/cn";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-
-async function fetchHeroImage({ authToken, jobId }) {
-  const response = await fetch(
-    `${API_BASE_URL}/wizard/hero-image?jobId=${encodeURIComponent(jobId)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${authToken}`
-      }
-    }
-  );
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    const message = payload?.error ?? "Failed to load hero image";
-    throw new Error(message);
-  }
-  return response.json();
-}
-
-async function requestHeroImage({ authToken, jobId }) {
-  const response = await fetch(`${API_BASE_URL}/wizard/hero-image`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ jobId, forceRefresh: true })
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    const message = payload?.error ?? "Failed to request hero image";
-    throw new Error(message);
-  }
-  return response.json();
-}
-
 function useJobs(authToken) {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -105,7 +68,7 @@ export default function ImageStudioPage() {
     setStatus("loading");
     setError(null);
 
-    fetchHeroImage({ authToken, jobId: selectedJobId })
+    WizardApi.fetchHeroImage(selectedJobId, { authToken })
       .then((response) => {
         if (!cancelled) {
           setHeroImage(response.heroImage ?? null);
@@ -132,8 +95,13 @@ export default function ImageStudioPage() {
     setStatus("generating");
     setError(null);
     try {
-      await requestHeroImage({ authToken, jobId: selectedJobId });
-      const result = await fetchHeroImage({ authToken, jobId: selectedJobId });
+      await WizardApi.requestHeroImage(
+        { jobId: selectedJobId, forceRefresh: true },
+        { authToken }
+      );
+      const result = await WizardApi.fetchHeroImage(selectedJobId, {
+        authToken,
+      });
       setHeroImage(result.heroImage ?? null);
       setStatus("ready");
     } catch (err) {

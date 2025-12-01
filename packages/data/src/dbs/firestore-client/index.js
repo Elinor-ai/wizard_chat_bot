@@ -215,5 +215,48 @@ export function createFirestoreAdapter(options = {}) {
       };
       return this.addDocument(LLM_USAGE_COLLECTION, payload);
     },
+    subscribeDocument(collection, id, onChange, onError) {
+      if (!collection || !id || typeof onChange !== "function") {
+        return () => {};
+      }
+      const docRef = db.collection(collection).doc(id);
+      const unsubscribe = docRef.onSnapshot(
+        (snapshot) => {
+          if (!snapshot.exists) {
+            onChange(null);
+            return;
+          }
+          onChange({ id: snapshot.id, ...normalize(snapshot.data()) });
+        },
+        (err) => {
+          logger.warn({ collection, id, err }, "Firestore document subscription error");
+          onError?.(err);
+        }
+      );
+      return unsubscribe;
+    },
+    subscribeCollection(collection, filters = [], onChange, onError) {
+      if (!collection || typeof onChange !== "function") {
+        return () => {};
+      }
+      let query = db.collection(collection);
+      filters.forEach((filter) => {
+        query = query.where(filter.field, filter.operator, filter.value);
+      });
+      const unsubscribe = query.onSnapshot(
+        (snapshot) => {
+          const docs = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...normalize(doc.data()),
+          }));
+          onChange(docs);
+        },
+        (err) => {
+          logger.warn({ collection, filters, err }, "Firestore collection subscription error");
+          onError?.(err);
+        }
+      );
+      return unsubscribe;
+    },
   };
 }

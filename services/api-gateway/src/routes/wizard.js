@@ -37,7 +37,7 @@ const REFINEMENT_COLLECTION = "jobRefinements";
 const FINAL_JOB_COLLECTION = "jobFinalJobs";
 const JOB_ASSET_COLLECTION = "jobAssets";
 const JOB_ASSET_RUN_COLLECTION = "jobAssetRuns";
-const HERO_IMAGE_COLLECTION = "jobHeroImages";
+const HERO_IMAGE_COLLECTION = "jobImages";
 const SUPPORTED_CHANNELS = CampaignSchema.shape.channel.options;
 const ASSET_STATUS = JobAssetStatusEnum.enum;
 const RUN_STATUS = JobAssetRunStatusEnum.enum;
@@ -803,7 +803,7 @@ async function overwriteFinalJobDocument({
   return payload;
 }
 
-async function loadChannelRecommendationDocument(firestore, jobId) {
+export async function loadChannelRecommendationDocument(firestore, jobId) {
   const existing = await firestore.getDocument(
     CHANNEL_RECOMMENDATION_COLLECTION,
     jobId
@@ -816,7 +816,7 @@ async function loadChannelRecommendationDocument(firestore, jobId) {
   return parsed.data;
 }
 
-async function overwriteChannelRecommendationDocument({
+export async function overwriteChannelRecommendationDocument({
   firestore,
   logger,
   jobId,
@@ -859,7 +859,7 @@ async function overwriteChannelRecommendationDocument({
   return payload;
 }
 
-async function persistChannelRecommendationFailure({
+export async function persistChannelRecommendationFailure({
   firestore,
   logger,
   jobId,
@@ -2341,75 +2341,10 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
         now,
       });
 
-      const channelCompanyContext = await loadCompanyContext({
-        firestore,
-        companyId: validatedJob.companyId ?? null,
-        taskType: "channel_recommendations",
-        logger,
-      });
-
-      const channelResult = await llmClient.askChannelRecommendations({
-        jobSnapshot: buildJobSnapshot(validatedJob),
-        confirmed: validatedJob.confirmed ?? finalJob,
-        supportedChannels: SUPPORTED_CHANNELS,
-        existingChannels: Array.isArray(validatedJob.campaigns)
-          ? validatedJob.campaigns
-              .map((campaign) => campaign?.channel)
-              .filter((channel) => typeof channel === "string")
-          : [],
-        companyContext: channelCompanyContext,
-      });
-      await trackLlmUsage(channelResult, {
-        userId,
-        jobId: payload.jobId,
-        taskType: "channel_recommendations",
-      });
-
-      let channelDoc = null;
-
-      if (channelResult?.recommendations?.length > 0) {
-        channelDoc = await overwriteChannelRecommendationDocument({
-          firestore,
-          logger,
-          jobId: payload.jobId,
-          companyId: validatedJob.companyId ?? null,
-          recommendations: channelResult.recommendations,
-          provider: channelResult.provider,
-          model: channelResult.model,
-          metadata: channelResult.metadata,
-          now,
-        });
-      } else if (channelResult?.error) {
-        channelDoc = await persistChannelRecommendationFailure({
-          firestore,
-          logger,
-          jobId: payload.jobId,
-          companyId: validatedJob.companyId ?? null,
-          reason: channelResult.error.reason ?? "unknown_error",
-          message: channelResult.error.message ?? null,
-          rawPreview: channelResult.error.rawPreview ?? null,
-          now,
-        });
-      } else {
-        channelDoc = await persistChannelRecommendationFailure({
-          firestore,
-          logger,
-          jobId: payload.jobId,
-          companyId: validatedJob.companyId ?? null,
-          reason: "no_recommendations",
-          message: "LLM returned no channel recommendations",
-          rawPreview: null,
-          now,
-        });
-      }
-
       res.json({
         jobId: payload.jobId,
         finalJob,
-        source,
-        channelRecommendations: channelDoc?.recommendations ?? [],
-        channelUpdatedAt: channelDoc?.updatedAt ?? null,
-        channelFailure: channelDoc?.lastFailure ?? null,
+        source
       });
     })
   );

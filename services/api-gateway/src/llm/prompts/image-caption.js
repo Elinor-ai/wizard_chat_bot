@@ -21,7 +21,8 @@ export function buildImageCaptionPrompt(context = {}) {
       "Highlight what makes the role exciting or the impact on the team.",
       "End with a strong call-to-action (Apply, DM us, etc.) and keep tone inclusive.",
       "Return 2-4 relevant hashtags, including #Hiring or #NowHiring when appropriate.",
-      "Respond ONLY with valid JSON. Do not include prose outside the JSON object.",
+      "Respond ONLY with a single JSON object that matches responseContract. No markdown, no prose, no extra keys, no trailing text.",
+      "If unsure about a field, return an empty string for caption or an empty array for hashtags.",
     ],
     responseContract: {
       caption: "string (<= 180 characters)",

@@ -13,6 +13,7 @@ function getAuthenticatedUserId(req) {
 const JOB_COLLECTION = "jobs";
 const JOB_ASSET_COLLECTION = "jobAssets";
 const VIDEO_LIBRARY_COLLECTION = "videoLibraryItems";
+const HERO_IMAGE_COLLECTION = "jobImages";
 
 function deriveJobTitle(job) {
   if (!job) return "Untitled role";
@@ -80,6 +81,49 @@ function timestampValue(value) {
   if (value instanceof Date) return value.getTime();
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
+function mapHeroImageToAsset(imageDoc, jobMap) {
+  if (!imageDoc?.jobId) return null;
+  const job = jobMap.get(imageDoc.jobId);
+  const jobLogo = resolveJobLogo(job);
+  const companyId = resolveCompanyId(job);
+  const companyName = resolveCompanyName(job);
+  const imageUrl =
+    imageDoc.imageUrl ??
+    (imageDoc.imageBase64
+      ? `data:${imageDoc.imageMimeType ?? "image/png"};base64,${imageDoc.imageBase64}`
+      : null);
+
+  return {
+    id: `hero-image-${imageDoc.jobId}`,
+    jobId: imageDoc.jobId,
+    jobTitle: deriveJobTitle(job),
+    logoUrl: jobLogo,
+    companyId,
+    companyName,
+    channelId: "HERO_IMAGE",
+    formatId: "HERO_IMAGE",
+    artifactType: "image",
+    status: imageDoc.status ?? "PENDING",
+    provider: imageDoc.imageProvider ?? imageDoc.promptProvider ?? null,
+    model: imageDoc.imageModel ?? imageDoc.promptModel ?? null,
+    updatedAt: imageDoc.updatedAt ?? imageDoc.createdAt ?? null,
+    summary:
+      imageDoc.caption ??
+      imageDoc.prompt ??
+      imageDoc.failure?.message ??
+      "Hero image",
+    content: {
+      title: "Hero Image",
+      body: imageDoc.caption ?? imageDoc.prompt ?? "",
+      imageUrl,
+      caption: imageDoc.caption ?? null,
+      hashtags: Array.isArray(imageDoc.captionHashtags)
+        ? imageDoc.captionHashtags
+        : [],
+    },
+  };
 }
 
 function normalizeAsset(record) {
@@ -172,14 +216,17 @@ export function assetsRouter({ firestore, logger }) {
 
       const assetFilters = [{ field: "ownerUserId", operator: "==", value: userId }];
       const videoFilters = [{ field: "ownerUserId", operator: "==", value: userId }];
+      const heroFilters = [{ field: "ownerUserId", operator: "==", value: userId }];
       if (jobIdFilter) {
         assetFilters.push({ field: "jobId", operator: "==", value: jobIdFilter });
         videoFilters.push({ field: "jobId", operator: "==", value: jobIdFilter });
+        heroFilters.push({ field: "jobId", operator: "==", value: jobIdFilter });
       }
 
-      const [assets, videoItems] = await Promise.all([
+      const [assets, videoItems, heroImages] = await Promise.all([
         firestore.listCollection(JOB_ASSET_COLLECTION, assetFilters),
-        firestore.listCollection(VIDEO_LIBRARY_COLLECTION, videoFilters)
+        firestore.listCollection(VIDEO_LIBRARY_COLLECTION, videoFilters),
+        firestore.listCollection(HERO_IMAGE_COLLECTION, heroFilters)
       ]);
 
       const jobMap = new Map(jobs.map((job) => [job.id, job]));
@@ -220,6 +267,10 @@ export function assetsRouter({ firestore, logger }) {
         .map((item) => mapVideoItemToAsset(item, jobMap))
         .filter(Boolean);
 
+      const heroAssets = (heroImages ?? [])
+        .map((image) => mapHeroImageToAsset(image, jobMap))
+        .filter(Boolean);
+
       const virtualAssets = jobs
         .map((job) => {
           const description = extractJobDescription(job);
@@ -252,7 +303,7 @@ export function assetsRouter({ firestore, logger }) {
         })
         .filter(Boolean);
 
-      const mergedAssets = [...virtualAssets, ...normalized, ...videoAssets].sort(
+      const mergedAssets = [...virtualAssets, ...heroAssets, ...normalized, ...videoAssets].sort(
         (a, b) => timestampValue(b.updatedAt) - timestampValue(a.updatedAt)
       );
 

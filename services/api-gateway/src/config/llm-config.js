@@ -1,5 +1,4 @@
 const GEMINI_DEFAULT_MODEL = "gemini-3-pro-preview";
-const IMAGEN_DEFAULT_MODEL = "imagegeneration@006";
 const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
 
 const GEMINI_TASKS = [

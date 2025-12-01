@@ -369,6 +369,95 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
     })
   );
 
+  router.get(
+    "/stream/:companyId",
+    wrapAsync(async (req, res) => {
+      const user = req.user;
+      if (!user) {
+        throw httpError(401, "Unauthorized");
+      }
+      const { companyId } = req.params;
+      if (!companyId) {
+        throw httpError(400, "Company identifier required");
+      }
+      const companies = await listCompaniesForUser({ firestore, user, logger });
+      const targetCompany = companies.find((company) => company.id === companyId);
+      if (!targetCompany) {
+        throw httpError(404, "Company not found");
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive"
+      });
+      res.flushHeaders?.();
+
+      const sendEvent = (event, payload) => {
+        res.write(`event: ${event}\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      };
+
+      sendEvent("company_updated", { company: targetCompany });
+      const existingJobs =
+        (await firestore.listDiscoveredJobs(companyId))
+          .map(mapDiscoveredJobForResponse)
+          .filter(Boolean) ?? [];
+      sendEvent("jobs_updated", { jobs: existingJobs });
+
+      const cleanups = [];
+      const heartbeat = setInterval(() => {
+        res.write(": ping\n\n");
+      }, 25_000);
+      cleanups.push(() => clearInterval(heartbeat));
+
+      const companyUnsub = firestore.subscribeDocument(
+        "companies",
+        companyId,
+        (doc) => {
+          if (!doc) return;
+          const parsed = CompanySchema.safeParse(doc);
+          if (!parsed.success) {
+            logger?.warn?.(
+              { companyId, error: parsed.error },
+              "Company stream parse failed"
+            );
+            return;
+          }
+          sendEvent("company_updated", { company: parsed.data });
+        },
+        (err) => {
+          logger?.warn?.({ companyId, err }, "Company stream error");
+        }
+      );
+      cleanups.push(companyUnsub);
+
+      const jobsUnsub = firestore.subscribeCollection(
+        "discoveredJobs",
+        [{ field: "companyId", operator: "==", value: companyId }],
+        (docs) => {
+          const mapped = docs.map(mapDiscoveredJobForResponse).filter(Boolean);
+          sendEvent("jobs_updated", { jobs: mapped });
+        },
+        (err) => {
+          logger?.warn?.({ companyId, err }, "Discovered jobs stream error");
+        }
+      );
+      cleanups.push(jobsUnsub);
+
+      req.on("close", () => {
+        cleanups.forEach((cleanup) => {
+          try {
+            cleanup?.();
+          } catch {
+            // ignore
+          }
+        });
+        res.end();
+      });
+    })
+  );
+
   router.post(
     "/me/confirm-name",
     wrapAsync(async (req, res) => {
@@ -449,27 +538,22 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
 
       await firestore.saveCompanyDocument(company.id, updates);
       const refreshed = CompanySchema.parse(await firestore.getDocument("companies", company.id));
-      await ensureCompanyEnrichmentQueued({ firestore, logger, company: refreshed });
 
       res.json({
         company: refreshed,
         hasDiscoveredJobs: refreshed.jobDiscoveryStatus === "FOUND_JOBS"
       });
 
-      if (refreshed.enrichmentStatus === CompanyEnrichmentStatusEnum.enum.PENDING) {
-        runCompanyEnrichmentOnce({
-          firestore,
-          bigQuery,
-          logger,
-          llmClient,
-          company: refreshed
-        }).catch((err) => {
-          logger.error(
-            { companyId: refreshed.id, err },
-            "Background enrichment trigger failed after confirm-name"
-          );
-        });
-      }
+      await ensureCompanyEnrichmentQueued({ firestore, logger, company: refreshed });
+      runCompanyEnrichmentOnce({
+        firestore,
+        bigQuery,
+        logger,
+        llmClient,
+        company: refreshed
+      }).catch((err) => {
+        logger.error({ companyId: refreshed.id, err }, "Background enrichment trigger failed after name confirmation");
+      });
     })
   );
 
@@ -552,10 +636,7 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
         llmClient,
         company: refreshed
       }).catch((err) => {
-        logger.error(
-          { companyId: refreshed.id, err },
-          "Background enrichment trigger failed after profile revision"
-        );
+        logger.error({ companyId: refreshed.id, err }, "Background enrichment trigger failed after profile update");
       });
     })
   );

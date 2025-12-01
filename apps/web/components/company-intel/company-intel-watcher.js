@@ -8,6 +8,9 @@ import { CompanyIntelModal } from "./company-intel-modal";
 import { CompanyIntelIndicator } from "./company-intel-indicator";
 import { CompanyNameConfirmModal } from "./company-name-confirm-modal";
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+
 function determineStage(company) {
   if (!company) return null;
   if (!company.nameConfirmed) {
@@ -47,13 +50,6 @@ function buildStageSignature(stage, company) {
     default:
       return null;
   }
-}
-
-function shouldPollIntel(company) {
-  if (!company || !company.nameConfirmed) {
-    return false;
-  }
-  return company.enrichmentStatus !== "READY" && company.enrichmentStatus !== "FAILED";
 }
 
 function shouldAutoOpenStage(stage, company) {
@@ -134,16 +130,61 @@ export function CompanyIntelWatcher() {
   }, [stage, stageSignature, dismissedMap, autoOpenStage]);
 
   useEffect(() => {
-    if (!company?.id || !shouldPollIntel(company)) {
+    if (!company?.id || typeof window === "undefined") {
       return undefined;
     }
-    const intervalId = setInterval(() => {
-      void companyQuery.refetch();
-    }, 4000);
-    // Kick off an immediate refresh so users see the transition without waiting for the next tick.
-    void companyQuery.refetch();
-    return () => clearInterval(intervalId);
-  }, [company?.id, company?.enrichmentStatus, company?.nameConfirmed, companyQuery]);
+    const source = new EventSource(
+      `${API_BASE_URL}/companies/stream/${company.id}`,
+      { withCredentials: true }
+    );
+
+    const handleCompanyUpdate = (event) => {
+      try {
+        const payload = JSON.parse(event.data ?? "{}");
+        const nextCompany = payload.company ?? null;
+        if (!nextCompany) return;
+        queryClient.setQueryData(["company-intel", "me"], (prev) => {
+          const base = prev ?? {};
+          const hasJobs =
+            base?.hasDiscoveredJobs ??
+            (nextCompany?.jobDiscoveryStatus === "FOUND_JOBS");
+          return {
+            ...base,
+            company: nextCompany,
+            hasDiscoveredJobs: Boolean(hasJobs)
+          };
+        });
+      } catch {
+        // ignore malformed payloads
+      }
+    };
+
+    const handleJobsUpdate = (event) => {
+      try {
+        const payload = JSON.parse(event.data ?? "{}");
+        const nextJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+        queryClient.setQueryData(["company-intel", "jobs", company.id], {
+          companyId: company.id,
+          jobs: nextJobs
+        });
+      } catch {
+        // ignore malformed payloads
+      }
+    };
+
+    source.addEventListener("company_updated", handleCompanyUpdate);
+    source.addEventListener("jobs_updated", handleJobsUpdate);
+
+    source.onerror = () => {
+      // Let react-query handle manual refetches on error if needed
+    };
+
+    return () => {
+      source.removeEventListener("company_updated", handleCompanyUpdate);
+      source.removeEventListener("jobs_updated", handleJobsUpdate);
+      source.close();
+    };
+  }, [company?.id, queryClient]);
 
   const persistDismissed = useCallback(
     (next) => {

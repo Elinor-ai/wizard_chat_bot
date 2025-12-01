@@ -96,7 +96,10 @@ export class GeminiAdapter {
     }
 
     if (this.clientsByLocation.has(effectiveLocation)) {
-      return this.clientsByLocation.get(effectiveLocation);
+      return {
+        client: this.clientsByLocation.get(effectiveLocation),
+        location: effectiveLocation,
+      };
     }
 
     const client = new GoogleGenAI({
@@ -107,7 +110,16 @@ export class GeminiAdapter {
     });
 
     this.clientsByLocation.set(effectiveLocation, client);
-    return client;
+    return { client, location: effectiveLocation };
+  }
+
+  buildEndpoint({ model, location, taskType }) {
+    if (!model || !this.projectId) return null;
+    const effectiveLocation = location || this.defaultLocation || "global";
+    const host = `${effectiveLocation}-aiplatform.googleapis.com`;
+    const base = `https://${host}/v1/projects/${this.projectId}/locations/${effectiveLocation}/publishers/google/models/${model}`;
+    const action = taskType === "image_generation" ? "generateImage" : "generateContent";
+    return `${base}:${action}`;
   }
 
   buildPrompt(system, user) {
@@ -125,6 +137,7 @@ export class GeminiAdapter {
     temperature = 0.2,
     maxTokens = 800,
     taskType = null,
+    route = null,
   }) {
     const userText = (user || "").trim();
     const systemText = (system || "").trim();
@@ -135,7 +148,12 @@ export class GeminiAdapter {
       );
     }
 
-    const client = this.getClientForModel(model);
+    const { client, location } = this.getClientForModel(model);
+    const requestEndpoint = this.buildEndpoint({
+      model,
+      location,
+      taskType,
+    });
 
     let contents = userText || systemText;
     let imagePayload = null;
@@ -208,6 +226,8 @@ export class GeminiAdapter {
         await logRawTraffic({
           taskId: taskType ?? "image_generation",
           direction: "REQUEST",
+          endpoint: route ?? null,
+          providerEndpoint: requestEndpoint,
           payload: imageRequest
         });
         llmLogger.info(
@@ -231,6 +251,8 @@ export class GeminiAdapter {
         await logRawTraffic({
           taskId: taskType ?? "text",
           direction: "REQUEST",
+          endpoint: route ?? null,
+          providerEndpoint: requestEndpoint,
           payload: textRequest
         });
         response = await client.models.generateContent(textRequest);
@@ -253,6 +275,8 @@ export class GeminiAdapter {
       await logRawTraffic({
         taskId: taskType ?? "image_generation",
         direction: "RESPONSE",
+        endpoint: route ?? null,
+        providerEndpoint: requestEndpoint,
         payload: response
       });
       const sanitizeBase64 = (payload) => {
@@ -385,6 +409,8 @@ export class GeminiAdapter {
     await logRawTraffic({
       taskId: taskType ?? "text",
       direction: "RESPONSE",
+      endpoint: route ?? null,
+      providerEndpoint: requestEndpoint,
       payload: response
     });
 

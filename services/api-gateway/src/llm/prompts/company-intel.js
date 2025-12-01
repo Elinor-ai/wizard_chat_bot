@@ -68,6 +68,7 @@ export function buildCompanyIntelPrompt(context = {}) {
       "Every field you populate must have an evidence entry listing the sources that justify it.",
       "For job fields, set a value only when you are at least ~90% confident in its accuracy; otherwise emit null/omit.",
       "Do not hallucinate social URLs or job postings. Return null/omit if uncertain.",
+      "Respond ONLY with a single JSON object that matches responseContract. No markdown, no prose, no code fences, no headings, no extra keys. If unsure about a field, omit it or return null/empty as appropriate."
     ],
     responseContract: {
       profile: {
