@@ -120,6 +120,18 @@ export function CompanyIntelWatcher() {
       setActiveStage(null);
       return;
     }
+
+    // If modal is already open, update it to the new stage (unless dismissed)
+    if (activeStage) {
+      if (dismissedMap[stageSignature]) {
+        return;
+      }
+      // Update activeStage to reflect current stage (e.g., searching → profile-review)
+      setActiveStage(stage);
+      return;
+    }
+
+    // If modal is not open, only open it if auto-open is enabled
     if (!autoOpenStage) {
       return;
     }
@@ -127,7 +139,7 @@ export function CompanyIntelWatcher() {
       return;
     }
     setActiveStage(stage);
-  }, [stage, stageSignature, dismissedMap, autoOpenStage]);
+  }, [stage, stageSignature, dismissedMap, autoOpenStage, activeStage]);
 
   useEffect(() => {
     if (!company?.id || typeof window === "undefined") {
