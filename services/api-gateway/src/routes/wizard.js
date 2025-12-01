@@ -30,6 +30,11 @@ import {
 } from "../services/company-context.js";
 import { listCompaniesForUser } from "./companies.js";
 import { buildJobSnapshot } from "../wizard/job-intake.js";
+import {
+  loadSuggestionDocument,
+  loadRefinementDocument,
+  mapCandidatesByField,
+} from "../wizard/job-helpers.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
@@ -540,24 +545,6 @@ function normalizeStateMachine(rawState, now) {
   };
 }
 
-function mapCandidatesByField(candidates = []) {
-  const map = {};
-  candidates.forEach((candidate) => {
-    map[candidate.fieldId] = candidate;
-  });
-  return map;
-}
-
-async function loadSuggestionDocument(firestore, jobId) {
-  const existing = await firestore.getDocument(SUGGESTION_COLLECTION, jobId);
-  if (!existing) return null;
-  const parsed = JobSuggestionSchema.safeParse(existing);
-  if (!parsed.success) {
-    return null;
-  }
-  return parsed.data;
-}
-
 async function overwriteSuggestionDocument({
   firestore,
   logger,
@@ -636,22 +623,6 @@ async function persistSuggestionFailure({
   return payload;
 }
 
-function selectSuggestionsForFields(candidateMap = {}, fieldIds = []) {
-  if (!Array.isArray(fieldIds) || fieldIds.length === 0) {
-    return Object.values(candidateMap ?? {});
-  }
-  return fieldIds
-    .map((fieldId) => candidateMap?.[fieldId])
-    .filter(Boolean)
-    .map((candidate) => ({
-      fieldId: candidate.fieldId,
-      value: candidate.value,
-      rationale: candidate.rationale ?? "",
-      confidence: candidate.confidence ?? undefined,
-      source: candidate.source ?? "expert-assistant",
-    }));
-}
-
 async function acknowledgeSuggestionField({
   firestore,
   jobId,
@@ -683,26 +654,6 @@ async function acknowledgeSuggestionField({
 
   await firestore.saveDocument(SUGGESTION_COLLECTION, jobId, payload);
   logger.info({ jobId, fieldId }, "Suggestion removed after merge");
-}
-
-async function loadRefinementDocument(firestore, jobId) {
-  if (
-    jobId === undefined &&
-    firestore &&
-    typeof firestore === "object" &&
-    firestore.firestore &&
-    firestore.jobId
-  ) {
-    jobId = firestore.jobId;
-    firestore = firestore.firestore;
-  }
-  const existing = await firestore.getDocument(REFINEMENT_COLLECTION, jobId);
-  if (!existing) return null;
-  const parsed = JobRefinementSchema.safeParse(existing);
-  if (!parsed.success) {
-    return null;
-  }
-  return parsed.data;
 }
 
 async function overwriteRefinementDocument({
