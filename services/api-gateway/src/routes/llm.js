@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { wrapAsync, httpError } from "@wizard/utils";
 import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
@@ -41,6 +40,15 @@ import { WizardCopilotAgent } from "../copilot/agent.js";
 import { COPILOT_TOOLS } from "../copilot/tools.js";
 import { generateHeroImage } from "../services/hero-image.js";
 import { runCompanyEnrichmentOnce } from "../services/company-intel.js";
+import {
+  loadSuggestionDocument,
+  loadRefinementDocument,
+  mapCandidatesByField,
+  selectSuggestionsForFields,
+  sanitizeCopilotReply,
+  serializeMessages,
+  buildCopilotMessage
+} from "../wizard/job-helpers.js";
 
 const requestSchema = z.object({
   taskType: z.string().min(1),
@@ -74,34 +82,6 @@ function resolveUsageType(taskType) {
   if (taskType === "image_generation") return "image";
   if (taskType.startsWith("video_")) return "video";
   return "text";
-}
-
-async function loadSuggestionDocument(firestore, jobId) {
-  const existing = await firestore.getDocument(SUGGESTION_COLLECTION, jobId);
-  if (!existing) return null;
-  const parsed = JobSuggestionSchema.safeParse(existing);
-  if (!parsed.success) {
-    return null;
-  }
-  return parsed.data;
-}
-
-function mapCandidatesByField(candidates = []) {
-  const map = {};
-  candidates.forEach((candidate) => {
-    if (candidate?.fieldId) {
-      map[candidate.fieldId] = candidate;
-    }
-  });
-  return map;
-}
-
-async function loadRefinementDocument(firestore, jobId) {
-  const existing = await firestore.getDocument(REFINEMENT_COLLECTION, jobId);
-  if (!existing) return null;
-  const parsed = JobRefinementSchema.safeParse(existing);
-  if (!parsed.success) return null;
-  return parsed.data;
 }
 
 async function loadJobForUserLocal({ firestore, jobId, userId }) {
@@ -156,45 +136,6 @@ async function loadRefinedSnapshotLocal({ firestore, jobId }) {
   const existing = await loadRefinementDocument(firestore, jobId);
   if (!existing) return null;
   return existing.refinedJob ?? null;
-}
-
-function sanitizeCopilotReply(input) {
-  if (!input) return "";
-  return input
-    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, ""))
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/__([^_]+)__/g, "$1")
-    .replace(/_([^_]+)_/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/^>\s?/gm, "")
-    .replace(/#+\s*/g, "")
-    .trim();
-}
-
-function buildCopilotMessage({ role, type, content, metadata, stage, contextId }) {
-  return {
-    id: randomUUID(),
-    role,
-    type,
-    content,
-    metadata: metadata ?? null,
-    stage: stage ?? null,
-    contextId: contextId ?? null,
-    createdAt: new Date()
-  };
-}
-
-function serializeMessages(messages = []) {
-  return messages.map((message) => ({
-    ...message,
-    createdAt:
-      message.createdAt instanceof Date
-        ? message.createdAt.toISOString()
-        : message.createdAt
-  }));
 }
 
 async function overwriteSuggestionDocument({
@@ -335,22 +276,6 @@ async function persistRefinementFailure({
   await firestore.saveDocument(REFINEMENT_COLLECTION, jobId, payload);
   logger.warn({ jobId, reason }, "Persisted refinement failure");
   return payload;
-}
-
-function selectSuggestionsForFields(candidateMap = {}, fieldIds = []) {
-  if (!Array.isArray(fieldIds) || fieldIds.length === 0) {
-    return Object.values(candidateMap ?? {});
-  }
-  return fieldIds
-    .map((fieldId) => candidateMap?.[fieldId])
-    .filter(Boolean)
-    .map((candidate) => ({
-      fieldId: candidate.fieldId,
-      value: candidate.value,
-      rationale: candidate.rationale ?? "",
-      confidence: candidate.confidence ?? undefined,
-      source: candidate.source ?? "expert-assistant",
-    }));
 }
 
 function normalizeSeniorityLevel(value) {
