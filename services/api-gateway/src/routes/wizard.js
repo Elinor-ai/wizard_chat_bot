@@ -29,6 +29,7 @@ import {
   loadCompanyContext,
 } from "../services/company-context.js";
 import { listCompaniesForUser } from "./companies.js";
+import { buildJobSnapshot } from "../wizard/job-intake.js";
 
 const JOB_COLLECTION = "jobs";
 const SUGGESTION_COLLECTION = "jobSuggestions";
@@ -992,13 +993,6 @@ function serializeHeroImage(document) {
     caption: document.caption ?? null,
     captionHashtags: document.captionHashtags ?? null,
   };
-}
-
-function buildJobSnapshot(job) {
-  return ALLOWED_INTAKE_KEYS.reduce((acc, key) => {
-    acc[key] = job?.[key];
-    return acc;
-  }, {});
 }
 
 function buildPlanKey(channelId, formatId) {
