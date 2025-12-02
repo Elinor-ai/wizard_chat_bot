@@ -5,26 +5,33 @@ import { createRequire } from "node:module";
 import { GoogleGenAI } from "@google/genai";
 import { llmLogger } from "../logger.js";
 import { logRawTraffic } from "../raw-traffic-logger.js";
+import { LLM_CORE_TASK } from "../../config/task-types.js";
 
 const require = createRequire(import.meta.url);
+
+// Tasks where we want detailed token usage logging
 const TOKEN_DEBUG_TASKS = new Set([
-  "image_generation",
-  "image_prompt_generation",
-  "image_caption"
+  LLM_CORE_TASK.IMAGE_GENERATION,
+  LLM_CORE_TASK.IMAGE_PROMPT_GENERATION,
+  LLM_CORE_TASK.IMAGE_CAPTION
 ]);
+
+// Tasks that benefit from Google Search grounding
 const SEARCH_GROUNDING_TASKS = new Set([
-  "suggest",
-  "copilot_agent",
-  "company_intel",
-  "video_storyboard",
-  "image_prompt_generation",
-  "image_caption",
-  "refine"
+  LLM_CORE_TASK.SUGGEST,
+  LLM_CORE_TASK.COPILOT_AGENT,
+  LLM_CORE_TASK.COMPANY_INTEL,
+  LLM_CORE_TASK.VIDEO_STORYBOARD,
+  LLM_CORE_TASK.IMAGE_PROMPT_GENERATION,
+  LLM_CORE_TASK.IMAGE_CAPTION,
+  LLM_CORE_TASK.REFINE
 ]);
+
+// Tasks that benefit from Google Maps grounding
 const MAPS_GROUNDING_TASKS = new Set([
-  "suggest",
-  "copilot_agent",
-  "refine"
+  LLM_CORE_TASK.SUGGEST,
+  LLM_CORE_TASK.COPILOT_AGENT,
+  LLM_CORE_TASK.REFINE
 ]);
 
 export class GeminiAdapter {
@@ -118,7 +125,7 @@ export class GeminiAdapter {
     const effectiveLocation = location || this.defaultLocation || "global";
     const host = `${effectiveLocation}-aiplatform.googleapis.com`;
     const base = `https://${host}/v1/projects/${this.projectId}/locations/${effectiveLocation}/publishers/google/models/${model}`;
-    const action = taskType === "image_generation" ? "generateImage" : "generateContent";
+    const action = taskType === LLM_CORE_TASK.IMAGE_GENERATION ? "generateImage" : "generateContent";
     return `${base}:${action}`;
   }
 
@@ -157,7 +164,7 @@ export class GeminiAdapter {
 
     let contents = userText || systemText;
     let imagePayload = null;
-    if (taskType === "image_generation") {
+    if (taskType === LLM_CORE_TASK.IMAGE_GENERATION) {
       try {
         imagePayload = JSON.parse(userText);
         const promptParts = [];
@@ -196,7 +203,7 @@ export class GeminiAdapter {
       }
     }
 
-    if (taskType === "image_generation") {
+    if (taskType === LLM_CORE_TASK.IMAGE_GENERATION) {
       // Request only image outputs to avoid billed "thought" text
       config.responseModalities = ["IMAGE"];
     }
@@ -205,7 +212,7 @@ export class GeminiAdapter {
       config.systemInstruction = systemText;
     }
 
-    if (mode === "json" && taskType !== "image_generation" && !hasGroundingTools) {
+    if (mode === "json" && taskType !== LLM_CORE_TASK.IMAGE_GENERATION && !hasGroundingTools) {
       config.responseMimeType = "application/json";
     }
 
@@ -216,7 +223,7 @@ export class GeminiAdapter {
       model
     };
     try {
-      if (taskType === "image_generation" && typeof client?.images?.generate === "function") {
+      if (taskType === LLM_CORE_TASK.IMAGE_GENERATION && typeof client?.images?.generate === "function") {
         const imageRequest = {
           model,
           prompt: contents,
@@ -224,7 +231,7 @@ export class GeminiAdapter {
           ...(imagePayload?.aspect_ratio ? { aspectRatio: imagePayload.aspect_ratio } : {})
         };
         await logRawTraffic({
-          taskId: taskType ?? "image_generation",
+          taskId: taskType ?? LLM_CORE_TASK.IMAGE_GENERATION,
           direction: "REQUEST",
           endpoint: route ?? null,
           providerEndpoint: requestEndpoint,
@@ -271,9 +278,9 @@ export class GeminiAdapter {
     }
 
     // Handle image generation separately
-    if (taskType === "image_generation") {
+    if (taskType === LLM_CORE_TASK.IMAGE_GENERATION) {
       await logRawTraffic({
-        taskId: taskType ?? "image_generation",
+        taskId: taskType ?? LLM_CORE_TASK.IMAGE_GENERATION,
         direction: "RESPONSE",
         endpoint: route ?? null,
         providerEndpoint: requestEndpoint,

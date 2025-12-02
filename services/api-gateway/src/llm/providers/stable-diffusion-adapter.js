@@ -1,5 +1,6 @@
 import { llmLogger } from "../logger.js";
 import { logRawTraffic } from "../raw-traffic-logger.js";
+import { LLM_CORE_TASK } from "../../config/task-types.js";
 
 export class StableDiffusionAdapter {
   constructor({ apiKey, apiUrl } = {}) {
@@ -73,7 +74,7 @@ export class StableDiffusionAdapter {
     formData.append("model", selectedModel);
 
     await logRawTraffic({
-      taskId: "image_generation",
+      taskId: LLM_CORE_TASK.IMAGE_GENERATION,
       direction: "REQUEST",
       endpoint: route ?? null,
       providerEndpoint: this.apiUrl,
@@ -135,7 +136,7 @@ export class StableDiffusionAdapter {
       // ignore logging errors
     }
     await logRawTraffic({
-      taskId: "image_generation",
+      taskId: LLM_CORE_TASK.IMAGE_GENERATION,
       direction: "RESPONSE",
       endpoint: route ?? null,
       providerEndpoint: this.apiUrl,

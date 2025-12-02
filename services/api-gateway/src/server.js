@@ -5,7 +5,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { notFound, errorHandler } from "@wizard/utils";
 import { wizardRouter } from "./routes/wizard.js";
-import { chatRouter } from "./routes/chat.js";
 import { copilotRouter } from "./routes/copilot.js";
 import { authRouter } from "./routes/auth.js";
 import { assetsRouter } from "./routes/assets.js";
@@ -77,11 +76,6 @@ export function createApp({ logger, firestore, bigQuery, llmClient }) {
     "/wizard",
     authMiddleware,
     wizardRouter({ firestore, bigQuery, logger, llmClient })
-  );
-  app.use(
-    "/chat",
-    authMiddleware,
-    chatRouter({ firestore, bigQuery, llmClient, logger })
   );
   app.use(
     "/assets",

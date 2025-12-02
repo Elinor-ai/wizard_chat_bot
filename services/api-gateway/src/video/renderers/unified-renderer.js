@@ -3,6 +3,7 @@ import { SoraClient } from "./clients/sora-client.js";
 import { VideoRendererError } from "./contracts.js";
 import { persistRemoteVideo } from "../storage.js";
 import { logRawTraffic } from "../../llm/raw-traffic-logger.js";
+import { LLM_ORCHESTRATOR_TASK } from "../../config/task-types.js";
 import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
@@ -103,7 +104,7 @@ export class UnifiedVideoRenderer {
 
     try {
       await logRawTraffic({
-        taskId: "video_render",
+        taskId: LLM_ORCHESTRATOR_TASK.VIDEO_RENDER,
         direction: "REQUEST",
         providerEndpoint: requestEndpoint,
         payload: { provider: key, request, context: trafficContext },
@@ -127,7 +128,7 @@ export class UnifiedVideoRenderer {
 
     try {
       await logRawTraffic({
-        taskId: "video_render",
+        taskId: LLM_ORCHESTRATOR_TASK.VIDEO_RENDER,
         direction: "RESPONSE",
         providerEndpoint: requestEndpoint,
         payload: { provider: key, response: start, context: trafficContext },

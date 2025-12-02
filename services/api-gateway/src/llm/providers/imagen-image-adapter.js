@@ -1,4 +1,5 @@
 import { logRawTraffic } from "../raw-traffic-logger.js";
+import { LLM_CORE_TASK } from "../../config/task-types.js";
 
 function normalizeAliases(map = {}) {
   return Object.entries(map).reduce((acc, [key, value]) => {
@@ -64,7 +65,7 @@ export class ImagenImageAdapter {
     };
 
     await logRawTraffic({
-      taskId: "image_generation",
+      taskId: LLM_CORE_TASK.IMAGE_GENERATION,
       direction: "REQUEST",
       endpoint: route ?? null,
       providerEndpoint: url,
@@ -86,7 +87,7 @@ export class ImagenImageAdapter {
 
     const data = await response.json();
     await logRawTraffic({
-      taskId: "image_generation",
+      taskId: LLM_CORE_TASK.IMAGE_GENERATION,
       direction: "RESPONSE",
       endpoint: route ?? null,
       providerEndpoint: url,

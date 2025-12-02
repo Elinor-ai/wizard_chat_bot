@@ -6,13 +6,16 @@ import {
   resolveProviderPlanName,
   resolveGroundingPricing
 } from "../config/pricing-rates.js";
+import { LLM_CORE_TASK, LLM_SPECIAL_TASK } from "../config/task-types.js";
 
 const MILLION = 1_000_000;
+
+// Tasks where we want detailed cost/usage logging
 const DEBUG_TASKS = new Set([
-  "image_generation",
-  "image_prompt_generation",
-  "image_caption",
-  "video_generation"
+  LLM_CORE_TASK.IMAGE_GENERATION,
+  LLM_CORE_TASK.IMAGE_PROMPT_GENERATION,
+  LLM_CORE_TASK.IMAGE_CAPTION,
+  LLM_SPECIAL_TASK.VIDEO_GENERATION
 ]);
 
 function normalizeTokens(value) {

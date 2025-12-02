@@ -16,6 +16,7 @@ import {
   buildFallbackThumbnail
 } from "./fallbacks.js";
 import { computeDurationPlan } from "./duration-planner.js";
+import { LLM_CORE_TASK } from "../config/task-types.js";
 
 const LLM_ENABLED = process.env.VIDEO_LLM_ENABLED !== "false";
 
@@ -83,7 +84,7 @@ export async function buildVideoManifest({
         recommendedMedium: recommendedMedium ?? spec.medium,
         branding
       });
-      await trackUsage(storyboardResult, "video_storyboard");
+      await trackUsage(storyboardResult, LLM_CORE_TASK.VIDEO_STORYBOARD);
       if (!storyboardResult.error && Array.isArray(storyboardResult.shots) && storyboardResult.shots.length >= 4) {
         storyboard = normaliseShots(storyboardResult.shots, spec);
         thumbnail = storyboardResult.thumbnail ?? null;
@@ -115,7 +116,7 @@ export async function buildVideoManifest({
         spec,
         channelId
       });
-      await trackUsage(captionResult, "video_caption");
+      await trackUsage(captionResult, LLM_CORE_TASK.VIDEO_CAPTION);
       if (!captionResult.error && captionResult.caption) {
         caption = captionResult.caption;
         llmProvider = captionResult.provider ?? llmProvider;
@@ -141,7 +142,7 @@ export async function buildVideoManifest({
         spec,
         channelId
       });
-      await trackUsage(complianceResult, "video_compliance");
+      await trackUsage(complianceResult, LLM_CORE_TASK.VIDEO_COMPLIANCE);
       if (!complianceResult.error && Array.isArray(complianceResult.flags)) {
         complianceFlags = complianceResult.flags;
         llmProvider = complianceResult.provider ?? llmProvider;

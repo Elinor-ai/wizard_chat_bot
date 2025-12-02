@@ -36,7 +36,7 @@ Entries are appended via `firestore.recordLlmUsage`, which normalises timestamps
 ## Instrumentation
 
 - Wrap LLM calls with `recordLlmUsageFromResult` (see `services/api-gateway/src/services/llm-usage-ledger.js`). For non-text workloads pass `usageType` (`image`, `video`, …) plus `usageMetrics` (e.g. `{ units: 1 }` for image).
-- Provide a `usageContext` that includes `userId`, `jobId`, and a descriptive `taskType` (e.g. `wizard_suggestions`, `image_generation`, `copilot_chat`, etc.).
+- Provide a `usageContext` that includes `userId`, `jobId`, and a descriptive `taskType` (e.g. `suggestions`, `image_generation`, `copilot_agent`, etc.).
 - The helper automatically persists ledger entries and updates user counters using the adapter injected into each router/service.
 
 Current coverage:

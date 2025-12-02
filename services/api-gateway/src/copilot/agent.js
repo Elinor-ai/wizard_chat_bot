@@ -1,3 +1,5 @@
+import { LLM_CORE_TASK } from "../config/task-types.js";
+
 function formatFieldLabel(fieldId) {
   if (!fieldId || typeof fieldId !== "string") {
     return null;
@@ -93,7 +95,7 @@ export class WizardCopilotAgent {
           usageContext: {
             jobId,
             userId,
-            taskType: "copilot_agent"
+            taskType: LLM_CORE_TASK.COPILOT_AGENT
           }
         });
       }

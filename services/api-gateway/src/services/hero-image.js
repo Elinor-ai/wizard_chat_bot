@@ -4,6 +4,7 @@ import { buildJobSnapshot } from "../wizard/job-intake.js";
 import { loadCompanyContext } from "./company-context.js";
 import { recordLlmUsageFromResult } from "./llm-usage-ledger.js";
 import { httpError } from "@wizard/utils";
+import { LLM_CORE_TASK } from "../config/task-types.js";
 
 const HERO_IMAGE_COLLECTION = "jobImages";
 const REFINEMENT_COLLECTION = "jobRefinements";
@@ -204,7 +205,7 @@ export async function generateHeroImage({
   const heroCompanyContext = await loadCompanyContext({
     firestore,
     companyId: jobCompanyId,
-    taskType: "image_prompt_generation",
+    taskType: LLM_CORE_TASK.IMAGE_PROMPT_GENERATION,
     logger,
   });
 
@@ -234,7 +235,7 @@ export async function generateHeroImage({
     await trackLlmUsage(promptResult, {
       userId,
       jobId,
-      taskType: "image_prompt_generation",
+      taskType: LLM_CORE_TASK.IMAGE_PROMPT_GENERATION,
     });
 
     if (promptResult.error) {
@@ -287,7 +288,7 @@ export async function generateHeroImage({
         {
           userId,
           jobId,
-          taskType: "image_generation",
+          taskType: LLM_CORE_TASK.IMAGE_GENERATION,
         },
         {
           usageType: "image",
@@ -305,7 +306,7 @@ export async function generateHeroImage({
       await trackLlmUsage(captionResult, {
         userId,
         jobId,
-        taskType: "image_caption",
+        taskType: LLM_CORE_TASK.IMAGE_CAPTION,
       });
       if (!captionResult.error) {
         captionResultData = {

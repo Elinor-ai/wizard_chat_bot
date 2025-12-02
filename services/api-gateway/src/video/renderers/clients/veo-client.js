@@ -4,6 +4,7 @@ import { IVideoClient, VideoRendererError } from "../contracts.js";
 import fs from "fs";
 import path from "path";
 import { logRawTraffic } from "../../../llm/raw-traffic-logger.js";
+import { LLM_ORCHESTRATOR_TASK } from "../../../config/task-types.js";
 
 function findVideoDataRecursive(obj) {
   try {
@@ -87,7 +88,7 @@ export class VeoClient extends IVideoClient {
 
       try {
         await logRawTraffic({
-          taskId: "video_render",
+          taskId: LLM_ORCHESTRATOR_TASK.VIDEO_RENDER,
           direction: "REQUEST",
           providerEndpoint: this.buildPredictUrl(),
           payload: { provider: "veo", payload },
@@ -103,7 +104,7 @@ export class VeoClient extends IVideoClient {
 
       try {
         await logRawTraffic({
-          taskId: "video_render",
+          taskId: LLM_ORCHESTRATOR_TASK.VIDEO_RENDER,
           direction: "RESPONSE",
           providerEndpoint: this.buildPredictUrl(),
           payload: { provider: "veo", response: response.data },
@@ -155,7 +156,7 @@ export class VeoClient extends IVideoClient {
         }
         try {
           await logRawTraffic({
-            taskId: "video_render",
+            taskId: LLM_ORCHESTRATOR_TASK.VIDEO_RENDER,
             direction: "RESPONSE",
             providerEndpoint: fetchUrl,
             payload: { provider: "veo", response: sanitized },

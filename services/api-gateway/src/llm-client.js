@@ -9,6 +9,7 @@ import { DalleImageAdapter } from "./llm/providers/dalle-image-adapter.js";
 import { ImagenImageAdapter } from "./llm/providers/imagen-image-adapter.js";
 import { StableDiffusionAdapter } from "./llm/providers/stable-diffusion-adapter.js";
 import { LLM_TASK_CONFIG } from "./config/llm-config.js";
+import { LLM_CORE_TASK } from "./config/task-types.js";
 
 loadEnv();
 
@@ -61,7 +62,7 @@ const orchestrator = new LlmOrchestrator({
 
 async function askSuggestions(context) {
   try {
-    const result = await orchestrator.run("suggest", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.SUGGEST, context);
     if (result.error) {
       return {
         error: {
@@ -90,7 +91,7 @@ async function askSuggestions(context) {
 
 async function askImageCaption(context) {
   try {
-    const result = await orchestrator.run("image_caption", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.IMAGE_CAPTION, context);
     if (result.error) {
       return {
         error: {
@@ -120,7 +121,7 @@ async function askImageCaption(context) {
 
 async function askRefineJob(context) {
   try {
-    const result = await orchestrator.run("refine", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.REFINE, context);
     if (result.error) {
       return {
         error: {
@@ -150,7 +151,7 @@ async function askRefineJob(context) {
 
 async function askChannelRecommendations(context) {
   try {
-    const result = await orchestrator.run("channels", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.CHANNELS, context);
     if (result.error) {
       return {
         error: {
@@ -177,51 +178,9 @@ async function askChannelRecommendations(context) {
   }
 }
 
-async function askChat({ userMessage, draftState, intent, companyContext }) {
-  try {
-    const result = await orchestrator.run("chat", {
-      userMessage,
-      draftState,
-      intent,
-      companyContext
-    });
-    if (result.error) {
-      llmLogger.warn(
-        { error: result.error, provider: result.provider },
-        "Chat task returned error"
-      );
-      return {
-        provider: result.provider ?? null,
-        model: result.model ?? null,
-        message: buildChatFallback({ draftState }),
-        metadata: result.metadata ?? null,
-        error: result.error
-      };
-    }
-    return {
-      provider: result.provider,
-      model: result.model,
-      message: result.message,
-      metadata: result.metadata ?? null
-    };
-  } catch (error) {
-    llmLogger.warn({ err: error }, "askChat orchestrator failure");
-    return {
-      provider: null,
-      model: null,
-      message: buildChatFallback({ draftState }),
-      metadata: null,
-      error: {
-        reason: "exception",
-        message: error?.message ?? String(error)
-      }
-    };
-  }
-}
-
 async function askCompanyIntel(context) {
   try {
-    const result = await orchestrator.run("company_intel", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.COMPANY_INTEL, context);
     if (result.error) {
       return {
         error: {
@@ -254,7 +213,7 @@ async function askCompanyIntel(context) {
 
 async function runCopilotAgent(context) {
   try {
-    const result = await orchestrator.run("copilot_agent", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.COPILOT_AGENT, context);
     if (result.error) {
       return {
         error: {
@@ -285,15 +244,9 @@ async function runCopilotAgent(context) {
   }
 }
 
-function buildChatFallback({ draftState }) {
-  const title = draftState?.title ? ` about ${draftState.title}` : "";
-  const location = draftState?.location ? ` in ${draftState.location}` : "";
-  return `Understood. I'll take that into account${title}${location ? ` ${location}` : ""}.`;
-}
-
 async function askAssetMaster(context) {
   try {
-    const result = await orchestrator.run("asset_master", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.ASSET_MASTER, context);
     if (result.error) {
       return {
         error: {
@@ -322,7 +275,7 @@ async function askAssetMaster(context) {
 
 async function askAssetChannelBatch(context) {
   try {
-    const result = await orchestrator.run("asset_channel_batch", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.ASSET_CHANNEL_BATCH, context);
     if (result.error) {
       return {
         error: {
@@ -351,7 +304,7 @@ async function askAssetChannelBatch(context) {
 
 async function askAssetAdapt(context) {
   try {
-    const result = await orchestrator.run("asset_adapt", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.ASSET_ADAPT, context);
     if (result.error) {
       return {
         error: {
@@ -380,7 +333,7 @@ async function askAssetAdapt(context) {
 
 async function askVideoStoryboard(context) {
   try {
-    const result = await orchestrator.run("video_storyboard", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.VIDEO_STORYBOARD, context);
     if (result.error) {
       return {
         error: {
@@ -410,7 +363,7 @@ async function askVideoStoryboard(context) {
 
 async function askVideoCaption(context) {
   try {
-    const result = await orchestrator.run("video_caption", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.VIDEO_CAPTION, context);
     if (result.error) {
       return {
         error: {
@@ -439,7 +392,7 @@ async function askVideoCaption(context) {
 
 async function askVideoCompliance(context) {
   try {
-    const result = await orchestrator.run("video_compliance", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.VIDEO_COMPLIANCE, context);
     if (result.error) {
       return {
         error: {
@@ -474,7 +427,7 @@ async function askHeroImagePrompt(context) {
       },
       "askHeroImagePrompt:start"
     );
-    const result = await orchestrator.run("image_prompt_generation", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.IMAGE_PROMPT_GENERATION, context);
     if (result.error) {
       llmLogger.error(
         {
@@ -518,15 +471,15 @@ async function runImageGeneration(context) {
         promptPreview: context?.prompt?.slice(0, 120) ?? null,
         negativePreview: context?.negativePrompt?.slice?.(0, 80) ?? null,
         style: context?.style ?? null,
-        task: "image_generation"
+        task: LLM_CORE_TASK.IMAGE_GENERATION
       },
       "runImageGeneration:start"
     );
-    const result = await orchestrator.run("image_generation", context);
+    const result = await orchestrator.run(LLM_CORE_TASK.IMAGE_GENERATION, context);
     if (result.error) {
       llmLogger.error(
         {
-          task: "image_generation",
+          task: LLM_CORE_TASK.IMAGE_GENERATION,
           provider: result.provider,
           model: result.model,
           reason: result.error.reason,
@@ -571,7 +524,6 @@ async function runImageGeneration(context) {
 }
 
 export const llmClient = {
-  askChat,
   askSuggestions,
   askChannelRecommendations,
   askRefineJob,

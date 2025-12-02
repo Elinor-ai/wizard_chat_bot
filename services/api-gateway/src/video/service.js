@@ -8,8 +8,8 @@ import {
 import { buildVideoManifest } from "./manifest-builder.js";
 import { incrementMetric } from "./metrics.js";
 import { recordLlmUsage, recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
-import { VERTEX_DEFAULTS } from "../vertex/constants.js";
 import { LLM_TASK_CONFIG } from "../config/llm-config.js";
+import { LLM_SPECIAL_TASK } from "../config/task-types.js";
 import { createRenderer } from "./renderer.js";
 import { createPublisherRegistry } from "./publishers.js";
 
@@ -460,14 +460,14 @@ export function createVideoLibraryService({
         : Number(existing?.activeManifest?.generator?.targetDurationSeconds ?? 0) || 0;
 
       const videoTaskConfig = LLM_TASK_CONFIG.video_generation ?? {};
-      const videoProvider =
-        videoTaskConfig.provider ??
-        "gemini";
+      const videoProvider = videoTaskConfig.provider;
       const videoModel =
         renderTask.metrics?.model ??
-        videoTaskConfig.model ??
-        process.env.VIDEO_MODEL ??
-        VERTEX_DEFAULTS.VEO_MODEL_ID;
+        videoTaskConfig.model;
+
+      // Special case: video_generation bypasses the standard orchestrator pattern.
+      // This direct recordLlmUsage call tracks Veo API usage (seconds generated, cost)
+      // after video rendering completes. Not client-facing, never sent to POST /api/llm.
       try {
         await recordLlmUsage({
           firestore,
@@ -476,7 +476,7 @@ export function createVideoLibraryService({
           usageContext: {
             userId: ownerUserId,
             jobId: existing.jobId,
-            taskType: "video_generation"
+            taskType: LLM_SPECIAL_TASK.VIDEO_GENERATION
           },
           provider: videoProvider,
           model: videoModel,

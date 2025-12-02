@@ -1,5 +1,6 @@
 import { llmLogger } from "../logger.js";
 import { logRawTraffic } from "../raw-traffic-logger.js";
+import { LLM_CORE_TASK } from "../../config/task-types.js";
 
 export class DalleImageAdapter {
   constructor({ apiKey, apiUrl }) {
@@ -47,7 +48,7 @@ export class DalleImageAdapter {
     }
 
     await logRawTraffic({
-      taskId: "image_generation",
+      taskId: LLM_CORE_TASK.IMAGE_GENERATION,
       direction: "REQUEST",
       endpoint: route ?? null,
       providerEndpoint: this.apiUrl,
@@ -70,7 +71,7 @@ export class DalleImageAdapter {
 
     const data = await response.json();
     await logRawTraffic({
-      taskId: "image_generation",
+      taskId: LLM_CORE_TASK.IMAGE_GENERATION,
       direction: "RESPONSE",
       endpoint: route ?? null,
       providerEndpoint: this.apiUrl,

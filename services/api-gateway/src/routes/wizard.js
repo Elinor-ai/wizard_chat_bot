@@ -28,6 +28,7 @@ import {
   loadCompanyContext,
 } from "../services/company-context.js";
 import { listCompaniesForUser } from "./companies.js";
+import { LLM_CORE_TASK } from "../config/task-types.js";
 import { buildJobSnapshot } from "../wizard/job-intake.js";
 import { loadSuggestionDocument } from "../wizard/job-helpers.js";
 
@@ -984,7 +985,7 @@ const SOCIAL_BATCH_KEYS = new Set(["linkedin_feed"]);
 function resolvePlanItemTask(planItem) {
   if (!planItem) return null;
   if (planItem.artifactType === "image_prompt") {
-    return "image_prompt_generation";
+    return LLM_CORE_TASK.IMAGE_PROMPT_GENERATION;
   }
   if (
     planItem.artifactType === "video_script" ||
@@ -1099,7 +1100,7 @@ async function runAssetGenerationPipeline({
       jobSnapshot,
       companyContext,
     });
-    await logUsage(result, "asset_master");
+    await logUsage(result, LLM_CORE_TASK.ASSET_MASTER);
     if (result?.asset) {
       await markSuccess(
         record,
@@ -1147,7 +1148,7 @@ async function runAssetGenerationPipeline({
       channelMetaMap,
       companyContext: batchCompanyContext,
     });
-    await logUsage(result, "asset_channel_batch");
+    await logUsage(result, LLM_CORE_TASK.ASSET_CHANNEL_BATCH);
 
     if (result?.error) {
       for (const record of records) {
@@ -1219,7 +1220,7 @@ async function runAssetGenerationPipeline({
       channelMeta: channelMetaMap[item.channelId],
       companyContext,
     });
-    await logUsage(result, "asset_adapt");
+    await logUsage(result, LLM_CORE_TASK.ASSET_ADAPT);
     if (result?.asset) {
       await markSuccess(
         record,

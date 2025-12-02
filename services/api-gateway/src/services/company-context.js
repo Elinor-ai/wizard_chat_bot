@@ -1,4 +1,5 @@
 import { CompanySchema } from "@wizard/core";
+import { LLM_CORE_TASK, LLM_LOGGING_TASK } from "../config/task-types.js";
 
 const COMPANY_COLLECTION = "companies";
 
@@ -76,7 +77,10 @@ export function buildTailoredCompanyContext(companyProfile, taskType) {
     push("Company summary", intelSummary);
     push("Long description", longDescription);
     push("Industry", industry);
-  } else if (normalizedTask === "wizard_suggestions") {
+  } else if (
+    normalizedTask === LLM_LOGGING_TASK.SUGGESTIONS ||
+    normalizedTask === "wizard_suggestions" // Legacy support
+  ) {
     push("Industry", industry);
     push("Employee count bucket", employeeCount);
     push("HQ country", hqCountry);
@@ -84,7 +88,7 @@ export function buildTailoredCompanyContext(companyProfile, taskType) {
     push("Industry", industry);
     push("Employee count bucket", employeeCount);
   } else if (
-    normalizedTask === "image_prompt_generation" ||
+    normalizedTask === LLM_CORE_TASK.IMAGE_PROMPT_GENERATION ||
     normalizedTask === "video_script"
   ) {
     push("Primary color", primaryColor);

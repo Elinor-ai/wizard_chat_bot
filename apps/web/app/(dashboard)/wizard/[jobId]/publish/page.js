@@ -1870,9 +1870,9 @@ export default function RefineJobPage() {
       });
       const hero = response.heroImage ?? null;
       setHeroImage(hero);
-      if (hero && hero.status && hero.status !== "FAILED") {
-        setShouldGenerateHeroImage(true);
-      }
+      // Removed auto-setting shouldGenerateHeroImage to true when hero image exists.
+      // This flag should only be set when user explicitly opts in via HeroImageOptIn checkbox,
+      // not automatically based on existence of a previous hero image.
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn("Failed to load image", error);

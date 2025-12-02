@@ -3,6 +3,13 @@ import { z } from "zod";
 import { wrapAsync, httpError } from "@wizard/utils";
 import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
 import {
+  CORE_LLM_TASKS,
+  ORCHESTRATOR_TASKS,
+  LLM_CORE_TASK,
+  LLM_ORCHESTRATOR_TASK,
+  LLM_LOGGING_TASK,
+} from "../config/task-types.js";
+import {
   generateCampaignAssets,
   overwriteChannelRecommendationDocument,
   persistChannelRecommendationFailure
@@ -64,7 +71,6 @@ const TASK_METHOD_MAP = {
   suggest: "askSuggestions",
   refine: "askRefineJob",
   channels: "askChannelRecommendations",
-  chat: "askChat",
   copilot_agent: "runCopilotAgent",
   company_intel: "askCompanyIntel",
   asset_master: "askAssetMaster",
@@ -79,7 +85,7 @@ const TASK_METHOD_MAP = {
 };
 
 function resolveUsageType(taskType) {
-  if (taskType === "image_generation") return "image";
+  if (taskType === LLM_CORE_TASK.IMAGE_GENERATION) return "image";
   if (taskType.startsWith("video_")) return "video";
   return "text";
 }
@@ -306,7 +312,9 @@ async function enrichContextForTask({
   userId
 }) {
   const needsJob =
-    taskType === "suggest" || taskType === "refine" || taskType === "copilot_agent";
+    taskType === LLM_CORE_TASK.SUGGEST ||
+    taskType === LLM_CORE_TASK.REFINE ||
+    taskType === LLM_CORE_TASK.COPILOT_AGENT;
   const jobId =
     context.jobId ?? context.job?.id ?? context.refinedJob?.jobId ?? null;
 
@@ -324,11 +332,11 @@ async function enrichContextForTask({
     (await loadCompanyContext({
       firestore,
       companyId: job.companyId ?? null,
-      taskType: taskType === "refine" ? "job_refinement" : "wizard_suggestions",
+      taskType: taskType === LLM_CORE_TASK.REFINE ? "job_refinement" : LLM_LOGGING_TASK.SUGGESTIONS,
       logger
     }));
 
-  if (taskType === "refine") {
+  if (taskType === LLM_CORE_TASK.REFINE) {
     if (!job.stateMachine?.requiredComplete) {
       throw httpError(
         409,
@@ -370,7 +378,7 @@ async function enrichContextForTask({
     };
   }
 
-  if (taskType === "suggest") {
+  if (taskType === LLM_CORE_TASK.SUGGEST) {
     const now = new Date();
     const mergedJob = mergeIntakeIntoJob(job, context.state ?? {}, { now });
     const progress = computeRequiredProgress(mergedJob);
@@ -431,7 +439,7 @@ async function enrichContextForTask({
     };
   }
 
-  if (taskType === "copilot_agent") {
+  if (taskType === LLM_CORE_TASK.COPILOT_AGENT) {
     if (job.ownerUserId && userId && job.ownerUserId !== userId) {
       throw httpError(403, "You do not have access to this job");
     }
@@ -478,8 +486,18 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
     wrapAsync(async (req, res) => {
       const { taskType, context = {} } = requestSchema.parse(req.body ?? {});
 
+      // Validate taskType against allowed values
+      const allowedTaskTypes = [...CORE_LLM_TASKS, ...ORCHESTRATOR_TASKS];
+      if (!allowedTaskTypes.includes(taskType)) {
+        return res.status(400).json({
+          error: "Invalid taskType",
+          taskType,
+          allowedTaskTypes,
+        });
+      }
+
       // High-level pipelines that don't map directly to llmClient
-      if (taskType === "generate_campaign_assets") {
+      if (taskType === LLM_ORCHESTRATOR_TASK.GENERATE_CAMPAIGN_ASSETS) {
         const userId = req.user?.id ?? null;
         if (!userId) {
           throw httpError(401, "Unauthorized");
@@ -495,7 +513,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         return res.json({ taskType, result });
       }
 
-      if (taskType === "video_render") {
+      if (taskType === LLM_ORCHESTRATOR_TASK.VIDEO_RENDER) {
         const userId = req.user?.id ?? null;
         if (!userId) {
           throw httpError(401, "Unauthorized");
@@ -525,7 +543,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         }
       }
 
-      if (taskType === "video_caption_update") {
+      if (taskType === LLM_ORCHESTRATOR_TASK.VIDEO_CAPTION_UPDATE) {
         const userId = req.user?.id ?? null;
         if (!userId) {
           throw httpError(401, "Unauthorized");
@@ -545,7 +563,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         return res.json({ taskType, result: { item } });
       }
 
-      if (taskType === "video_create_manifest") {
+      if (taskType === LLM_ORCHESTRATOR_TASK.VIDEO_CREATE_MANIFEST) {
         const userId = req.user?.id ?? null;
         if (!userId) {
           throw httpError(401, "Unauthorized");
@@ -571,7 +589,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         return res.status(201).json({ taskType, result: { item } });
       }
 
-      if (taskType === "video_regenerate") {
+      if (taskType === LLM_ORCHESTRATOR_TASK.VIDEO_REGENERATE) {
         const userId = req.user?.id ?? null;
         if (!userId) {
           throw httpError(401, "Unauthorized");
@@ -600,7 +618,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         return res.json({ taskType, result: { item } });
       }
 
-      if (taskType === "hero_image") {
+      if (taskType === LLM_ORCHESTRATOR_TASK.HERO_IMAGE) {
         const userId = req.user?.id ?? null;
         if (!userId) {
           throw httpError(401, "Unauthorized");
@@ -618,7 +636,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         return res.json({ taskType, result });
       }
 
-      if (taskType === "company_intel") {
+      if (taskType === LLM_CORE_TASK.COMPANY_INTEL) {
         const userId = req.user?.id ?? null;
         if (!userId) {
           throw httpError(401, "Unauthorized");
@@ -682,7 +700,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         });
       }
 
-      if (taskType === "channels") {
+      if (taskType === LLM_CORE_TASK.CHANNELS) {
         const userId = req.user?.id ?? null;
         if (!userId) {
           throw httpError(401, "Unauthorized");
@@ -785,7 +803,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         });
       }
 
-      if (taskType === "copilot_agent") {
+      if (taskType === LLM_CORE_TASK.COPILOT_AGENT) {
         const userId = req.user?.id ?? null;
         if (!userId) {
           throw httpError(401, "Unauthorized");
@@ -810,7 +828,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         const companyContext = await loadCompanyContext({
           firestore,
           companyId: job.companyId ?? null,
-          taskType: "copilot_agent",
+          taskType: LLM_CORE_TASK.COPILOT_AGENT,
           logger,
         });
 
@@ -1037,7 +1055,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
       const result = await dispatcher(enrichedContext);
 
       // Normalize responses for legacy parity
-      if (taskType === "suggest") {
+      if (taskType === LLM_CORE_TASK.SUGGEST) {
         const now = new Date();
         const candidatesMap = mapCandidatesByField(result.candidates ?? []);
         const visibleFieldIds =
@@ -1098,7 +1116,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
           firestore,
           bigQuery,
           logger,
-          usageContext: { userId, jobId, taskType: "wizard_suggestions" },
+          usageContext: { userId, jobId, taskType: LLM_LOGGING_TASK.SUGGESTIONS },
           usageType: resolveUsageType(taskType),
           result
         });
@@ -1124,7 +1142,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         });
       }
 
-      if (taskType === "refine") {
+      if (taskType === LLM_CORE_TASK.REFINE) {
       const now = new Date();
       const companyId =
         enrichedContext.jobSnapshot?.companyId ??
@@ -1163,7 +1181,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
           firestore,
           bigQuery,
           logger,
-          usageContext: { userId, jobId, taskType: "wizard_refinement" },
+          usageContext: { userId, jobId, taskType: LLM_LOGGING_TASK.REFINEMENT },
           usageType: resolveUsageType(taskType),
           result
         });

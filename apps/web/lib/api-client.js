@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CompanySchema, UserSchema } from "@wizard/core";
+import { LLM_TASK } from "./llm-tasks";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
@@ -867,7 +868,7 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "suggest",
+        taskType: LLM_TASK.SUGGEST,
         context: {
           ...payload,
           jobId: normalizedJobId,
@@ -939,7 +940,7 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "channels",
+        taskType: LLM_TASK.CHANNELS,
         context: {
           ...payload,
           jobId: normalizedJobId,
@@ -979,7 +980,7 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "hero_image",
+        taskType: LLM_TASK.HERO_IMAGE,
         context: {
           jobId,
           forceRefresh: false,
@@ -1007,7 +1008,7 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "hero_image",
+        taskType: LLM_TASK.HERO_IMAGE,
         context: payload,
       }),
     });
@@ -1101,7 +1102,7 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "generate_campaign_assets",
+        taskType: LLM_TASK.GENERATE_CAMPAIGN_ASSETS,
         context: payload,
       }),
     });
@@ -1139,7 +1140,7 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "refine",
+        taskType: LLM_TASK.REFINE,
         context: {
           ...payload,
           jobId: normalizedJobId,
@@ -1335,7 +1336,7 @@ export const WizardApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "copilot_agent",
+        taskType: LLM_TASK.COPILOT_AGENT,
         context: messagePayload,
       }),
     });
@@ -1984,7 +1985,7 @@ export const VideoLibraryApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "video_create_manifest",
+        taskType: LLM_TASK.VIDEO_CREATE_MANIFEST,
         context: payload,
       }),
     });
@@ -2033,7 +2034,7 @@ export const VideoLibraryApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "video_regenerate",
+        taskType: LLM_TASK.VIDEO_REGENERATE,
         context: { itemId, ...payload },
       }),
     });
@@ -2062,7 +2063,7 @@ export const VideoLibraryApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "video_render",
+        taskType: LLM_TASK.VIDEO_RENDER,
         context: { itemId },
       }),
    });
@@ -2091,7 +2092,7 @@ export const VideoLibraryApi = {
         ...authHeaders(options.authToken),
       },
       body: JSON.stringify({
-        taskType: "video_caption_update",
+        taskType: LLM_TASK.VIDEO_CAPTION_UPDATE,
         context: { itemId, ...payload },
       }),
    });

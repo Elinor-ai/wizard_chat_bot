@@ -1,7 +1,6 @@
 import { buildSuggestionInstructions } from "./prompts/suggest.js";
 import { buildRefinementInstructions } from "./prompts/refine.js";
 import { buildChannelRecommendationInstructions } from "./prompts/channels.js";
-import { buildChatPayload } from "./prompts/chat.js";
 import { buildCopilotAgentPrompt } from "./prompts/copilot-agent.js";
 import {
   buildAssetMasterPrompt,
@@ -14,7 +13,6 @@ import { buildVideoCompliancePrompt } from "./prompts/video-compliance.js";
 import { parseSuggestionResult } from "./parsers/suggest.js";
 import { parseRefinementResult } from "./parsers/refine.js";
 import { parseChannelResult } from "./parsers/channels.js";
-import { parseChatResult } from "./parsers/chat.js";
 import { parseCopilotAgentResult } from "./parsers/copilot-agent.js";
 import {
   parseAssetMasterResult,
@@ -87,17 +85,6 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logChannelPreview,
-  },
-  chat: {
-    system:
-      "You are Wizard's recruiting copilot. Reply succinctly with actionable guidance.",
-    builder: buildChatPayload,
-    parser: parseChatResult,
-    mode: "text",
-    temperature: 0.4,
-    maxTokens: 400,
-    retries: 1,
-    strictOnRetry: false,
   },
   copilot_agent: {
     system:

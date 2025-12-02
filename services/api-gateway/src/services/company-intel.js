@@ -10,6 +10,7 @@ import {
   WorkModelEnum
 } from "@wizard/core";
 import { recordLlmUsageFromResult } from "./llm-usage-ledger.js";
+import { LLM_CORE_TASK } from "../config/task-types.js";
 import { load as loadHtml } from "cheerio";
 import { htmlToText } from "html-to-text";
 const GENERIC_EMAIL_DOMAINS = new Set([
@@ -1805,7 +1806,7 @@ async function runCompanyEnrichmentCore({
     usageContext: {
       userId: company.createdByUserId ?? null,
       jobId: null,
-      taskType: "company_intel"
+      taskType: LLM_CORE_TASK.COMPANY_INTEL
     },
     result: intelResult
   });
