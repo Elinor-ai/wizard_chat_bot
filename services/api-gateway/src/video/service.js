@@ -471,6 +471,7 @@ export function createVideoLibraryService({
       try {
         await recordLlmUsage({
           firestore,
+          bigQuery,
           logger,
           usageContext: {
             userId: ownerUserId,
