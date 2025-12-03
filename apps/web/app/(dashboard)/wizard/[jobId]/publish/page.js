@@ -25,6 +25,7 @@ import { useUser } from "../../../../../components/user-context";
 import {
   finalizeJob,
   fetchChannelRecommendations,
+  fetchExistingChannelRecommendations,
   fetchCopilotConversation,
   fetchJobAssets,
   fetchJobDraft,
@@ -34,6 +35,7 @@ import {
   fetchHeroImage,
   requestHeroImage,
 } from "../../../../../components/wizard/wizard-services";
+import { VideoLibraryApi } from "../../../../../lib/api-client";
 import {
   OPTIONAL_STEPS,
   REQUIRED_STEPS,
@@ -1174,8 +1176,36 @@ function HeroImageOptIn({ checked, onToggle }) {
             Generate AI image?
           </span>
           <span className="text-sm text-neutral-500">
-            We’ll auto-create a single visual to reuse across channels once you
+            We'll auto-create a single visual to reuse across channels once you
             continue to assets.
+          </span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
+function VideoOptIn({ checked, onToggle }) {
+  return (
+    <div className="rounded-2xl border border-blue-100 bg-white px-4 py-3 shadow-sm">
+      <label className="flex items-start gap-3 text-sm text-neutral-700">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+          checked={checked}
+          onChange={(event) => {
+            const next = event.target.checked;
+            // eslint-disable-next-line no-console
+            console.log("[Video] Checkbox toggled", { checked: next });
+            onToggle?.(next);
+          }}
+        />
+        <span>
+          <span className="block text-sm font-semibold text-neutral-900">
+            Generate videos?
+          </span>
+          <span className="text-sm text-neutral-500">
+            We'll create short-form videos for all selected channels with captions and compliance.
           </span>
         </span>
       </label>
@@ -1214,7 +1244,12 @@ const ASSET_VARIANT_MAP = {
   SHORT_VIDEO_TIKTOK: "story",
   SHORT_VIDEO_INSTAGRAM: "story",
   SHORT_VIDEO_YOUTUBE: "story",
+  VIDEO_TIKTOK: "video",
+  VIDEO_INSTAGRAM: "video",
+  VIDEO_YOUTUBE: "video",
+  VIDEO_LINKEDIN: "video",
   AI_HERO_IMAGE: "hero_image",
+  AI_VIDEO: "video",
 };
 
 function AssetPreviewGrid({ assets = [], logoUrl }) {
@@ -1241,11 +1276,13 @@ function AssetPreviewCard({ asset, logoUrl }) {
   const badgeClass =
     assetStatusStyles[asset.status] ?? assetStatusStyles.PENDING;
   const formatLabel =
-    variant === "hero_image" ? "AI image" : asset.formatId.replace(/_/g, " ");
+    variant === "hero_image" ? "AI image" :
+    variant === "video" ? "AI video" :
+    asset.formatId.replace(/_/g, " ");
   const channelLabel =
-    variant === "hero_image"
-      ? "Campaign visual"
-      : asset.channelId.replace(/_/g, " ");
+    variant === "hero_image" ? "Campaign visual" :
+    variant === "video" ? "Short-form video" :
+    asset.channelId.replace(/_/g, " ");
   const normalizedAssetLogo =
     typeof asset.logoUrl === "string" && asset.logoUrl.length > 0
       ? asset.logoUrl
@@ -1277,6 +1314,8 @@ function AssetPreviewCard({ asset, logoUrl }) {
         <SocialImageCard content={content} logoUrl={finalLogo} />
       ) : variant === "story" ? (
         <StoryCard content={content} logoUrl={finalLogo} />
+      ) : variant === "video" ? (
+        <VideoCard content={content} status={asset.status} />
       ) : variant === "hero_image" ? (
         <HeroImageCard content={content} status={asset.status} />
       ) : variant === "image_caption" ? (
@@ -1453,6 +1492,64 @@ function StoryCard({ content, logoUrl }) {
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+function VideoCard({ content, status }) {
+  const videoUrl = content?.videoUrl ?? null;
+  const posterUrl = content?.posterUrl ?? content?.thumbnailUrl ?? null;
+  const caption = content?.caption ?? content?.body ?? "Video being generated...";
+  const durationSeconds = content?.durationSeconds ?? 0;
+
+  const formatDuration = (seconds) => {
+    if (!seconds || seconds === 0) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  return (
+    <div className="rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-4">
+      {videoUrl ? (
+        <div className="mb-3 overflow-hidden rounded-xl">
+          <video
+            controls
+            poster={posterUrl}
+            className="h-auto w-full"
+            style={{ maxHeight: "300px" }}
+          >
+            <source src={videoUrl} type="video/mp4" />
+            Your browser does not support the video tag.
+          </video>
+        </div>
+      ) : posterUrl ? (
+        <div className="mb-3 overflow-hidden rounded-xl bg-neutral-200">
+          <img
+            src={posterUrl}
+            alt="Video thumbnail"
+            className="h-auto w-full"
+            style={{ maxHeight: "300px" }}
+          />
+        </div>
+      ) : (
+        <div className="mb-3 flex h-48 items-center justify-center rounded-xl bg-neutral-200">
+          <div className="text-center text-sm text-neutral-500">
+            <p className="font-semibold">Video generating...</p>
+            <p className="text-xs">This may take a few minutes</p>
+          </div>
+        </div>
+      )}
+      {caption && (
+        <p className="mb-2 whitespace-pre-wrap text-sm text-neutral-700">
+          {caption}
+        </p>
+      )}
+      {durationSeconds > 0 && (
+        <p className="text-xs text-neutral-500">
+          Duration: {formatDuration(durationSeconds)}
+        </p>
+      )}
     </div>
   );
 }
@@ -1808,7 +1905,8 @@ export default function RefineJobPage() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  const [isRefining, setIsRefining] = useState(true);
+  const [isRefining, setIsRefining] = useState(false);
+  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
   const [refineError, setRefineError] = useState(null);
   const [summary, setSummary] = useState("");
   const [job, setJob] = useState(null);
@@ -1845,6 +1943,11 @@ export default function RefineJobPage() {
   const [heroImage, setHeroImage] = useState(null);
   const [shouldGenerateHeroImage, setShouldGenerateHeroImage] = useState(false);
   const [isHeroImageLoading, setIsHeroImageLoading] = useState(false);
+  const [shouldGenerateVideos, setShouldGenerateVideos] = useState(false);
+  const [isGeneratingVideos, setIsGeneratingVideos] = useState(false);
+  const [videoGenerationError, setVideoGenerationError] = useState(null);
+  const [generatedVideoItem, setGeneratedVideoItem] = useState(null);
+  const [shouldPollVideo, setShouldPollVideo] = useState(false);
   const channelsInitializedRef = useRef(false);
   const jobLogoUrlRef = useRef("");
   const conversationVersionRef = useRef(0);
@@ -2143,12 +2246,72 @@ export default function RefineJobPage() {
     heroImage,
     jobId,
   ]);
-  const assetsWithHero = useMemo(() => {
-    if (heroImageAsset) {
-      return [heroImageAsset, ...(jobAssets ?? [])];
+  const videoAsset = useMemo(() => {
+    if (!shouldGenerateVideos) {
+      return null;
     }
-    return jobAssets;
-  }, [heroImageAsset, jobAssets]);
+
+    // Show placeholder while generating
+    if (isGeneratingVideos && !generatedVideoItem) {
+      return {
+        id: "video-placeholder",
+        formatId: "AI_VIDEO",
+        channelId: "VIDEO",
+        status: "GENERATING",
+        content: {
+          videoUrl: null,
+          caption: "Generating your video...",
+          body: "Your video is being created. This may take a few minutes.",
+          durationSeconds: 0,
+          posterUrl: null,
+        },
+        provider: null,
+        model: null,
+      };
+    }
+
+    if (!generatedVideoItem) {
+      return null;
+    }
+
+    const item = generatedVideoItem;
+    const status = item.status === "ready" ? "READY" :
+                   item.status === "generating" ? "GENERATING" :
+                   item.status === "failed" ? "FAILED" : "PENDING";
+
+    return {
+      id: `video-${item.id}`,
+      formatId: "AI_VIDEO",
+      channelId: "VIDEO",
+      status,
+      content: {
+        videoUrl: item.renderTask?.result?.videoUrl ?? null,
+        caption: item.activeManifest?.caption?.text ?? null,
+        body: item.activeManifest?.caption?.text ?? "Video ready",
+        durationSeconds: item.renderTask?.metrics?.secondsGenerated ?? 0,
+        posterUrl: item.renderTask?.result?.posterUrl ?? null,
+      },
+      provider: item.renderTask?.renderer ?? null,
+      model: item.renderTask?.metrics?.model ?? null,
+    };
+  }, [shouldGenerateVideos, generatedVideoItem, isGeneratingVideos]);
+
+  const assetsWithHero = useMemo(() => {
+    const allAssets = [...(jobAssets ?? [])];
+
+    // Add video asset if it exists
+    if (videoAsset) {
+      allAssets.unshift(videoAsset);
+    }
+
+    // Add hero image at the top if it exists
+    if (heroImageAsset) {
+      allAssets.unshift(heroImageAsset);
+    }
+
+    return allAssets;
+  }, [heroImageAsset, videoAsset, jobAssets]);
+
   const triggerHeroImageIfNeeded = useCallback(() => {
     if (!shouldGenerateHeroImage) {
       // eslint-disable-next-line no-console
@@ -2162,6 +2325,88 @@ export default function RefineJobPage() {
     });
     return handleHeroImageRequest({ forceRefresh: true });
   }, [shouldGenerateHeroImage, handleHeroImageRequest, jobId, heroImage?.status]);
+
+  const triggerVideoGenerationIfNeeded = useCallback(async () => {
+    if (!shouldGenerateVideos) {
+      // eslint-disable-next-line no-console
+      console.log("[Video] trigger:opt-out", { jobId });
+      return;
+    }
+
+    if (!user?.authToken || !jobId) {
+      // eslint-disable-next-line no-console
+      console.log("[Video] trigger:skip", {
+        jobId,
+        hasAuth: Boolean(user?.authToken),
+      });
+      return;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log("[Video] trigger:opt-in", {
+      jobId,
+    });
+
+    setIsGeneratingVideos(true);
+    setVideoGenerationError(null);
+
+    try {
+      // eslint-disable-next-line no-console
+      console.log("[Video] Creating single video for job");
+      const created = await VideoLibraryApi.createItem(
+        {
+          jobId,
+          channelId: "TIKTOK_LEAD", // Use a default channel - the video is universal
+          recommendedMedium: "video",
+        },
+        { authToken: user.authToken }
+      );
+      // eslint-disable-next-line no-console
+      console.log("[Video] Video created:", created.id);
+
+      setGeneratedVideoItem(created);
+      // Start polling to check video status
+      setShouldPollVideo(true);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("[Video] Failed to create video:", error);
+      setVideoGenerationError(error.message ?? "Failed to create video");
+    }
+
+    setIsGeneratingVideos(false);
+  }, [shouldGenerateVideos, user?.authToken, jobId]);
+
+  const pollVideoItem = useCallback(async () => {
+    if (!user?.authToken || !generatedVideoItem) {
+      return;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log("[Video] Polling video status", {
+      videoId: generatedVideoItem.id,
+    });
+
+    try {
+      const updated = await VideoLibraryApi.fetchItem(generatedVideoItem.id, {
+        authToken: user.authToken,
+      });
+
+      setGeneratedVideoItem(updated);
+
+      // Check if video is still generating
+      const isPending = ["generating", "pending"].includes(updated.status?.toLowerCase());
+
+      // Stop polling when video is ready or failed
+      if (!isPending) {
+        // eslint-disable-next-line no-console
+        console.log("[Video] Video completed, stopping poll");
+        setShouldPollVideo(false);
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("[Video] Poll error:", error);
+    }
+  }, [user?.authToken, generatedVideoItem]);
 
   const syncStepQuery = useCallback(
     (stepId, { replace = false } = {}) => {
@@ -2199,6 +2444,7 @@ export default function RefineJobPage() {
     console.log("[Assets] generate click", {
       jobId,
       selectedChannels,
+      shouldGenerateVideos,
       finalJobSource,
       shouldGenerateHeroImage,
     });
@@ -2206,6 +2452,7 @@ export default function RefineJobPage() {
     setAssetError(null);
     navigateToStep("assets", { force: true });
     triggerHeroImageIfNeeded();
+    triggerVideoGenerationIfNeeded();
     try {
       const response = await generateJobAssets({
         authToken: user.authToken,
@@ -2295,6 +2542,11 @@ export default function RefineJobPage() {
   }, [isFinalizing, currentStep, isFetchingChannels, isGeneratingAssets]);
 
   useEffect(() => {
+    // Don't navigate until initial data load is complete
+    // This prevents redirecting to refine before channels/assets are loaded from Firestore
+    if (!isInitialLoadComplete) {
+      return;
+    }
     const currentIndex = STEP_INDEX[currentStep] ?? 0;
     if (currentIndex > maxEnabledIndex && !isStepTransitioning) {
       const fallbackIndex = Math.min(maxEnabledIndex, FLOW_STEPS.length - 1);
@@ -2322,7 +2574,7 @@ export default function RefineJobPage() {
         });
       }
     }
-  }, [currentStep, maxEnabledIndex, isStepTransitioning, navigateToStep]);
+  }, [currentStep, maxEnabledIndex, isStepTransitioning, navigateToStep, isInitialLoadComplete]);
 
   useEffect(() => {
     if (!user?.authToken || !jobId) return undefined;
@@ -2480,6 +2732,45 @@ export default function RefineJobPage() {
     loadAssets();
   }, [loadAssets]);
 
+  // Initial hydration: load existing channel recommendations and assets from Firestore
+  // This runs once on mount to determine maxEnabledIndex before step navigation kicks in
+  useEffect(() => {
+    if (!user?.authToken || !jobId) return;
+    let cancelled = false;
+
+    const hydrateInitialData = async () => {
+      try {
+        // Load existing channel recommendations (read-only, no LLM)
+        const channelsResponse = await fetchExistingChannelRecommendations({
+          authToken: user.authToken,
+          jobId,
+        });
+        if (cancelled) return;
+
+        if (channelsResponse.recommendations?.length > 0) {
+          setChannelRecommendations(channelsResponse.recommendations);
+          setChannelUpdatedAt(channelsResponse.updatedAt ?? null);
+          setChannelFailure(channelsResponse.failure ?? null);
+          syncSelectedChannels(channelsResponse.recommendations);
+          // If we have channels, we likely have a finalized job
+          setFinalJobSource("cached");
+        }
+      } catch (error) {
+        // Silently fail - channels may not exist yet
+        console.log("[Hydration] No existing channel recommendations:", error.message);
+      }
+
+      if (cancelled) return;
+      setIsInitialLoadComplete(true);
+    };
+
+    hydrateInitialData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.authToken, jobId, syncSelectedChannels]);
+
   useEffect(() => {
     if (!shouldPollAssets) return undefined;
     const interval = setInterval(() => {
@@ -2487,6 +2778,14 @@ export default function RefineJobPage() {
     }, 5000);
     return () => clearInterval(interval);
   }, [shouldPollAssets, loadAssets]);
+
+  useEffect(() => {
+    if (!shouldPollVideo) return undefined;
+    const interval = setInterval(() => {
+      pollVideoItem();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [shouldPollVideo, pollVideoItem]);
 
   const handleToggleChannel = useCallback((channelId) => {
     setSelectedChannels((prev) => {
@@ -2865,8 +3164,17 @@ export default function RefineJobPage() {
     );
   }
 
-  if (isRefining) {
+  // Only show the "Polishing" spinner if:
+  // 1. Refinement is actively running AND
+  // 2. User is on the refine step (or initial load hasn't determined the right step yet)
+  // This prevents showing the spinner when user refreshes on channels/assets step
+  if (isRefining && (currentStep === "refine" || !isInitialLoadComplete)) {
     return <LoadingState label="Polishing your job details…" />;
+  }
+
+  // Show a brief loading state during initial hydration for non-refine steps
+  if (!isInitialLoadComplete && currentStep !== "refine") {
+    return <LoadingState label="Loading your progress…" />;
   }
 
   if (currentStep === "refine") {
@@ -3121,6 +3429,10 @@ export default function RefineJobPage() {
                     checked={shouldGenerateHeroImage}
                     onToggle={setShouldGenerateHeroImage}
                   />
+                  <VideoOptIn
+                    checked={shouldGenerateVideos}
+                    onToggle={setShouldGenerateVideos}
+                  />
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4">
                     <button
                       type="button"
@@ -3135,6 +3447,13 @@ export default function RefineJobPage() {
                           ? `${selectedChannels.length} channel${selectedChannels.length > 1 ? "s" : ""} selected.`
                           : "Select at least one channel to continue."}
                       </p>
+                      {shouldGenerateVideos && selectedChannels.length > 0 ? (
+                        <p className="text-blue-600">
+                          {isGeneratingVideos
+                            ? `Generating ${selectedChannels.length} video${selectedChannels.length > 1 ? "s" : ""}…`
+                            : `${selectedChannels.length} video${selectedChannels.length > 1 ? "s" : ""} will be created.`}
+                        </p>
+                      ) : null}
                       <button
                         type="button"
                         onClick={handleGenerateAssets}
@@ -3155,6 +3474,12 @@ export default function RefineJobPage() {
                     <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
                       {assetError}
                     </p>
+                  ) : null}
+                  {videoGenerationError ? (
+                    <div className="rounded-2xl border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                      <p className="font-semibold">Video generation error:</p>
+                      <p className="mt-1">{videoGenerationError}</p>
+                    </div>
                   ) : null}
                 </section>
               ) : null}

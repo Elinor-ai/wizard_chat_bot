@@ -137,6 +137,10 @@ export async function fetchChannelRecommendations({
   );
 }
 
+export async function fetchExistingChannelRecommendations({ authToken, jobId }) {
+  return WizardApi.fetchExistingChannelRecommendations(jobId, { authToken });
+}
+
 export async function refineJob({ authToken, jobId, forceRefresh = false }) {
   return WizardApi.refineJob(
     {

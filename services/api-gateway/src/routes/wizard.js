@@ -1910,6 +1910,38 @@ export function wizardRouter({ firestore, bigQuery, logger, llmClient }) {
   );
 
   router.get(
+    "/channels",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const jobIdRaw = Array.isArray(req.query.jobId)
+        ? req.query.jobId[0]
+        : req.query.jobId;
+      if (!jobIdRaw || typeof jobIdRaw !== "string") {
+        throw httpError(400, "jobId query parameter required");
+      }
+
+      const job = await firestore.getDocument(JOB_COLLECTION, jobIdRaw);
+      if (!job) {
+        throw httpError(404, "Job not found");
+      }
+      if (job.ownerUserId && job.ownerUserId !== userId) {
+        throw httpError(403, "You do not have access to this job");
+      }
+
+      const document = await loadChannelRecommendationDocument(
+        firestore,
+        jobIdRaw
+      );
+      res.json({
+        jobId: jobIdRaw,
+        recommendations: document?.recommendations ?? [],
+        updatedAt: document?.updatedAt ?? null,
+        failure: document?.lastFailure ?? null,
+      });
+    })
+  );
+
+  router.get(
     "/jobs",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);

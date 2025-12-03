@@ -1072,6 +1072,45 @@ export const WizardApi = {
     return jobAssetResponseSchema.parse(payload);
   },
 
+  async fetchExistingChannelRecommendations(jobId, options = {}) {
+    if (!jobId) {
+      throw new Error("jobId required to fetch channel recommendations");
+    }
+    const response = await fetch(
+      `${API_BASE_URL}/wizard/channels?jobId=${encodeURIComponent(jobId)}`,
+      {
+        method: "GET",
+        headers: {
+          ...authHeaders(options.authToken),
+        },
+      }
+    );
+
+    if (!response.ok) {
+      let message = "Failed to load channel recommendations";
+      try {
+        const errorData = await response.json();
+        if (typeof errorData?.error === "string") {
+          message = errorData.error;
+        }
+      } catch (_error) {
+        const text = await response.text();
+        if (text) {
+          message = text;
+        }
+      }
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return {
+      jobId: data.jobId,
+      recommendations: data.recommendations ?? [],
+      updatedAt: data.updatedAt ?? null,
+      failure: data.failure ?? null,
+    };
+  },
+
   async fetchGlobalAssets(options = {}) {
     const params = new URLSearchParams();
     const jobId = typeof options.jobId === "string" ? options.jobId.trim() : "";
