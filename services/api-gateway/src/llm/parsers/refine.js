@@ -94,6 +94,14 @@ export function parseRefinementResult(response, context) {
       null
   );
 
+  // Extract LLM usage tokens from adapter's metadata (for cost tracking)
+  const adapterMetadata = response?.metadata;
+  const promptTokens = adapterMetadata?.promptTokens ?? null;
+  const responseTokens = adapterMetadata?.responseTokens ?? null;
+  const thoughtsTokens = adapterMetadata?.thoughtsTokens ?? null;
+  const totalTokens = adapterMetadata?.totalTokens ?? null;
+  const finishReason = adapterMetadata?.finishReason ?? null;
+
   const metadata = {
     improvementScore: analysis.improvement_score ?? 85,
     originalScore: analysis.original_score ?? 50,
@@ -103,8 +111,12 @@ export function parseRefinementResult(response, context) {
     keyImprovements: Array.isArray(analysis.key_improvements)
       ? analysis.key_improvements
       : ["Polished tone", "Fixed formatting", "Enhanced SEO"],
-    model: response?.model,
-    usage: response?.usage,
+    // Pass through usage tokens from adapter for recordLlmUsageFromResult
+    promptTokens,
+    responseTokens,
+    thoughtsTokens,
+    totalTokens,
+    finishReason,
   };
 
   if (changeDetails) {

@@ -1162,7 +1162,12 @@ function HeroImageOptIn({ checked, onToggle }) {
           type="checkbox"
           className="mt-1 h-4 w-4 rounded border-primary-300 text-primary-600 focus:ring-primary-500"
           checked={checked}
-          onChange={(event) => onToggle?.(event.target.checked)}
+          onChange={(event) => {
+            const next = event.target.checked;
+            // eslint-disable-next-line no-console
+            console.log("[HeroImage] Checkbox toggled", { checked: next });
+            onToggle?.(next);
+          }}
         />
         <span>
           <span className="block text-sm font-semibold text-neutral-900">
@@ -1775,6 +1780,26 @@ function LoadingState({ label }) {
   );
 }
 
+// Global singleton to prevent duplicate refinement calls across all component instances
+// This persists across component mounts/unmounts and HMR refreshes
+const globalRefinementLock = {
+  promises: new Map(), // jobId -> Promise
+  lock: function(jobId, promise) {
+    this.promises.set(jobId, promise);
+    promise.finally(() => {
+      if (this.promises.get(jobId) === promise) {
+        this.promises.delete(jobId);
+      }
+    });
+  },
+  get: function(jobId) {
+    return this.promises.get(jobId) ?? null;
+  },
+  isLocked: function(jobId) {
+    return this.promises.has(jobId);
+  }
+};
+
 export default function RefineJobPage() {
   const params = useParams();
   const { user } = useUser();
@@ -1823,6 +1848,10 @@ export default function RefineJobPage() {
   const channelsInitializedRef = useRef(false);
   const jobLogoUrlRef = useRef("");
   const conversationVersionRef = useRef(0);
+  const refinementStartedRef = useRef(false);
+  const refinementPromiseRef = useRef(null);
+  const refinementCancelledRef = useRef(false);
+  const heroImageRequestRef = useRef(null);
 
   const syncSelectedChannels = useCallback((list) => {
     const available = Array.isArray(list)
@@ -1864,11 +1893,18 @@ export default function RefineJobPage() {
   const loadHeroImageState = useCallback(async () => {
     if (!user?.authToken || !jobId) return;
     try {
+      // eslint-disable-next-line no-console
+      console.log("[HeroImage] loadHeroImageState:start", { jobId });
       const response = await fetchHeroImage({
         authToken: user.authToken,
         jobId,
       });
       const hero = response.heroImage ?? null;
+      // eslint-disable-next-line no-console
+      console.log("[HeroImage] loadHeroImageState:received", {
+        jobId,
+        status: hero?.status ?? null,
+      });
       setHeroImage(hero);
       // Removed auto-setting shouldGenerateHeroImage to true when hero image exists.
       // This flag should only be set when user explicitly opts in via HeroImageOptIn checkbox,
@@ -1882,30 +1918,64 @@ export default function RefineJobPage() {
   const handleHeroImageRequest = useCallback(
     async ({ forceRefresh = false } = {}) => {
       if (!user?.authToken || !jobId) return;
-      setIsHeroImageLoading(true);
-      try {
-        const response = await requestHeroImage({
-          authToken: user.authToken,
+      if (heroImageRequestRef.current && !forceRefresh) {
+        // eslint-disable-next-line no-console
+        console.log("[HeroImage] requestHeroImage:reuse", {
           jobId,
           forceRefresh,
         });
-        setHeroImage(response.heroImage ?? null);
-        setShouldGenerateHeroImage(true);
-      } catch (error) {
-        setHeroImage((prev) => ({
-          ...(prev ?? {
-            jobId,
-            status: "FAILED",
-          }),
-          status: "FAILED",
-          failure: {
-            reason: "request_failed",
-            message: error.message,
-          },
-        }));
-      } finally {
-        setIsHeroImageLoading(false);
+        return heroImageRequestRef.current;
       }
+      // eslint-disable-next-line no-console
+      console.log("[HeroImage] requestHeroImage:start", {
+        jobId,
+        forceRefresh,
+      });
+      setIsHeroImageLoading(true);
+      const promise = (async () => {
+        try {
+          const response = await requestHeroImage({
+            authToken: user.authToken,
+            jobId,
+            forceRefresh: true,
+          });
+          // eslint-disable-next-line no-console
+          console.log("[HeroImage] requestHeroImage:success", {
+            jobId,
+            status: response.heroImage?.status ?? null,
+          });
+          setHeroImage(response.heroImage ?? null);
+          setShouldGenerateHeroImage(true);
+          return response.heroImage ?? null;
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.warn("[HeroImage] requestHeroImage:error", {
+            jobId,
+            message: error?.message,
+          });
+          setHeroImage((prev) => ({
+            ...(prev ?? {
+              jobId,
+              status: "FAILED",
+            }),
+            status: "FAILED",
+            failure: {
+              reason: "request_failed",
+              message: error.message,
+            },
+          }));
+          throw error;
+        } finally {
+          // eslint-disable-next-line no-console
+          console.log("[HeroImage] requestHeroImage:complete", {
+            jobId,
+          });
+          setIsHeroImageLoading(false);
+          heroImageRequestRef.current = null;
+        }
+      })();
+      heroImageRequestRef.current = promise;
+      return promise;
     },
     [user?.authToken, jobId]
   );
@@ -1922,6 +1992,8 @@ export default function RefineJobPage() {
     hasManualStepChangeRef.current = false;
     hasSyncedInitialQueryStepRef.current = false;
     lastUrlStepRef.current = null;
+    refinementStartedRef.current = false;
+    refinementPromiseRef.current = null;
   }, [jobId]);
 
   const maxEnabledIndex = useMemo(() => {
@@ -2079,24 +2151,17 @@ export default function RefineJobPage() {
   }, [heroImageAsset, jobAssets]);
   const triggerHeroImageIfNeeded = useCallback(() => {
     if (!shouldGenerateHeroImage) {
-      return;
+      // eslint-disable-next-line no-console
+      console.log("[HeroImage] trigger:opt-out", { jobId });
+      return null;
     }
-    if (heroImageInFlight) {
-      return;
-    }
-    if (heroImageStatus === "READY") {
-      return;
-    }
-    if (heroImageStatus === "PROMPTING" || heroImageStatus === "GENERATING") {
-      return;
-    }
-    handleHeroImageRequest();
-  }, [
-    shouldGenerateHeroImage,
-    heroImageInFlight,
-    heroImageStatus,
-    handleHeroImageRequest,
-  ]);
+    // eslint-disable-next-line no-console
+    console.log("[HeroImage] trigger:opt-in", {
+      jobId,
+      status: heroImage?.status ?? null,
+    });
+    return handleHeroImageRequest({ forceRefresh: true });
+  }, [shouldGenerateHeroImage, handleHeroImageRequest, jobId, heroImage?.status]);
 
   const syncStepQuery = useCallback(
     (stepId, { replace = false } = {}) => {
@@ -2130,6 +2195,13 @@ export default function RefineJobPage() {
     ) {
       return;
     }
+    // eslint-disable-next-line no-console
+    console.log("[Assets] generate click", {
+      jobId,
+      selectedChannels,
+      finalJobSource,
+      shouldGenerateHeroImage,
+    });
     setIsGeneratingAssets(true);
     setAssetError(null);
     navigateToStep("assets", { force: true });
@@ -2309,64 +2381,100 @@ export default function RefineJobPage() {
     if (!user?.authToken || !jobId) return;
 
     let cancelled = false;
-    const runRefinement = async () => {
-      setIsRefining(true);
-      setRefineError(null);
-      try {
-        const response = await refineJob({
-          authToken: user.authToken,
-          jobId,
-        });
-        if (cancelled) return;
-        const original = normaliseJobDraft(response.originalJob);
-        const refined = normaliseJobDraft(response.refinedJob);
-        const fallbackLogo = normalizeLogoUrl(jobLogoUrlRef.current);
-        const refinedLogo = normalizeLogoUrl(refined.logoUrl);
-        const originalLogo = normalizeLogoUrl(original.logoUrl);
-        const refinedWithBranding = {
-          ...refined,
-          logoUrl: refinedLogo || originalLogo || fallbackLogo,
-        };
-        const originalWithBranding = {
-          ...original,
-          logoUrl: originalLogo || refinedLogo || fallbackLogo,
-        };
-        const appliedLogo =
-          normalizeLogoUrl(refinedWithBranding.logoUrl) ||
-          normalizeLogoUrl(originalWithBranding.logoUrl);
-        if (appliedLogo && appliedLogo !== jobLogoUrlRef.current) {
-          setJobLogoUrl(appliedLogo);
-        }
-        setInitialOriginal(originalWithBranding);
-        setInitialRefined(refinedWithBranding);
-        setOriginalDraft(originalWithBranding);
-        setRefinedDraft(refinedWithBranding);
-        setSummary(response.summary ?? "");
-        setRefinementInsights(
-          deriveInsights(response.metadata, response.summary)
+
+    const applyRefinementResponse = (response) => {
+      const original = normaliseJobDraft(response.originalJob);
+      const refined = normaliseJobDraft(response.refinedJob);
+      console.log("[Refinement] Normalized drafts:", { original, refined });
+      const fallbackLogo = normalizeLogoUrl(jobLogoUrlRef.current);
+      const refinedLogo = normalizeLogoUrl(refined.logoUrl);
+      const originalLogo = normalizeLogoUrl(original.logoUrl);
+      const refinedWithBranding = {
+        ...refined,
+        logoUrl: refinedLogo || originalLogo || fallbackLogo,
+      };
+      const originalWithBranding = {
+        ...original,
+        logoUrl: originalLogo || refinedLogo || fallbackLogo,
+      };
+      const appliedLogo =
+        normalizeLogoUrl(refinedWithBranding.logoUrl) ||
+        normalizeLogoUrl(originalWithBranding.logoUrl);
+      if (appliedLogo && appliedLogo !== jobLogoUrlRef.current) {
+        setJobLogoUrl(appliedLogo);
+      }
+      setInitialOriginal(originalWithBranding);
+      setInitialRefined(refinedWithBranding);
+      setOriginalDraft(originalWithBranding);
+      setRefinedDraft(refinedWithBranding);
+      setSummary(response.summary ?? "");
+      setRefinementInsights(deriveInsights(response.metadata, response.summary));
+      setJobMetadata(response.metadata ?? null);
+      setViewMode("refined");
+      if (response.failure) {
+        setRefineError(
+          response.failure.message ?? response.failure.reason ?? null
         );
-        setJobMetadata(response.metadata ?? null);
-        setViewMode("refined");
-        if (response.failure) {
-          setRefineError(
-            response.failure.message ?? response.failure.reason ?? null
-          );
-        }
-      } catch (error) {
-        if (cancelled) return;
-        setRefineError(error.message ?? "Failed to refine the job.");
-      } finally {
-        if (!cancelled) {
-          setIsRefining(false);
-        }
       }
     };
 
-    runRefinement();
+    const attachHandlers = (promise, { resetError = false } = {}) => {
+      if (resetError) {
+        setRefineError(null);
+      }
+      setIsRefining(true);
+      promise
+        .then((response) => {
+          console.log("[Refinement] API response received:", response);
+          if (cancelled) return;
+          applyRefinementResponse(response);
+        })
+        .catch((error) => {
+          console.error("[Refinement] Error occurred:", error);
+          if (cancelled) return;
+          setRefineError(error.message ?? "Failed to refine the job.");
+        })
+        .finally(() => {
+          if (cancelled) return;
+          console.log("[Refinement] Finally block - setting isRefining to false");
+          setIsRefining(false);
+          if (refinementPromiseRef.current === promise) {
+            refinementPromiseRef.current = null;
+          }
+        });
+    };
+
+    const existingPromise = globalRefinementLock.get(jobId);
+    if (existingPromise) {
+      console.log("[Refinement] Reusing in-flight refinement for jobId:", jobId);
+      refinementPromiseRef.current = existingPromise;
+      attachHandlers(existingPromise);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    console.log("[Refinement] Starting new refinement for", jobId);
+
+    const refinementPromise = (async () => {
+      console.log("[Refinement] Calling refineJob API...");
+      return refineJob({
+        authToken: user.authToken,
+        jobId,
+      });
+    })();
+
+    refinementPromiseRef.current = refinementPromise;
+    globalRefinementLock.lock(jobId, refinementPromise);
+    attachHandlers(refinementPromise, { resetError: true });
+
     return () => {
       cancelled = true;
     };
-  }, [jobId, user?.authToken]);
+    // Only depend on jobId. Auth token changes (e.g., token refresh) should NOT re-trigger refinement.
+    // The token is captured when the effect runs and used in the closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
 
   useEffect(() => {
     loadAssets();

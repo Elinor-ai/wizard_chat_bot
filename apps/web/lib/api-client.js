@@ -127,7 +127,7 @@ const jobAssetSchema = z
     provider: z.string().nullable().optional(),
     model: z.string().nullable().optional(),
     llmRationale: z.string().nullable().optional(),
-    content: z.record(z.string(), z.unknown()).optional(),
+    content: z.record(z.string(), z.unknown()).optional().nullable(),
     failure: jobAssetFailureSchema.optional().nullable(),
     updatedAt: z
       .union([z.string(), z.instanceof(Date)])

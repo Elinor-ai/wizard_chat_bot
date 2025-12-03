@@ -623,6 +623,14 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         if (!userId) {
           throw httpError(401, "Unauthorized");
         }
+        logger?.info?.(
+          {
+            jobId: context.jobId,
+            forceRefresh: context.forceRefresh,
+            userId,
+          },
+          "llm.hero_image.request"
+        );
         const result = await generateHeroImage({
           firestore,
           bigQuery,
@@ -633,6 +641,14 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
           ownerUserId: userId,
           userId,
         });
+        logger?.info?.(
+          {
+            jobId: context.jobId,
+            status: result?.heroImage?.status ?? null,
+            forceRefresh: context.forceRefresh,
+          },
+          "llm.hero_image.response"
+        );
         return res.json({ taskType, result });
       }
 

@@ -182,16 +182,41 @@ export async function generateHeroImage({
     });
 
   const existing = await loadHeroImageDocument(firestore, jobId);
-  if (
-    existing &&
-    !forceRefresh &&
-    (existing.status === "READY" ||
-      existing.status === "PROMPTING" ||
-      existing.status === "GENERATING")
-  ) {
+  logger?.info?.(
+    {
+      jobId,
+      userId,
+      ownerUserId,
+      forceRefresh,
+      existingStatus: existing?.status ?? null,
+    },
+    "hero_image.generate.start"
+  );
+
+  // If forceRefresh is false, we are in read-only mode.
+  // Return the existing hero image if present, or null if none exists.
+  // Do NOT auto-generate a new image unless explicitly requested via forceRefresh=true.
+  if (!forceRefresh) {
+    if (
+      existing &&
+      (existing.status === "READY" ||
+        existing.status === "PROMPTING" ||
+        existing.status === "GENERATING")
+    ) {
+      logger?.info?.(
+        { jobId, status: existing.status },
+        "hero_image.generate.cached"
+      );
+      return {
+        jobId,
+        heroImage: serializeHeroImage(existing),
+      };
+    }
+    // No existing image and forceRefresh=false → return null without creating
+    logger?.info?.({ jobId }, "hero_image.generate.noop");
     return {
       jobId,
-      heroImage: serializeHeroImage(existing),
+      heroImage: null,
     };
   }
 
@@ -232,6 +257,15 @@ export async function generateHeroImage({
       refinedJob: refinedSnapshot,
       companyContext: heroCompanyContext,
     });
+    logger?.info?.(
+      {
+        jobId,
+        provider: promptResult?.provider ?? null,
+        model: promptResult?.model ?? null,
+        error: promptResult?.error ?? null,
+      },
+      "hero_image.prompt.result"
+    );
     await trackLlmUsage(promptResult, {
       userId,
       jobId,
@@ -283,6 +317,15 @@ export async function generateHeroImage({
 
     if (imageOutcome.status === "fulfilled") {
       imageResult = imageOutcome.value;
+      logger?.info?.(
+        {
+          jobId,
+          provider: imageResult?.provider ?? null,
+          model: imageResult?.model ?? null,
+          error: imageResult?.error ?? null,
+        },
+        "hero_image.image.result"
+      );
       await trackLlmUsage(
         imageResult,
         {
@@ -303,6 +346,15 @@ export async function generateHeroImage({
 
     if (captionOutcome.status === "fulfilled") {
       const captionResult = captionOutcome.value;
+      logger?.info?.(
+        {
+          jobId,
+          provider: captionResult?.provider ?? null,
+          model: captionResult?.model ?? null,
+          error: captionResult?.error ?? null,
+        },
+        "hero_image.caption.result"
+      );
       await trackLlmUsage(captionResult, {
         userId,
         jobId,
