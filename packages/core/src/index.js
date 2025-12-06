@@ -108,3 +108,44 @@ export {
   VideoLibraryStatusEnum,
   VideoLibraryItemSchema
 } from "./schemas/video-library.js";
+
+// Golden Schema exports
+export {
+  // Enums
+  PayFrequencyEnum,
+  VariableCompensationTypeEnum,
+  VariableCompensationFrequencyEnum,
+  EquityTypeEnum,
+  PaymentMethodEnum,
+  ScheduleTypeEnum,
+  RemoteFrequencyEnum,
+  PtoStructureEnum,
+  OvertimeExpectedEnum,
+  PhysicalSpaceTypeEnum,
+  NoiseLevelEnum,
+  ManagementApproachEnum,
+  SocialPressureEnum,
+  MeetingLoadEnum,
+  CompanyStageEnum,
+  RevenueTrendEnum,
+  PositionTypeEnum,
+  EmploymentTypeGoldenEnum,
+  VarietyLevelEnum,
+  DecisionAuthorityEnum,
+  SupervisionLevelEnum,
+  WorkloadIntensityEnum,
+  WorkloadPredictabilityEnum,
+  SeniorityDetectedEnum,
+  // Sub-schemas
+  FinancialRealitySchema,
+  TimeAndLifeSchema,
+  EnvironmentSchema,
+  HumansAndCultureSchema,
+  GrowthTrajectorySchema,
+  StabilitySignalsSchema,
+  RoleRealitySchema,
+  UniqueValueSchema,
+  ExtractionMetadataSchema,
+  // Main schema
+  UniversalGoldenSchema
+} from "./schemas/golden-schema.js";
