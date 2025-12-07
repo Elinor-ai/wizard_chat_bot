@@ -21,6 +21,7 @@ import {
   listSubscriptionPlans,
 } from "./config/subscription-plans.js";
 import { requestContextMiddleware } from "./llm/request-context.js";
+import { VIDEO_BEHAVIOR_CONFIG } from "./config/llm-config.js";
 
 const corsConfig = {
   origin: "http://localhost:3000",
@@ -45,9 +46,8 @@ export function createApp({ logger, firestore, bigQuery, llmClient }) {
     })
   );
 
-  const videoAssetDir = path.resolve(
-    process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders"
-  );
+  // Output directory is now configured in code (VIDEO_BEHAVIOR_CONFIG), not via .env
+  const videoAssetDir = path.resolve(VIDEO_BEHAVIOR_CONFIG.outputDir);
   fs.mkdirSync(videoAssetDir, { recursive: true });
   app.use(
     "/video-assets",

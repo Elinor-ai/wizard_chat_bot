@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { logRawTraffic } from "../../../llm/raw-traffic-logger.js";
 import { LLM_ORCHESTRATOR_TASK } from "../../../config/task-types.js";
+import { VIDEO_BEHAVIOR_CONFIG } from "../../../config/llm-config.js";
 
 function findVideoDataRecursive(obj) {
   try {
@@ -45,10 +46,16 @@ function findVideoDataRecursive(obj) {
 }
 
 export class VeoClient extends IVideoClient {
+  /**
+   * @param {Object} options
+   * @param {string} [options.modelId] - Veo model ID (should come from VIDEO_RENDER_CONFIG)
+   * @param {string} [options.location] - GCP location (defaults to env or "us-central1")
+   * @param {string} [options.projectId] - GCP project ID (defaults to env)
+   */
   constructor({
+    modelId = "veo-3.1-generate-preview",
     location = process.env.GOOGLE_CLOUD_LOCATION ?? "us-central1",
     projectId = process.env.FIRESTORE_PROJECT_ID,
-    modelId = process.env.VIDEO_MODEL ?? "veo-3.1-generate-preview",
   } = {}) {
     super();
     this.auth = new GoogleAuth({
@@ -168,9 +175,8 @@ export class VeoClient extends IVideoClient {
 
       if (videoData && videoData.type === "base64") {
         try {
-          const outputDir =
-            process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders";
-          const absOutputDir = path.resolve(outputDir);
+          // Output directory is now configured in code (VIDEO_BEHAVIOR_CONFIG), not via .env
+          const absOutputDir = path.resolve(VIDEO_BEHAVIOR_CONFIG.outputDir);
 
           if (!fs.existsSync(absOutputDir)) {
             fs.mkdirSync(absOutputDir, { recursive: true });

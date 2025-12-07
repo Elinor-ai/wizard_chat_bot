@@ -22,17 +22,25 @@ function mapAspectRatio(aspectRatio) {
 }
 
 export class SoraClient extends IVideoClient {
-  constructor({ apiToken, baseUrl = DEFAULT_BASE_URL } = {}) {
+  /**
+   * @param {Object} options
+   * @param {string} [options.apiToken] - OpenAI API key for Sora
+   * @param {string} [options.baseUrl] - OpenAI API base URL
+   * @param {string} [options.defaultModel] - Default Sora model (should come from VIDEO_RENDER_CONFIG)
+   */
+  constructor({ apiToken, baseUrl = DEFAULT_BASE_URL, defaultModel = "sora-2-pro" } = {}) {
     super();
     this.apiToken = apiToken;
     this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.defaultModel = defaultModel;
   }
 
   get headers() {
     if (!this.apiToken) {
-      throw new VideoRendererError("Missing Sora API token", {
-        code: "CONFIGURATION_ERROR",
-      });
+      throw new VideoRendererError(
+        "Missing OpenAI API key for Sora video generation. Set OPENAI_API_KEY.",
+        { code: "CONFIGURATION_ERROR" }
+      );
     }
     return {
       Authorization: `Bearer ${this.apiToken}`,
@@ -43,7 +51,7 @@ export class SoraClient extends IVideoClient {
   async startGeneration(request) {
     try {
       const payload = {
-        model: request?.model ?? "sora-2-pro",
+        model: request?.model ?? this.defaultModel,
         prompt: request.prompt,
       };
       const size = mapAspectRatio(request.aspectRatio);

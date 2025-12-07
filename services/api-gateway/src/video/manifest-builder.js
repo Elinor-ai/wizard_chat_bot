@@ -17,8 +17,10 @@ import {
 } from "./fallbacks.js";
 import { computeDurationPlan } from "./duration-planner.js";
 import { LLM_CORE_TASK } from "../config/task-types.js";
+import { VIDEO_BEHAVIOR_CONFIG } from "../config/llm-config.js";
 
-const LLM_ENABLED = process.env.VIDEO_LLM_ENABLED !== "false";
+// LLM usage is now configured in code (VIDEO_BEHAVIOR_CONFIG), not via .env
+const LLM_ENABLED = VIDEO_BEHAVIOR_CONFIG.llmEnabled;
 
 export async function buildVideoManifest({
   job,

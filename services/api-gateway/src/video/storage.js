@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Storage } from "@google-cloud/storage";
+import { VIDEO_BEHAVIOR_CONFIG } from "../config/llm-config.js";
 
 const STORAGE_BUCKET = process.env.VIDEO_STORAGE_BUCKET ?? "";
 const STORAGE_BASE_URL = process.env.VIDEO_STORAGE_BASE_URL ?? "";
@@ -10,9 +11,8 @@ const STORAGE_MAKE_PUBLIC = process.env.VIDEO_STORAGE_MAKE_PUBLIC === "true";
 const DOWNLOAD_TIMEOUT_MS = Number(
   process.env.VIDEO_PERSIST_DOWNLOAD_TIMEOUT_MS ?? 300_000
 );
-const OUTPUT_DIR = path.resolve(
-  process.env.VIDEO_RENDER_OUTPUT_DIR ?? "./tmp/video-renders"
-);
+// Output directory is now configured in code (VIDEO_BEHAVIOR_CONFIG), not via .env
+const OUTPUT_DIR = path.resolve(VIDEO_BEHAVIOR_CONFIG.outputDir);
 
 let storageClient = null;
 

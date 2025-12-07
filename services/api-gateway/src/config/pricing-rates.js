@@ -110,6 +110,236 @@ const BASE_RATE_CARD = {
           costPerSecondUsd: 0.40
         }
       }
+    },
+    // OpenAI Sora video generation pricing
+    // Updated: November 2025 - Official OpenAI Sora API pricing
+    // See: https://openai.com/api/pricing/
+    sora: {
+      planName: "sora-production",
+      credits: {
+        usdPerCredit: null
+      },
+      video: {
+        models: {
+          // sora-2: Basic tier at 720p resolution
+          "sora-2": {
+            // Portrait 720×1280, Landscape 1280×720
+            costPerSecondUsd: 0.10
+          },
+          "sora-2-720p": {
+            // Alias for sora-2 at 720p
+            costPerSecondUsd: 0.10
+          },
+          // sora-2-pro: Professional tier with resolution-based pricing
+          "sora-2-pro": {
+            // Default to 720p tier (Portrait 720×1280, Landscape 1280×720)
+            // Use "sora-2-pro-1792p" for higher resolution
+            costPerSecondUsd: 0.30
+          },
+          "sora-2-pro-720p": {
+            // Portrait 720×1280, Landscape 1280×720
+            costPerSecondUsd: 0.30
+          },
+          "sora-2-pro-1792p": {
+            // Higher resolution tier: Portrait 1024×1792, Landscape 1792×1024
+            costPerSecondUsd: 0.50
+          }
+        },
+        // Default to sora-2-pro at 720p as the balanced option
+        default: {
+          costPerSecondUsd: 0.30
+        }
+      }
+    },
+    // OpenAI LLM text generation pricing
+    // Updated: November 2025 - Official OpenAI API pricing
+    // See: https://openai.com/api/pricing/
+    openai: {
+      planName: "openai-production",
+      credits: {
+        usdPerCredit: null
+      },
+      text: {
+        models: {
+          // ═══════════════════════════════════════════════════════════════
+          // GPT-5 Series (Flagship - November 2025)
+          // ═══════════════════════════════════════════════════════════════
+          "gpt-5.1": {
+            // Flagship model - highest capability
+            inputUsdPerMillionTokens: 1.25,
+            cachedUsdPerMillionTokens: 0.125,
+            outputUsdPerMillionTokens: 10.0
+          },
+          "gpt-5-mini": {
+            // Balanced cost/performance
+            inputUsdPerMillionTokens: 0.25,
+            cachedUsdPerMillionTokens: 0.025,
+            outputUsdPerMillionTokens: 2.0
+          },
+          "gpt-5-nano": {
+            // Most cost-effective for simple tasks
+            inputUsdPerMillionTokens: 0.05,
+            cachedUsdPerMillionTokens: 0.005,
+            outputUsdPerMillionTokens: 0.4
+          },
+          "gpt-5-pro": {
+            // Highest capability, extended thinking
+            // Note: No cached input discount for this model
+            inputUsdPerMillionTokens: 15.0,
+            cachedUsdPerMillionTokens: 15.0,
+            outputUsdPerMillionTokens: 120.0
+          },
+
+          // ═══════════════════════════════════════════════════════════════
+          // GPT-4.1 Series (Fine-tunable - November 2025)
+          // ═══════════════════════════════════════════════════════════════
+          "gpt-4.1": {
+            inputUsdPerMillionTokens: 3.0,
+            cachedUsdPerMillionTokens: 0.75,
+            outputUsdPerMillionTokens: 12.0
+          },
+          "gpt-4.1-mini": {
+            inputUsdPerMillionTokens: 0.8,
+            cachedUsdPerMillionTokens: 0.2,
+            outputUsdPerMillionTokens: 3.2
+          },
+          "gpt-4.1-nano": {
+            inputUsdPerMillionTokens: 0.2,
+            cachedUsdPerMillionTokens: 0.05,
+            outputUsdPerMillionTokens: 0.8
+          },
+
+          // ═══════════════════════════════════════════════════════════════
+          // o-Series Reasoning Models (November 2025)
+          // ═══════════════════════════════════════════════════════════════
+          "o3": {
+            inputUsdPerMillionTokens: 2.0,
+            cachedUsdPerMillionTokens: 0.5,
+            outputUsdPerMillionTokens: 8.0
+          },
+          "o4-mini": {
+            // Fine-tunable reasoning model
+            inputUsdPerMillionTokens: 4.0,
+            cachedUsdPerMillionTokens: 1.0,
+            outputUsdPerMillionTokens: 16.0
+          },
+
+          // ═══════════════════════════════════════════════════════════════
+          // Legacy Models (Pre-GPT-5) - Kept for backward compatibility
+          // ═══════════════════════════════════════════════════════════════
+          "gpt-4o": {
+            // LEGACY: Consider migrating to gpt-5-mini
+            inputUsdPerMillionTokens: 2.5,
+            outputUsdPerMillionTokens: 10.0
+          },
+          "gpt-4o-mini": {
+            // LEGACY: Consider migrating to gpt-5-nano
+            inputUsdPerMillionTokens: 0.15,
+            outputUsdPerMillionTokens: 0.6
+          },
+          "gpt-4-turbo": {
+            // LEGACY: Consider migrating to gpt-4.1
+            inputUsdPerMillionTokens: 10.0,
+            outputUsdPerMillionTokens: 30.0
+          },
+          "o1": {
+            // LEGACY: Consider migrating to o3 or gpt-5-pro
+            inputUsdPerMillionTokens: 15.0,
+            outputUsdPerMillionTokens: 60.0
+          },
+          "o1-mini": {
+            // LEGACY: Consider migrating to o4-mini
+            inputUsdPerMillionTokens: 3.0,
+            outputUsdPerMillionTokens: 12.0
+          }
+        },
+        default: {
+          // Default to gpt-5-mini rates as the recommended cost-effective option
+          inputUsdPerMillionTokens: 0.25,
+          cachedUsdPerMillionTokens: 0.025,
+          outputUsdPerMillionTokens: 2.0
+        }
+      },
+      image: {
+        models: {
+          // ═══════════════════════════════════════════════════════════════
+          // GPT-image-1 Series (Token-based pricing - November 2025)
+          // Note: These models use token-based pricing for both text prompts
+          // and image tokens. The rates below are per million tokens.
+          // ═══════════════════════════════════════════════════════════════
+          "gpt-image-1": {
+            // Full-quality image generation
+            // Text tokens (prompt):
+            inputUsdPerMillionTokens: 5.0,
+            cachedUsdPerMillionTokens: 1.25,
+            // Image tokens:
+            // - Input image: $10.00/M tokens
+            // - Cached image: $2.50/M tokens
+            // - Output image: $40.00/M tokens
+            imageInputUsdPerMillionTokens: 10.0,
+            imageCachedUsdPerMillionTokens: 2.5,
+            imageOutputUsdPerMillionTokens: 40.0,
+            // Legacy per-unit fallback (approx for 1024x1024)
+            costPerUnitUsd: 0.08
+          },
+          "gpt-image-1-mini": {
+            // Cost-optimized image generation
+            // Text tokens (prompt):
+            inputUsdPerMillionTokens: 2.0,
+            cachedUsdPerMillionTokens: 0.2,
+            // Image tokens:
+            // - Input image: $2.50/M tokens
+            // - Cached image: $0.25/M tokens
+            // - Output image: $8.00/M tokens
+            imageInputUsdPerMillionTokens: 2.5,
+            imageCachedUsdPerMillionTokens: 0.25,
+            imageOutputUsdPerMillionTokens: 8.0,
+            // Legacy per-unit fallback (approx for 1024x1024)
+            costPerUnitUsd: 0.02
+          },
+
+          // ═══════════════════════════════════════════════════════════════
+          // Legacy DALL-E Models - Kept for backward compatibility
+          // ═══════════════════════════════════════════════════════════════
+          "dall-e-3": {
+            // LEGACY: Consider migrating to gpt-image-1-mini
+            costPerUnitUsd: 0.04
+          },
+          "dall-e-3-hd": {
+            // LEGACY: Consider migrating to gpt-image-1
+            costPerUnitUsd: 0.08
+          }
+        },
+        default: {
+          // Default to gpt-image-1-mini for cost-effectiveness
+          costPerUnitUsd: 0.02,
+          inputUsdPerMillionTokens: 2.0,
+          cachedUsdPerMillionTokens: 0.2,
+          imageOutputUsdPerMillionTokens: 8.0
+        }
+      },
+      // ═══════════════════════════════════════════════════════════════
+      // Fine-tuning pricing (for documentation - not used in runtime)
+      // These rates are recorded here for reference when planning
+      // fine-tuning projects. Actual billing happens through OpenAI.
+      // ═══════════════════════════════════════════════════════════════
+      fineTuning: {
+        models: {
+          "gpt-4.1": {
+            trainingUsdPerMillionTokens: 25.0
+          },
+          "gpt-4.1-mini": {
+            trainingUsdPerMillionTokens: 5.0
+          },
+          "gpt-4.1-nano": {
+            trainingUsdPerMillionTokens: 1.5
+          },
+          "o4-mini": {
+            // RL fine-tuning: $100/training hour
+            trainingUsdPerHour: 100.0
+          }
+        }
+      }
     }
   }
 };

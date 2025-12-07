@@ -4,6 +4,7 @@ import { VideoRendererError } from "./contracts.js";
 import { persistRemoteVideo } from "../storage.js";
 import { logRawTraffic } from "../../llm/raw-traffic-logger.js";
 import { LLM_ORCHESTRATOR_TASK } from "../../config/task-types.js";
+import { VIDEO_RENDER_CONFIG } from "../../config/llm-config.js";
 import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
@@ -58,11 +59,15 @@ function resolveLocalPathFromUrl(finalUrl) {
 export class UnifiedVideoRenderer {
   constructor(options = {}) {
     const veoKey = options.veoApiKey ?? process.env.GEMINI_API_KEY ?? null;
-    const soraToken =
-      options.soraApiToken ?? process.env.SORA_API_TOKEN ?? null;
+    // Sora uses OPENAI_API_KEY (same key as GPT/GPT-image-1)
+    // An optional per-call override (options.soraApiToken) is supported for tests/special cases
+    const soraToken = options.soraApiToken ?? process.env.OPENAI_API_KEY ?? null;
+    // Model defaults come from VIDEO_RENDER_CONFIG (centralized in llm-config.js)
+    const veoModel = options.veoModel ?? VIDEO_RENDER_CONFIG.providers.veo.model;
+    const soraModel = options.soraModel ?? VIDEO_RENDER_CONFIG.providers.sora.model;
     this.clients = {
-      veo: new VeoClient({ apiKey: veoKey }),
-      sora: new SoraClient({ apiToken: soraToken }),
+      veo: new VeoClient({ apiKey: veoKey, modelId: veoModel }),
+      sora: new SoraClient({ apiToken: soraToken, defaultModel: soraModel }),
     };
     this.pollIntervalMs = Number(process.env.RENDER_POLL_INTERVAL_MS ?? 2000);
     // Default timeout bumped to 10 minutes to accommodate slower providers

@@ -17,23 +17,56 @@ The video pipeline now runs on a clean Strategy Pattern that abstracts rendering
 
 ## Configuration
 
-Set these environment variables for the video service:
+### Provider & Model Selection (Code-Only)
+
+**Provider and model selection is configured in code, not via environment variables.**
+
+All video provider/model defaults are defined in `services/api-gateway/src/config/llm-config.js`:
+
+```javascript
+export const VIDEO_RENDER_CONFIG = Object.freeze({
+  defaultProvider: "veo",  // or "sora"
+  providers: {
+    veo: { model: "veo-3.1-generate-preview" },
+    sora: { model: "sora-2-pro" },
+  },
+});
+```
+
+To change the default provider or model, edit `llm-config.js` directly. Do not use env vars for this purpose.
+
+### Video Behavior Settings (Code-Only)
+
+Video behavior flags are configured in code (`VIDEO_BEHAVIOR_CONFIG` in `llm-config.js`), not via environment variables:
+
+```javascript
+export const VIDEO_BEHAVIOR_CONFIG = Object.freeze({
+  autoRender: true,               // auto-trigger rendering after manifest creation
+  outputDir: "./tmp/video-renders", // filesystem path for video assets
+  llmEnabled: true,               // use LLM (Gemini) for storyboard/caption
+});
+```
+
+To change these settings, edit `llm-config.js` directly.
+
+### Environment Variables
+
+Set these environment variables for the video service. Note: these are for **secrets and infra only** — not for behavior flags or provider/model selection.
 
 | Variable | Purpose |
 | --- | --- |
-| `VIDEO_LLM_ENABLED` | Toggle LLM-backed manifest generation (Gemini) vs fallback builders. |
-| `VIDEO_RENDER_AUTOSTART` | Automatically trigger rendering after each manifest creation/regeneration. |
-| `VIDEO_DEFAULT_PROVIDER` | Default renderer (`veo` or `sora`) for new library items. |
-| `GEMINI_API_KEY` | Legacy fallback for providers requiring Gemini auth; still read by the renderer options. |
-| `SORA_API_TOKEN` | OpenAI Sora bearer token used by `SoraClient`. |
+| `GEMINI_API_KEY` | API key for Gemini/Vertex AI providers. |
+| `OPENAI_API_KEY` | OpenAI project key used by Sora (and all other OpenAI features: GPT, GPT-image-1). |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path to the Vertex AI service-account JSON (`config/service-account.json`). |
 | `GOOGLE_CLOUD_PROJECT_ID` | Project hosting the Vertex AI model. |
 | `GOOGLE_CLOUD_LOCATION` | Vertex region (default `us-central1`). |
-| `VIDEO_MODEL` | Vertex AI publisher model ID (e.g., `veo-2.0-generate-001`). |
 | `RENDER_POLL_INTERVAL_MS` | Millisecond delay between polling attempts inside the unified renderer (default `2000`). |
-| `RENDER_POLL_TIMEOUT_MS` | Maximum time in ms before a render attempt is considered failed (default `240000`). |
-| `VIDEO_RENDER_OUTPUT_DIR` | Filesystem path for storing final video/caption/poster assets served via `/video-assets`. |
+| `RENDER_POLL_TIMEOUT_MS` | Maximum time in ms before a render attempt is considered failed (default `600000`). |
 | `VIDEO_RENDER_PUBLIC_BASE_URL` | Public base URL pointing to the assets directory (Next.js frontend expects this). |
+
+> **Deprecated:** The following env vars are no longer used. Remove them from your `.env` file:
+> - `VIDEO_DEFAULT_PROVIDER`, `VIDEO_MODEL` (provider/model selection is code-only)
+> - `VIDEO_RENDER_AUTOSTART`, `VIDEO_RENDER_OUTPUT_DIR`, `VIDEO_LLM_ENABLED` (now in `VIDEO_BEHAVIOR_CONFIG`)
 
 ## Architecture Deep Dive
 
@@ -51,7 +84,7 @@ Set these environment variables for the video service:
 - Polling: uses operation name returned by Vertex and fetches until `done` is true.
 
 **SoraClient (OpenAI)**
-- Auth: Bearer token via `SORA_API_TOKEN`.
+- Auth: Bearer token via `OPENAI_API_KEY` (same key used for GPT/GPT-image-1).
 - Payload: `{ model, prompt, size }` (size derived from aspect ratio and coerced to OpenAI-supported resolutions).
 - Polling: hits `/videos/{id}` until status is `succeeded` or `failed`.
 
@@ -89,7 +122,7 @@ Both clients log raw provider errors and propagate structured context back to th
 
 ## Next Steps for New Contributors
 
-1. Configure env vars (especially `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT_ID`, `VIDEO_MODEL`, `SORA_API_TOKEN`).
+1. Configure env vars (especially `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT_ID`, `VIDEO_MODEL`, `OPENAI_API_KEY`).
 2. Run `npm run dev:api` after setting provider defaults to verify renders complete.
 3. Add new providers by implementing `IVideoClient` and registering them in `UnifiedVideoRenderer`.
 4. Keep `docs/video-architecture.md` up to date as new capabilities (e.g., more providers or rendering tiers) are added.

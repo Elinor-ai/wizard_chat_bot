@@ -8,16 +8,20 @@ import {
 import { buildVideoManifest } from "./manifest-builder.js";
 import { incrementMetric } from "./metrics.js";
 import { recordLlmUsage, recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
-import { LLM_TASK_CONFIG } from "../config/llm-config.js";
 import { LLM_SPECIAL_TASK } from "../config/task-types.js";
+import { VIDEO_RENDER_CONFIG, VIDEO_BEHAVIOR_CONFIG } from "../config/llm-config.js";
 import { createRenderer } from "./renderer.js";
 import { createPublisherRegistry } from "./publishers.js";
 
 const COLLECTION = "videoLibraryItems";
-const AUTO_RENDER = process.env.VIDEO_RENDER_AUTOSTART !== "false";
-const DEFAULT_RENDER_PROVIDER = (process.env.VIDEO_DEFAULT_PROVIDER ?? "veo")
-  .toString()
-  .toLowerCase();
+
+// Auto-render is now configured in code (VIDEO_BEHAVIOR_CONFIG), not via .env
+const AUTO_RENDER = VIDEO_BEHAVIOR_CONFIG.autoRender;
+
+// Video provider/model config is centralized in llm-config.js (VIDEO_RENDER_CONFIG)
+// Supported providers: "veo" (Google Vertex AI), "sora" (OpenAI)
+const DEFAULT_RENDER_PROVIDER = VIDEO_RENDER_CONFIG.defaultProvider;
+
 const INITIAL_RENDER_STATE = Object.freeze({
   operationName: null,
   status: "none",
@@ -25,6 +29,8 @@ const INITIAL_RENDER_STATE = Object.freeze({
   lastFetchAt: null,
   hash: null,
 });
+
+// Providers that require async/background rendering (polling-based completion)
 const ASYNC_RENDER_PROVIDERS = new Set(["sora"]);
 
 function deriveChannelName(channelId) {
@@ -454,20 +460,23 @@ export function createVideoLibraryService({
       },
       auditEntry
     );
-    if (renderTask.status === "completed" && provider === "veo") {
+    // Track usage for both Veo and Sora video renders
+    if (renderTask.status === "completed" && (provider === "veo" || provider === "sora")) {
       const secondsGenerated = Number.isFinite(Number(renderTask.metrics?.secondsGenerated))
         ? Number(renderTask.metrics.secondsGenerated)
         : Number(existing?.activeManifest?.generator?.targetDurationSeconds ?? 0) || 0;
 
-      const videoTaskConfig = LLM_TASK_CONFIG.video_generation ?? {};
-      const videoProvider = videoTaskConfig.provider;
+      // Resolve model from render metrics or use defaults from centralized config
       const videoModel =
         renderTask.metrics?.model ??
-        videoTaskConfig.model;
+        (provider === "sora"
+          ? VIDEO_RENDER_CONFIG.providers.sora.model
+          : VIDEO_RENDER_CONFIG.providers.veo.model);
 
       // Special case: video_generation bypasses the standard orchestrator pattern.
-      // This direct recordLlmUsage call tracks Veo API usage (seconds generated, cost)
+      // This direct recordLlmUsage call tracks video API usage (seconds generated, cost)
       // after video rendering completes. Not client-facing, never sent to POST /api/llm.
+      // Supports both Veo (Google Vertex AI) and Sora (OpenAI) providers.
       try {
         await recordLlmUsage({
           firestore,
@@ -478,7 +487,7 @@ export function createVideoLibraryService({
             jobId: existing.jobId,
             taskType: LLM_SPECIAL_TASK.VIDEO_GENERATION
           },
-          provider: videoProvider,
+          provider,
           model: videoModel,
           metadata: {},
           status: "success",
@@ -490,7 +499,7 @@ export function createVideoLibraryService({
         });
       } catch (error) {
         logger?.warn?.(
-          { err: error, jobId: existing.jobId, provider: "veo" },
+          { err: error, jobId: existing.jobId, provider },
           "video.render.usage_log_failed"
         );
       }

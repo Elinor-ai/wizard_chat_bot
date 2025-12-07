@@ -13,17 +13,46 @@ import { LLM_CORE_TASK } from "./config/task-types.js";
 
 loadEnv();
 
+// OpenAI LLM provider configuration
+// Set OPENAI_LLM_ENABLED=true to enable OpenAI LLM provider (requires valid OPENAI_API_KEY)
+// Note: OPENAI_ENABLED is deprecated but still supported for backwards compatibility
+const OPENAI_LLM_ENABLED =
+  process.env.OPENAI_LLM_ENABLED === "true" ||
+  process.env.OPENAI_ENABLED === "true";
+// Warn about deprecated env var
+if (process.env.OPENAI_ENABLED && !process.env.OPENAI_LLM_ENABLED) {
+  console.warn(
+    "[llm-client] OPENAI_ENABLED is deprecated. Please use OPENAI_LLM_ENABLED instead."
+  );
+}
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? null;
 const OPENAI_API_URL =
   process.env.OPENAI_API_URL ?? "https://api.openai.com/v1/chat/completions";
+
+// Validate OpenAI configuration when enabled
+if (OPENAI_LLM_ENABLED) {
+  const isInvalidKey = !OPENAI_API_KEY ||
+    OPENAI_API_KEY === "empty_string" ||
+    OPENAI_API_KEY.trim() === "";
+  if (isInvalidKey) {
+    throw new Error(
+      "OpenAI LLM is enabled (OPENAI_LLM_ENABLED=true) but OPENAI_API_KEY is not set to a valid value. " +
+      "Either set a valid API key or disable OpenAI by removing OPENAI_LLM_ENABLED."
+    );
+  }
+  llmLogger.info("OpenAI LLM provider is ENABLED");
+} else {
+  llmLogger.info("OpenAI LLM provider is DISABLED (set OPENAI_LLM_ENABLED=true to enable)");
+}
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? null;
 const GEMINI_API_URL =
   process.env.GEMINI_API_URL ??
   "https://generativelanguage.googleapis.com/v1beta";
 
+// DALL-E uses OpenAI API key if not separately configured
 const DALL_E_API_KEY =
-  process.env.DALL_E_API_KEY ?? OPENAI_API_KEY;
+  process.env.DALL_E_API_KEY || (OPENAI_LLM_ENABLED ? OPENAI_API_KEY : null);
 const IMAGEN_API_KEY =
   process.env.IMAGEN_API_KEY ?? GEMINI_API_KEY;
 const STABILITY_API_KEY =
@@ -33,17 +62,11 @@ const STABILITY_API_KEY =
 
 const providerSelectionConfig = LLM_TASK_CONFIG;
 
+// Build adapters object, conditionally including OpenAI when enabled
 const adapters = {
-  openai: new OpenAIAdapter({
-    apiKey: OPENAI_API_KEY,
-    apiUrl: OPENAI_API_URL,
-  }),
   gemini: new GeminiAdapter({
     apiKey: GEMINI_API_KEY,
     apiUrl: GEMINI_API_URL,
-  }),
-  "dall-e": new DalleImageAdapter({
-    apiKey: DALL_E_API_KEY,
   }),
   imagen: new ImagenImageAdapter({
     apiKey: IMAGEN_API_KEY,
@@ -52,6 +75,17 @@ const adapters = {
     apiKey: STABILITY_API_KEY,
   }),
 };
+
+// Only register OpenAI adapters when explicitly enabled
+if (OPENAI_LLM_ENABLED) {
+  adapters.openai = new OpenAIAdapter({
+    apiKey: OPENAI_API_KEY,
+    apiUrl: OPENAI_API_URL,
+  });
+  adapters["dall-e"] = new DalleImageAdapter({
+    apiKey: DALL_E_API_KEY,
+  });
+}
 
 const selectionPolicy = new ProviderSelectionPolicy(providerSelectionConfig);
 const orchestrator = new LlmOrchestrator({

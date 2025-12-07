@@ -3,7 +3,7 @@ import { loadEnv } from "@wizard/utils";
 import { VideoRenderTaskSchema } from "@wizard/core";
 import { UnifiedVideoRenderer } from "./renderers/unified-renderer.js";
 import { VideoRendererError } from "./renderers/contracts.js";
-import { VERTEX_DEFAULTS } from "../vertex/constants.js";
+import { VIDEO_RENDER_CONFIG } from "../config/llm-config.js";
 
 loadEnv();
 
@@ -85,7 +85,11 @@ export function createRenderer(options = {}) {
   return {
     async render({ manifest, provider, jobId, itemId, ownerUserId }) {
       const requestedAt = new Date().toISOString();
-      const videoModel = process.env.VIDEO_MODEL ?? VERTEX_DEFAULTS.VEO_MODEL_ID;
+      // Model comes from centralized config (llm-config.js), not env vars
+      const videoModel =
+        provider === "sora"
+          ? VIDEO_RENDER_CONFIG.providers.sora.model
+          : VIDEO_RENDER_CONFIG.providers.veo.model;
       const requestedDuration = calculateDuration(manifest);
       const cappedDuration =
         provider === "veo" && Number.isFinite(requestedDuration)
