@@ -8,7 +8,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { wrapAsync, httpError } from "@wizard/utils";
 import { createGoldenInterviewerService } from "../golden-interviewer/service.js";
-import { OpenAIAdapter } from "../llm/providers/openai-adapter.js";
+import { GeminiAdapter } from "../llm/providers/gemini-adapter.js";
 import { loadEnv } from "@wizard/utils";
 
 // =============================================================================
@@ -74,16 +74,17 @@ function verifySessionOwnership(session, userId) {
 export function goldenInterviewRouter({ firestore, logger }) {
   const router = Router();
 
-  // Load environment for OpenAI
+  // Load environment for Gemini
   loadEnv();
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-  const OPENAI_API_URL =
-    process.env.OPENAI_API_URL || "https://api.openai.com/v1/chat/completions";
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-  // Create LLM adapter
-  const llmAdapter = new OpenAIAdapter({
-    apiKey: OPENAI_API_KEY,
-    apiUrl: OPENAI_API_URL
+  if (!GEMINI_API_KEY) {
+    logger.warn("GEMINI_API_KEY not set - Golden Interview will fail");
+  }
+
+  // Create LLM adapter (using Gemini with API key)
+  const llmAdapter = new GeminiAdapter({
+    apiKey: GEMINI_API_KEY,
   });
 
   // Create service instance

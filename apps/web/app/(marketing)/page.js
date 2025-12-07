@@ -93,6 +93,13 @@ export default function MarketingPage() {
             </div>
           ) : displayUser ? (
             <>
+              <Link
+                href="/golden-interview"
+                className="inline-flex items-center gap-1.5 rounded-full bg-primary-600 px-5 py-2 text-white shadow-sm transition hover:bg-primary-700"
+              >
+                <span>✨</span>
+                Start AI Interview
+              </Link>
               <WizardLaunchTrigger>
                 {({ onClick }) => (
                   <button

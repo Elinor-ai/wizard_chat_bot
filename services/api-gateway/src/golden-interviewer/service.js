@@ -12,7 +12,7 @@ import {
   buildFirstTurnPrompt,
   buildContinueTurnPrompt,
   estimateSchemaCompletion,
-  identifyMissingFields
+  identifyMissingFields,
 } from "./prompts.js";
 import { validateUIToolProps, getUIToolSchema } from "./tools-definition.js";
 
@@ -21,7 +21,7 @@ import { validateUIToolProps, getUIToolSchema } from "./tools-definition.js";
 // =============================================================================
 
 const SESSIONS_COLLECTION = "golden_interview_sessions";
-const DEFAULT_MODEL = "gpt-4o";
+const DEFAULT_MODEL = "gemini-3-pro-preview";
 const MAX_TOKENS = 2000;
 
 // =============================================================================
@@ -44,19 +44,19 @@ const SessionSchema = z.object({
       uiTool: z
         .object({
           type: z.string(),
-          props: z.record(z.any())
+          props: z.record(z.any()),
         })
         .optional(),
-      uiResponse: z.record(z.any()).optional()
+      uiResponse: z.record(z.any()).optional(),
     })
   ),
   metadata: z
     .object({
       completionPercentage: z.number().optional(),
       currentPhase: z.string().optional(),
-      lastToolUsed: z.string().optional()
+      lastToolUsed: z.string().optional(),
     })
-    .optional()
+    .optional(),
 });
 
 const LLMResponseSchema = z.object({
@@ -64,18 +64,18 @@ const LLMResponseSchema = z.object({
   extraction: z
     .object({
       updates: z.record(z.any()).optional(),
-      confidence: z.record(z.number()).optional()
+      confidence: z.record(z.number()).optional(),
     })
     .optional(),
   ui_tool: z
     .object({
       type: z.string(),
-      props: z.record(z.any())
+      props: z.record(z.any()),
     })
     .optional(),
   next_priority_fields: z.array(z.string()).optional(),
   completion_percentage: z.number().optional(),
-  interview_phase: z.string().optional()
+  interview_phase: z.string().optional(),
 });
 
 // =============================================================================
@@ -122,12 +122,12 @@ export class GoldenInterviewerService {
       metadata: {
         completionPercentage: 0,
         currentPhase: "opening",
-        lastToolUsed: null
-      }
+        lastToolUsed: null,
+      },
     };
 
     // Save session to Firestore
-    await this.firestore.setDocument(SESSIONS_COLLECTION, sessionId, session);
+    await this.firestore.saveDocument(SESSIONS_COLLECTION, sessionId, session);
 
     this.logger.info(
       { sessionId, userId },
@@ -142,14 +142,15 @@ export class GoldenInterviewerService {
       role: "assistant",
       content: firstTurnResponse.message,
       timestamp: new Date(),
-      uiTool: firstTurnResponse.ui_tool
+      uiTool: firstTurnResponse.ui_tool,
     });
     session.turnCount = 1;
     session.metadata.lastToolUsed = firstTurnResponse.ui_tool?.type;
-    session.metadata.currentPhase = firstTurnResponse.interview_phase || "opening";
+    session.metadata.currentPhase =
+      firstTurnResponse.interview_phase || "opening";
     session.updatedAt = new Date();
 
-    await this.firestore.setDocument(SESSIONS_COLLECTION, sessionId, session);
+    await this.firestore.saveDocument(SESSIONS_COLLECTION, sessionId, session);
 
     return {
       sessionId,
@@ -157,8 +158,8 @@ export class GoldenInterviewerService {
         message: firstTurnResponse.message,
         ui_tool: firstTurnResponse.ui_tool,
         completion_percentage: firstTurnResponse.completion_percentage || 0,
-        interview_phase: firstTurnResponse.interview_phase || "opening"
-      }
+        interview_phase: firstTurnResponse.interview_phase || "opening",
+      },
     };
   }
 
@@ -189,7 +190,7 @@ export class GoldenInterviewerService {
         role: "user",
         content: userMessage || "",
         timestamp: new Date(),
-        uiResponse
+        uiResponse,
       });
     }
 
@@ -199,13 +200,13 @@ export class GoldenInterviewerService {
       currentSchema: session.goldenSchema || {},
       uiResponse,
       previousToolType: previousTool,
-      turnNumber: session.turnCount + 1
+      turnNumber: session.turnCount + 1,
     });
 
     const llmResponse = await this.invokeLLM({
       systemPrompt: buildSystemPrompt({ currentSchema: session.goldenSchema }),
       userPrompt: turnPrompt,
-      conversationHistory: session.conversationHistory
+      conversationHistory: session.conversationHistory,
     });
 
     // Parse and validate LLM response
@@ -230,7 +231,7 @@ export class GoldenInterviewerService {
           {
             sessionId,
             tool: parsed.ui_tool.type,
-            errors: validation.errors
+            errors: validation.errors,
           },
           "golden-interviewer.ui_tool.validation_warning"
         );
@@ -242,7 +243,7 @@ export class GoldenInterviewerService {
       role: "assistant",
       content: parsed.message,
       timestamp: new Date(),
-      uiTool: parsed.ui_tool
+      uiTool: parsed.ui_tool,
     });
 
     // Update session metadata
@@ -250,25 +251,30 @@ export class GoldenInterviewerService {
     session.updatedAt = new Date();
     session.metadata = {
       ...session.metadata,
-      completionPercentage: parsed.completion_percentage || estimateSchemaCompletion(session.goldenSchema),
+      completionPercentage:
+        parsed.completion_percentage ||
+        estimateSchemaCompletion(session.goldenSchema),
       currentPhase: parsed.interview_phase || session.metadata?.currentPhase,
-      lastToolUsed: parsed.ui_tool?.type
+      lastToolUsed: parsed.ui_tool?.type,
     };
 
     // Check if interview is complete
-    if (parsed.completion_percentage >= 95 || parsed.interview_phase === "closing") {
+    if (
+      parsed.completion_percentage >= 95 ||
+      parsed.interview_phase === "closing"
+    ) {
       session.metadata.completionPercentage = parsed.completion_percentage;
     }
 
     // Save updated session
-    await this.firestore.setDocument(SESSIONS_COLLECTION, sessionId, session);
+    await this.firestore.saveDocument(SESSIONS_COLLECTION, sessionId, session);
 
     this.logger.info(
       {
         sessionId,
         turnCount: session.turnCount,
         completion: session.metadata.completionPercentage,
-        phase: session.metadata.currentPhase
+        phase: session.metadata.currentPhase,
       },
       "golden-interviewer.turn.processed"
     );
@@ -279,7 +285,7 @@ export class GoldenInterviewerService {
       completion_percentage: session.metadata.completionPercentage,
       interview_phase: session.metadata.currentPhase,
       extracted_fields: Object.keys(parsed.extraction?.updates || {}),
-      next_priority_fields: parsed.next_priority_fields
+      next_priority_fields: parsed.next_priority_fields,
     };
   }
 
@@ -297,13 +303,13 @@ export class GoldenInterviewerService {
     session.status = "completed";
     session.updatedAt = new Date();
 
-    await this.firestore.setDocument(SESSIONS_COLLECTION, sessionId, session);
+    await this.firestore.saveDocument(SESSIONS_COLLECTION, sessionId, session);
 
     this.logger.info(
       {
         sessionId,
         turnCount: session.turnCount,
-        completion: session.metadata?.completionPercentage
+        completion: session.metadata?.completionPercentage,
       },
       "golden-interviewer.session.completed"
     );
@@ -312,7 +318,7 @@ export class GoldenInterviewerService {
       sessionId,
       goldenSchema: session.goldenSchema,
       completionPercentage: session.metadata?.completionPercentage,
-      turnCount: session.turnCount
+      turnCount: session.turnCount,
     };
   }
 
@@ -336,8 +342,8 @@ export class GoldenInterviewerService {
         updatedAt: doc.updatedAt?.toDate?.() || new Date(doc.updatedAt),
         conversationHistory: (doc.conversationHistory || []).map((msg) => ({
           ...msg,
-          timestamp: msg.timestamp?.toDate?.() || new Date(msg.timestamp)
-        }))
+          timestamp: msg.timestamp?.toDate?.() || new Date(msg.timestamp),
+        })),
       };
     } catch (error) {
       this.logger.error(
@@ -364,7 +370,7 @@ export class GoldenInterviewerService {
       completionPercentage: session.metadata?.completionPercentage || 0,
       currentPhase: session.metadata?.currentPhase,
       createdAt: session.createdAt,
-      updatedAt: session.updatedAt
+      updatedAt: session.updatedAt,
     };
   }
 
@@ -379,14 +385,14 @@ export class GoldenInterviewerService {
    */
   async generateFirstTurn(session) {
     const systemPrompt = buildSystemPrompt({
-      currentSchema: session.goldenSchema
+      currentSchema: session.goldenSchema,
     });
     const userPrompt = buildFirstTurnPrompt();
 
     const response = await this.invokeLLM({
       systemPrompt,
       userPrompt,
-      conversationHistory: []
+      conversationHistory: [],
     });
 
     return this.parseLLMResponse(response);
@@ -401,29 +407,30 @@ export class GoldenInterviewerService {
    * @returns {Promise<object>}
    */
   async invokeLLM({ systemPrompt, userPrompt, conversationHistory }) {
-    // Build messages array
-    const messages = [{ role: "system", content: systemPrompt }];
+    // Build full user prompt including conversation history context
+    let fullUserPrompt = userPrompt;
 
     // Add relevant conversation history (last 10 turns for context)
     const recentHistory = conversationHistory.slice(-20);
-    recentHistory.forEach((msg) => {
-      messages.push({
-        role: msg.role,
-        content: msg.content
-      });
-    });
-
-    // Add current user prompt
-    messages.push({ role: "user", content: userPrompt });
+    if (recentHistory.length > 0) {
+      const historyText = recentHistory
+        .map(
+          (msg) =>
+            `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`
+        )
+        .join("\n\n");
+      fullUserPrompt = `Previous conversation:\n${historyText}\n\n---\n\nCurrent turn:\n${userPrompt}`;
+    }
 
     try {
       const response = await this.llmAdapter.invoke({
         model: DEFAULT_MODEL,
-        messages,
+        system: systemPrompt,
+        user: fullUserPrompt,
         mode: "json",
         temperature: 0.7,
         maxTokens: MAX_TOKENS,
-        taskType: "golden_interviewer"
+        taskType: "golden_interviewer",
       });
 
       return response;
@@ -474,7 +481,7 @@ export class GoldenInterviewerService {
           ui_tool: parsed.ui_tool,
           next_priority_fields: parsed.next_priority_fields || [],
           completion_percentage: parsed.completion_percentage || 0,
-          interview_phase: parsed.interview_phase || "opening"
+          interview_phase: parsed.interview_phase || "opening",
         };
       }
 
@@ -496,12 +503,12 @@ export class GoldenInterviewerService {
             title: "Tell me more",
             prompts: [
               "What else would you like to share about this role?",
-              "Is there anything specific you'd like to add?"
-            ]
-          }
+              "Is there anything specific you'd like to add?",
+            ],
+          },
         },
         completion_percentage: 0,
-        interview_phase: "opening"
+        interview_phase: "opening",
       };
     }
   }
@@ -564,7 +571,7 @@ export class GoldenInterviewerService {
       content: msg.content,
       timestamp: msg.timestamp,
       uiTool: msg.uiTool ? { type: msg.uiTool.type } : undefined,
-      hasUiResponse: !!msg.uiResponse
+      hasUiResponse: !!msg.uiResponse,
     }));
   }
 }
@@ -581,6 +588,10 @@ export class GoldenInterviewerService {
  * @param {object} options.logger - Logger instance
  * @returns {GoldenInterviewerService}
  */
-export function createGoldenInterviewerService({ firestore, llmAdapter, logger }) {
+export function createGoldenInterviewerService({
+  firestore,
+  llmAdapter,
+  logger,
+}) {
   return new GoldenInterviewerService({ firestore, llmAdapter, logger });
 }

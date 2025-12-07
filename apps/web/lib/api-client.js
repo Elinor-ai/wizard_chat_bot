@@ -2198,3 +2198,91 @@ export const VideoLibraryApi = {
     return parsed.items;
   },
 };
+
+// =============================================================================
+// GOLDEN INTERVIEW API (Standalone - No Wizard Dependencies)
+// =============================================================================
+
+const goldenInterviewStartResponseSchema = z.object({
+  sessionId: z.string(),
+  message: z.string().optional(),
+  ui_tool: z
+    .object({
+      type: z.string(),
+      props: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional()
+    .nullable(),
+});
+
+const goldenInterviewChatResponseSchema = z.object({
+  message: z.string().optional(),
+  ui_tool: z
+    .object({
+      type: z.string(),
+      props: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional()
+    .nullable(),
+});
+
+export const GoldenInterviewApi = {
+  /**
+   * Start a new golden interview session (fresh start, no context required)
+   * POST /golden-interview/start
+   * @param {Object} options - { authToken, signal }
+   * @returns {Promise<{ sessionId: string, message?: string, ui_tool?: object }>}
+   */
+  async startSession(options = {}) {
+    const response = await fetch(`${API_BASE_URL}/golden-interview/start`, {
+      method: "POST",
+      signal: options.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken),
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(
+        response,
+        "Failed to start golden interview session"
+      );
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return goldenInterviewStartResponseSchema.parse(data);
+  },
+
+  /**
+   * Send a message in an ongoing golden interview session
+   * POST /golden-interview/chat
+   * @param {Object} payload - { sessionId, message, value? }
+   * @param {Object} options - { authToken, signal }
+   * @returns {Promise<{ message?: string, ui_tool?: object }>}
+   */
+  async sendMessage(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/golden-interview/chat`, {
+      method: "POST",
+      signal: options.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(
+        response,
+        "Failed to send message"
+      );
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return goldenInterviewChatResponseSchema.parse(data);
+  },
+};
