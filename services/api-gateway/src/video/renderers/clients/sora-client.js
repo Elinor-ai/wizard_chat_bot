@@ -88,11 +88,16 @@ export class SoraClient extends IVideoClient {
       });
       const data = response.data ?? {};
       console.debug("[Sora] checkStatus response", data);
-      if (data.status === "succeeded") {
+      // OpenAI Sora API returns "completed" (not "succeeded")
+      if (data.status === "succeeded" || data.status === "completed") {
+        // OpenAI Sora requires a separate endpoint to download the video content
+        // The content URL is: /videos/{id}/content
+        const contentUrl = `${this.baseUrl}/videos/${id}/content`;
         return {
           id,
           status: "completed",
-          videoUrl: data.output?.video_url ?? null,
+          videoUrl: contentUrl,
+          seconds: data.seconds ? Number(data.seconds) : null,
         };
       }
       if (data.status === "failed") {

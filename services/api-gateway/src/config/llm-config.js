@@ -95,7 +95,7 @@ config[LLM_CORE_TASK.IMAGE_PROMPT_GENERATION] = {
 // The model here is used for Veo logging; Sora uses its own model from VIDEO_RENDER_CONFIG.
 // Note: This is primarily for usage tracking - actual video generation uses VIDEO_RENDER_CONFIG.
 config[LLM_SPECIAL_TASK.VIDEO_GENERATION] = {
-  provider: "veo",
+  provider: DEFAULT_VIDEO_PROVIDER,
   model: DEFAULT_VEO_MODEL
 };
 
