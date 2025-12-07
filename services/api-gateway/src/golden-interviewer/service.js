@@ -21,7 +21,7 @@ import { validateUIToolProps, getUIToolSchema } from "./tools-definition.js";
 // =============================================================================
 
 const SESSIONS_COLLECTION = "golden_interview_sessions";
-const DEFAULT_MODEL = "gemini-3-pro-preview";
+const DEFAULT_MODEL = "gemini-2.0-flash";
 const MAX_TOKENS = 2000;
 
 // =============================================================================
@@ -365,6 +365,7 @@ export class GoldenInterviewerService {
 
     return {
       sessionId: session.sessionId,
+      userId: session.userId,
       status: session.status,
       turnCount: session.turnCount,
       completionPercentage: session.metadata?.completionPercentage || 0,

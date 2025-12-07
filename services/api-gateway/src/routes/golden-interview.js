@@ -74,17 +74,13 @@ function verifySessionOwnership(session, userId) {
 export function goldenInterviewRouter({ firestore, logger }) {
   const router = Router();
 
-  // Load environment for Gemini
+  // Load environment for Vertex AI
   loadEnv();
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-  if (!GEMINI_API_KEY) {
-    logger.warn("GEMINI_API_KEY not set - Golden Interview will fail");
-  }
-
-  // Create LLM adapter (using Gemini with API key)
+  // Create LLM adapter (using Gemini via Vertex AI with service account auth)
   const llmAdapter = new GeminiAdapter({
-    apiKey: GEMINI_API_KEY,
+    // Uses GOOGLE_CLOUD_LOCATION and FIRESTORE_PROJECT_ID from env
+    // Authentication via service-account.json / ADC
   });
 
   // Create service instance

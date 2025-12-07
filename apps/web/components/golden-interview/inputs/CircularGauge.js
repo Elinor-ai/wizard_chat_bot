@@ -30,7 +30,7 @@ export default function CircularGauge({
   formatValue,
   trackColor = "rgba(255,255,255,0.1)",
   progressColor = "url(#gaugeGradient)",
-  size = 200
+  size = 200,
 }) {
   const svgRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -172,7 +172,7 @@ export default function CircularGauge({
           cx={knobX}
           cy={knobY}
           r={strokeWidth * 0.8}
-          fill="white"
+          fill="black"
           filter="url(#glow)"
           className="cursor-grab active:cursor-grabbing"
         />
@@ -182,7 +182,7 @@ export default function CircularGauge({
           x={center}
           y={center - 10}
           textAnchor="middle"
-          className="fill-white/60 text-sm font-medium"
+          className="fill-black/60 text-sm font-medium"
         >
           {label}
         </text>
@@ -190,7 +190,7 @@ export default function CircularGauge({
           x={center}
           y={center + 15}
           textAnchor="middle"
-          className="fill-white text-2xl font-bold"
+          className="fill-black text-2xl font-bold"
         >
           {displayValue}
         </text>
