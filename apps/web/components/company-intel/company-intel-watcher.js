@@ -2,14 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { WizardApi } from "../../lib/api-client";
+import { WizardApi, CompanyApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
 import { CompanyIntelModal } from "./company-intel-modal";
 import { CompanyIntelIndicator } from "./company-intel-indicator";
 import { CompanyNameConfirmModal } from "./company-name-confirm-modal";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 function determineStage(company) {
   if (!company) return null;
@@ -147,56 +144,39 @@ export function CompanyIntelWatcher() {
     if (!company?.id || !authToken || typeof window === "undefined") {
       return undefined;
     }
-    const source = new EventSource(
-      `${API_BASE_URL}/companies/stream/${company.id}?token=${encodeURIComponent(authToken)}`,
-      { withCredentials: true }
+
+    const subscription = CompanyApi.subscribeToCompanyStream(
+      company.id,
+      {
+        onCompanyUpdate: (nextCompany) => {
+          if (!nextCompany) return;
+          queryClient.setQueryData(["company-intel", "me"], (prev) => {
+            const base = prev ?? {};
+            const hasJobs =
+              base?.hasDiscoveredJobs ??
+              (nextCompany?.jobDiscoveryStatus === "FOUND_JOBS");
+            return {
+              ...base,
+              company: nextCompany,
+              hasDiscoveredJobs: Boolean(hasJobs)
+            };
+          });
+        },
+        onJobsUpdate: (nextJobs) => {
+          queryClient.setQueryData(["company-intel", "jobs", company.id], {
+            companyId: company.id,
+            jobs: nextJobs
+          });
+        },
+        onError: () => {
+          // Let react-query handle manual refetches on error if needed
+        }
+      },
+      { authToken }
     );
 
-    const handleCompanyUpdate = (event) => {
-      try {
-        const payload = JSON.parse(event.data ?? "{}");
-        const nextCompany = payload.company ?? null;
-        if (!nextCompany) return;
-        queryClient.setQueryData(["company-intel", "me"], (prev) => {
-          const base = prev ?? {};
-          const hasJobs =
-            base?.hasDiscoveredJobs ??
-            (nextCompany?.jobDiscoveryStatus === "FOUND_JOBS");
-          return {
-            ...base,
-            company: nextCompany,
-            hasDiscoveredJobs: Boolean(hasJobs)
-          };
-        });
-      } catch {
-        // ignore malformed payloads
-      }
-    };
-
-    const handleJobsUpdate = (event) => {
-      try {
-        const payload = JSON.parse(event.data ?? "{}");
-        const nextJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
-        queryClient.setQueryData(["company-intel", "jobs", company.id], {
-          companyId: company.id,
-          jobs: nextJobs
-        });
-      } catch {
-        // ignore malformed payloads
-      }
-    };
-
-    source.addEventListener("company_updated", handleCompanyUpdate);
-    source.addEventListener("jobs_updated", handleJobsUpdate);
-
-    source.onerror = () => {
-      // Let react-query handle manual refetches on error if needed
-    };
-
     return () => {
-      source.removeEventListener("company_updated", handleCompanyUpdate);
-      source.removeEventListener("jobs_updated", handleJobsUpdate);
-      source.close();
+      subscription.close();
     };
   }, [company?.id, authToken, queryClient]);
 

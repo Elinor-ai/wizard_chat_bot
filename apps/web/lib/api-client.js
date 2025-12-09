@@ -1,748 +1,55 @@
 import { z } from "zod";
-import { CompanySchema, UserSchema } from "@wizard/core";
 import { LLM_TASK } from "./llm-tasks";
+
+// Import all schemas from the schemas folder
+import {
+  // Auth
+  userResponseSchema,
+  authResponseSchema,
+  userUpdateResponseSchema,
+  changePasswordResponseSchema,
+  // Suggestions
+  copilotSuggestionResponseSchema,
+  // Channels
+  channelRecommendationResponseSchema,
+  // Assets
+  jobAssetResponseSchema,
+  // Jobs
+  wizardJobResponseSchema,
+  wizardJobSummarySchema,
+  refinementResponseSchema,
+  finalizeResponseSchema,
+  persistResponseSchema,
+  mergeResponseSchema,
+  heroImageSchema,
+  // Companies
+  companyOverviewResponseSchema,
+  companyJobsResponseSchema,
+  companyListResponseSchema,
+  companyUpdateResponseSchema,
+  companyCreateResponseSchema,
+  setMainCompanyResponseSchema,
+  // Copilot
+  copilotConversationResponseSchema,
+  // Dashboard
+  dashboardSummaryResponseSchema,
+  dashboardCampaignResponseSchema,
+  dashboardLedgerResponseSchema,
+  dashboardActivityResponseSchema,
+  // Subscriptions
+  subscriptionPlanListResponseSchema,
+  subscriptionPurchaseResponseSchema,
+  // Video
+  videoListItemSchema,
+  videoDetailSchema,
+  videoJobsResponseSchema,
+  // Interview
+  goldenInterviewStartResponseSchema,
+  goldenInterviewChatResponseSchema,
+} from "./schemas/index.js";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-
-const valueSchema = z.union([
-  z.string(),
-  z.number(),
-  z.boolean(),
-  z.record(z.string(), z.unknown()),
-  z.array(z.unknown()),
-  z.null(),
-]);
-
-const suggestionSchema = z.object({
-  fieldId: z.string(),
-  value: valueSchema,
-  rationale: z.string().optional(),
-  confidence: z.number().optional(),
-  source: z.string().optional(),
-});
-
-const suggestionFailureSchema = z
-  .object({
-    reason: z.string(),
-    rawPreview: z.string().optional().nullable(),
-    error: z.string().optional().nullable(),
-    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional(),
-  })
-  .transform((data) => ({
-    reason: data.reason,
-    rawPreview: data.rawPreview ?? null,
-    error: data.error ?? null,
-    occurredAt:
-      data.occurredAt instanceof Date
-        ? data.occurredAt
-        : data.occurredAt
-          ? new Date(data.occurredAt)
-          : null,
-  }));
-
-const copilotSuggestionResponseSchema = z
-  .object({
-    jobId: z.string().optional(),
-    suggestions: z.array(suggestionSchema).optional(),
-    updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
-    refreshed: z.boolean().optional(),
-    failure: suggestionFailureSchema.optional().nullable(),
-  })
-  .transform((data) => ({
-    jobId: data.jobId ?? null,
-    suggestions: data.suggestions ?? [],
-    updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
-    refreshed: Boolean(data.refreshed),
-    failure: data.failure ?? null,
-  }));
-
-const channelRecommendationSchema = z.object({
-  channel: z.string(),
-  reason: z.string(),
-  expectedCPA: z.number().optional(),
-});
-
-const channelRecommendationFailureSchema = z
-  .object({
-    reason: z.string(),
-    message: z.string().optional().nullable(),
-    rawPreview: z.string().optional().nullable(),
-    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional(),
-  })
-  .transform((data) => ({
-    reason: data.reason,
-    message: data.message ?? null,
-    rawPreview: data.rawPreview ?? null,
-    occurredAt:
-      data.occurredAt instanceof Date
-        ? data.occurredAt
-        : data.occurredAt
-          ? new Date(data.occurredAt)
-          : null,
-  }));
-
-const channelRecommendationResponseSchema = z
-  .object({
-    jobId: z.string(),
-    recommendations: z.array(channelRecommendationSchema).optional(),
-    updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
-    refreshed: z.boolean().optional(),
-    failure: channelRecommendationFailureSchema.optional().nullable(),
-  })
-  .transform((data) => ({
-    jobId: data.jobId,
-    recommendations: data.recommendations ?? [],
-    updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
-    refreshed: Boolean(data.refreshed),
-    failure: data.failure ?? null,
-  }));
-
-const jobAssetFailureSchema = z
-  .object({
-    reason: z.string(),
-    message: z.string().optional().nullable(),
-    rawPreview: z.string().optional().nullable(),
-    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional(),
-  })
-  .transform((data) => ({
-    reason: data.reason,
-    message: data.message ?? null,
-    rawPreview: data.rawPreview ?? null,
-    occurredAt: data.occurredAt
-      ? data.occurredAt instanceof Date
-        ? data.occurredAt
-        : new Date(data.occurredAt)
-      : null,
-  }));
-
-const jobAssetSchema = z
-  .object({
-    id: z.string(),
-    jobId: z.string(),
-    channelId: z.string(),
-    formatId: z.string(),
-    artifactType: z.string(),
-    status: z.string(),
-    provider: z.string().nullable().optional(),
-    model: z.string().nullable().optional(),
-    llmRationale: z.string().nullable().optional(),
-    content: z.record(z.string(), z.unknown()).optional().nullable(),
-    failure: jobAssetFailureSchema.optional().nullable(),
-    updatedAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-  })
-  .transform((data) => ({
-    ...data,
-    updatedAt: data.updatedAt
-      ? data.updatedAt instanceof Date
-        ? data.updatedAt
-        : new Date(data.updatedAt)
-      : null,
-  }));
-
-const jobImportContextSchema = z
-  .object({
-    source: z.string().optional(),
-    externalSource: z.string().optional(),
-    externalUrl: z.string().optional(),
-    sourceUrl: z.string().optional(),
-    companyJobId: z.string().optional(),
-    companyIntelSource: z.string().optional(),
-    discoveredAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-    originalPostedAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-    importedAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-    overallConfidence: z.number().optional(),
-    fieldConfidence: z.record(z.number()).optional(),
-    evidenceSources: z.array(z.string()).optional(),
-  })
-  .partial()
-  .nullable()
-  .transform((data) => {
-    if (!data) {
-      return null;
-    }
-    const toDate = (value) =>
-      value ? (value instanceof Date ? value : new Date(value)) : null;
-    return {
-      ...data,
-      discoveredAt: toDate(data.discoveredAt ?? null),
-      originalPostedAt: toDate(data.originalPostedAt ?? null),
-      importedAt: toDate(data.importedAt ?? null),
-    };
-  });
-
-const jobAssetRunSchema = z
-  .object({
-    id: z.string(),
-    jobId: z.string(),
-    status: z.string(),
-    channelIds: z.array(z.string()).optional(),
-    formatIds: z.array(z.string()).optional(),
-    stats: z
-      .object({
-        assetsPlanned: z.number().optional().nullable(),
-        assetsCompleted: z.number().optional().nullable(),
-        promptTokens: z.number().optional().nullable(),
-        responseTokens: z.number().optional().nullable(),
-      })
-      .optional(),
-    startedAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-    completedAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-    error: z
-      .object({
-        reason: z.string(),
-        message: z.string().nullable().optional(),
-      })
-      .nullable()
-      .optional(),
-  })
-  .transform((data) => ({
-    ...data,
-    channelIds: data.channelIds ?? [],
-    formatIds: data.formatIds ?? [],
-    startedAt: data.startedAt
-      ? data.startedAt instanceof Date
-        ? data.startedAt
-        : new Date(data.startedAt)
-      : null,
-    completedAt: data.completedAt
-      ? data.completedAt instanceof Date
-        ? data.completedAt
-        : new Date(data.completedAt)
-      : null,
-  }));
-
-const jobAssetResponseSchema = z.object({
-  jobId: z.string(),
-  assets: z.array(jobAssetSchema).default([]),
-  run: jobAssetRunSchema.nullable().optional(),
-});
-
-const companyOverviewResponseSchema = z.object({
-  company: CompanySchema,
-  hasDiscoveredJobs: z.boolean().optional().default(false),
-});
-
-const discoveredJobListItemSchema = z
-  .object({
-    id: z.string(),
-    roleTitle: z.string().optional(),
-    location: z.string().optional(),
-    status: z.string().nullable().optional(),
-    source: z.string().nullable().optional(),
-    externalUrl: z.string().nullable().optional(),
-    importContext: jobImportContextSchema.optional(),
-    createdAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-    updatedAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-  })
-  .transform((data) => ({
-    id: data.id,
-    roleTitle: data.roleTitle ?? "",
-    location: data.location ?? "",
-    status: data.status ?? null,
-    source: data.source ?? null,
-    externalUrl: data.externalUrl ?? null,
-    importContext: data.importContext ?? null,
-    createdAt: data.createdAt
-      ? data.createdAt instanceof Date
-        ? data.createdAt
-        : new Date(data.createdAt)
-      : null,
-    updatedAt: data.updatedAt
-      ? data.updatedAt instanceof Date
-        ? data.updatedAt
-        : new Date(data.updatedAt)
-      : null,
-  }));
-
-const companyJobsResponseSchema = z.object({
-  companyId: z.string().nullable(),
-  jobs: z.array(discoveredJobListItemSchema).default([]),
-});
-
-const companyListResponseSchema = z.object({
-  companies: z.array(CompanySchema).default([]),
-});
-
-const userResponseSchema = UserSchema;
-
-const subscriptionPlanSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  headline: z.string().optional().default(""),
-  description: z.string().optional().default(""),
-  credits: z.number(),
-  bonusCredits: z.number().optional().default(0),
-  totalCredits: z.number(),
-  priceUsd: z.number(),
-  currency: z.string().default("USD"),
-  bestFor: z.string().optional().default(""),
-  perks: z.array(z.string()).default([]),
-  badge: z.string().optional().nullable(),
-  effectiveUsdPerCredit: z.number().optional().nullable(),
-  markupMultiplier: z.number().optional().nullable(),
-});
-
-const subscriptionPlanListResponseSchema = z.object({
-  plans: z.array(subscriptionPlanSchema).default([]),
-  currency: z.string().default("USD"),
-  usdPerCredit: z.number().optional().nullable(),
-});
-
-const subscriptionPurchaseResponseSchema = z
-  .object({
-    purchase: z
-      .object({
-        id: z.string(),
-        planId: z.string(),
-        planName: z.string(),
-        credits: z.number(),
-        bonusCredits: z.number(),
-        totalCredits: z.number(),
-        priceUsd: z.number(),
-        currency: z.string(),
-        processedAt: z.union([z.string(), z.date()]).optional().nullable(),
-        paymentMethod: z
-          .object({
-            brand: z.string().optional().nullable(),
-            last4: z.string().optional().nullable(),
-          })
-          .optional(),
-      })
-      .nullable(),
-    credits: z
-      .object({
-        balance: z.number(),
-        reserved: z.number(),
-        lifetimeUsed: z.number(),
-      })
-      .optional(),
-    usage: z
-      .object({
-        remainingCredits: z.number().optional(),
-      })
-      .passthrough()
-      .optional(),
-    user: z
-      .object({
-        id: z.string(),
-      })
-      .passthrough()
-      .optional(),
-  })
-  .transform((data) => ({
-    ...data,
-    purchase: data.purchase
-      ? {
-          ...data.purchase,
-          processedAt: data.purchase.processedAt
-            ? data.purchase.processedAt instanceof Date
-              ? data.purchase.processedAt
-              : new Date(data.purchase.processedAt)
-            : null,
-        }
-      : null,
-  }));
-
-const companyUpdateResponseSchema = z.object({
-  company: CompanySchema,
-});
-
-const companyCreateResponseSchema = z.object({
-  company: CompanySchema,
-});
-
-const setMainCompanyResponseSchema = z.object({
-  success: z.boolean().optional(),
-  mainCompanyId: z.string(),
-});
-
-const jobDetailsSchema = z
-  .object({
-    roleTitle: z.string().optional().nullable(),
-    companyName: z.string().optional().nullable(),
-    location: z.string().optional().nullable(),
-    zipCode: z.string().optional().nullable(),
-    industry: z.string().optional().nullable(),
-    seniorityLevel: z.string().optional().nullable(),
-    employmentType: z.string().optional().nullable(),
-    workModel: z.string().optional().nullable(),
-    jobDescription: z.string().optional().nullable(),
-    coreDuties: z.array(z.string()).optional().nullable(),
-    mustHaves: z.array(z.string()).optional().nullable(),
-    benefits: z.array(z.string()).optional().nullable(),
-    salary: z.string().optional().nullable(),
-    salaryPeriod: z.string().optional().nullable(),
-    currency: z.string().optional().nullable(),
-  })
-  .transform((data) => ({
-    roleTitle: data.roleTitle ?? "",
-    companyName: data.companyName ?? "",
-    location: data.location ?? "",
-    zipCode: data.zipCode ?? "",
-    industry: data.industry ?? "",
-    seniorityLevel: data.seniorityLevel ?? "",
-    employmentType: data.employmentType ?? "",
-    workModel: data.workModel ?? "",
-    jobDescription: data.jobDescription ?? "",
-    coreDuties: Array.isArray(data.coreDuties) ? data.coreDuties : [],
-    mustHaves: Array.isArray(data.mustHaves) ? data.mustHaves : [],
-    benefits: Array.isArray(data.benefits) ? data.benefits : [],
-    salary: data.salary ?? "",
-    salaryPeriod: data.salaryPeriod ?? "",
-    currency: data.currency ?? "",
-  }));
-
-const refinementFailureSchema = z
-  .object({
-    reason: z.string(),
-    message: z.string().optional().nullable(),
-    rawPreview: z.string().optional().nullable(),
-    occurredAt: z.union([z.string(), z.instanceof(Date)]).optional(),
-  })
-  .transform((data) => ({
-    reason: data.reason,
-    message: data.message ?? null,
-    rawPreview: data.rawPreview ?? null,
-    occurredAt:
-      data.occurredAt instanceof Date
-        ? data.occurredAt
-        : data.occurredAt
-          ? new Date(data.occurredAt)
-          : null,
-  }));
-
-const refinementResponseSchema = z
-  .object({
-    jobId: z.string(),
-    refinedJob: jobDetailsSchema,
-    originalJob: jobDetailsSchema,
-    summary: z.string().optional().nullable(),
-    provider: z.string().optional().nullable(),
-    model: z.string().optional().nullable(),
-    updatedAt: z.union([z.string(), z.date()]).nullable().optional(),
-    refreshed: z.boolean().optional(),
-    failure: refinementFailureSchema.optional().nullable(),
-    metadata: z.record(z.string(), z.unknown()).optional().nullable(),
-  })
-  .transform((data) => ({
-    jobId: data.jobId,
-    refinedJob: data.refinedJob,
-    originalJob: data.originalJob,
-    summary: data.summary ?? "",
-    provider: data.provider ?? null,
-    model: data.model ?? null,
-    updatedAt: data.updatedAt ? new Date(data.updatedAt) : null,
-    refreshed: Boolean(data.refreshed),
-    failure: data.failure ?? null,
-    metadata: data.metadata ?? null,
-  }));
-
-const finalizeResponseSchema = z
-  .object({
-    jobId: z.string(),
-    finalJob: jobDetailsSchema,
-    source: z.string().optional().nullable(),
-    channelRecommendations: z.array(channelRecommendationSchema).optional(),
-    channelUpdatedAt: z.union([z.string(), z.date()]).nullable().optional(),
-    channelFailure: channelRecommendationFailureSchema.optional().nullable(),
-  })
-  .transform((data) => ({
-    jobId: data.jobId,
-    finalJob: data.finalJob,
-    source: data.source ?? null,
-    channelRecommendations: data.channelRecommendations ?? [],
-    channelUpdatedAt: data.channelUpdatedAt
-      ? new Date(data.channelUpdatedAt)
-      : null,
-    channelFailure: data.channelFailure ?? null,
-  }));
-
-const persistResponseSchema = z
-  .object({
-    jobId: z.string().optional(),
-    draftId: z.string().optional(),
-    status: z.string(),
-    state: z.string().optional(),
-    companyId: z.string().nullable().optional(),
-    intake: z.record(z.string(), z.unknown()).optional(),
-  })
-  .transform((data) => {
-    const jobId = data.jobId ?? data.draftId;
-    if (!jobId) {
-      throw new Error("Response missing jobId");
-    }
-    return {
-      jobId,
-      status: data.status,
-      state: data.state ?? null,
-      companyId: data.companyId ?? null,
-      intake: data.intake ?? null,
-    };
-  });
-
-const mergeResponseSchema = z.object({
-  status: z.string(),
-});
-
-const copilotMessageSchema = z
-  .object({
-    id: z.string(),
-    role: z.string(),
-    type: z.string().optional().nullable(),
-    content: z.string(),
-    createdAt: z.union([z.string(), z.instanceof(Date)]),
-    metadata: z.record(z.string(), z.unknown()).optional().nullable(),
-  })
-  .transform((data) => ({
-    ...data,
-    createdAt:
-      data.createdAt instanceof Date
-        ? data.createdAt
-        : new Date(data.createdAt),
-  }));
-
-const copilotActionSchema = z
-  .object({
-    type: z.string(),
-    fieldId: z.string().optional(),
-    value: z.unknown().optional(),
-  })
-  .catchall(z.unknown());
-
-const copilotConversationResponseSchema = z.object({
-  jobId: z.string(),
-  messages: z.array(copilotMessageSchema).default([]),
-  actions: z.array(copilotActionSchema).optional(),
-  updatedJobSnapshot: z
-    .record(z.string(), z.unknown())
-    .optional()
-    .nullable(),
-  updatedRefinedSnapshot: z
-    .record(z.string(), z.unknown())
-    .optional()
-    .nullable(),
-  updatedAssets: z.array(z.unknown()).optional().nullable()
-});
-
-const dashboardSummarySchema = z.object({
-  jobs: z.object({
-    total: z.number(),
-    active: z.number(),
-    awaitingApproval: z.number(),
-    draft: z.number(),
-    states: z.record(z.string(), z.number()),
-  }),
-  assets: z.object({
-    total: z.number(),
-    approved: z.number(),
-    queued: z.number(),
-  }),
-  campaigns: z.object({
-    total: z.number(),
-    live: z.number(),
-    planned: z.number(),
-  }),
-  credits: z.object({
-    balance: z.number(),
-    reserved: z.number(),
-    lifetimeUsed: z.number(),
-  }),
-  usage: z.object({
-    tokens: z.number(),
-    applies: z.number(),
-    interviews: z.number(),
-    hires: z.number(),
-    remainingCredits: z.number().optional().default(0),
-  }),
-  updatedAt: z.string(),
-});
-
-const dashboardSummaryResponseSchema = z.object({
-  summary: dashboardSummarySchema,
-});
-
-const dashboardCampaignSchema = z.object({
-  campaignId: z.string(),
-  jobId: z.string(),
-  jobTitle: z.string(),
-  logoUrl: z.string().optional().nullable(),
-  channel: z.string(),
-  status: z.string(),
-  budget: z.number(),
-  objective: z.string(),
-  createdAt: z
-    .union([z.string(), z.instanceof(Date)])
-    .transform((value) =>
-      value instanceof Date ? value.toISOString() : value
-    ),
-});
-
-const dashboardCampaignResponseSchema = z.object({
-  campaigns: z.array(dashboardCampaignSchema),
-});
-
-const dashboardLedgerEntrySchema = z.object({
-  id: z.string(),
-  jobId: z.string(),
-  type: z.string(),
-  workflow: z.string(),
-  amount: z.number(),
-  status: z.string(),
-  purchaseAmountUsd: z.number().optional().nullable(),
-  currency: z.string().optional().nullable(),
-  occurredAt: z
-    .union([z.string(), z.instanceof(Date)])
-    .transform((value) =>
-      value instanceof Date ? value.toISOString() : value
-    ),
-});
-
-const dashboardLedgerResponseSchema = z.object({
-  entries: z.array(dashboardLedgerEntrySchema),
-});
-
-const dashboardActivityEventSchema = z.object({
-  id: z.string(),
-  type: z.string(),
-  title: z.string(),
-  detail: z.string(),
-  occurredAt: z
-    .union([z.string(), z.instanceof(Date)])
-    .transform((value) =>
-      value instanceof Date ? value.toISOString() : value
-    ),
-});
-
-const dashboardActivityResponseSchema = z.object({
-  events: z.array(dashboardActivityEventSchema),
-});
-
-const wizardJobResponseSchema = z
-  .object({
-    jobId: z.string(),
-    state: z.record(z.string(), z.unknown()).optional(),
-    includeOptional: z.boolean().optional(),
-    updatedAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-    status: z.string().nullable().optional(),
-    companyId: z.string().nullable().optional(),
-    importContext: jobImportContextSchema.optional(),
-  })
-  .transform((data) => ({
-    jobId: data.jobId,
-    state: data.state ?? {},
-    includeOptional: Boolean(data.includeOptional),
-    updatedAt: data.updatedAt
-      ? data.updatedAt instanceof Date
-        ? data.updatedAt
-        : new Date(data.updatedAt)
-      : null,
-    status: data.status ?? null,
-    companyId: data.companyId ?? null,
-    importContext: data.importContext ?? null,
-  }));
-
-const wizardJobSummarySchema = z
-  .object({
-    id: z.string(),
-    roleTitle: z.string().nullable().optional(),
-    companyName: z.string().nullable().optional(),
-    status: z.string().nullable().optional(),
-    location: z.string().nullable().optional(),
-    updatedAt: z.union([z.string(), z.instanceof(Date)]).nullable().optional(),
-  })
-  .transform((data) => ({
-    id: data.id,
-    roleTitle: data.roleTitle ?? "Untitled role",
-    companyName: data.companyName ?? null,
-    status: data.status ?? "draft",
-    location: data.location ?? "",
-    updatedAt: data.updatedAt
-      ? data.updatedAt instanceof Date
-        ? data.updatedAt
-        : new Date(data.updatedAt)
-      : null,
-  }));
-
-const heroImageSchema = z
-  .object({
-    jobId: z.string(),
-    status: z.string(),
-    prompt: z.string().nullable().optional(),
-    promptProvider: z.string().nullable().optional(),
-    promptModel: z.string().nullable().optional(),
-    imageUrl: z.string().nullable().optional(),
-    imageBase64: z.string().nullable().optional(),
-    imageMimeType: z.string().nullable().optional(),
-    imageProvider: z.string().nullable().optional(),
-    imageModel: z.string().nullable().optional(),
-    failure: z
-      .object({
-        reason: z.string(),
-        message: z.string().nullable().optional(),
-        rawPreview: z.string().nullable().optional(),
-        occurredAt: z
-          .union([z.string(), z.instanceof(Date)])
-          .nullable()
-          .optional(),
-      })
-      .nullable()
-      .optional(),
-    metadata: z.record(z.string(), z.unknown()).nullable().optional(),
-    updatedAt: z
-      .union([z.string(), z.instanceof(Date)])
-      .nullable()
-      .optional(),
-    caption: z.string().nullable().optional(),
-    captionHashtags: z.array(z.string()).nullable().optional(),
-  })
-  .transform((data) => ({
-    ...data,
-    updatedAt: data.updatedAt
-      ? data.updatedAt instanceof Date
-        ? data.updatedAt
-        : new Date(data.updatedAt)
-      : null,
-    failure: data.failure
-      ? {
-          ...data.failure,
-          occurredAt: data.failure.occurredAt
-            ? data.failure.occurredAt instanceof Date
-              ? data.failure.occurredAt
-              : new Date(data.failure.occurredAt)
-            : null,
-        }
-      : null,
-    caption: data.caption ?? null,
-    captionHashtags: data.captionHashtags ?? null,
-  }));
 
 function authHeaders(authToken) {
   if (!authToken) {
@@ -1748,6 +1055,85 @@ export const UsersApi = {
     const data = await response.json();
     return userResponseSchema.parse(data);
   },
+
+  /**
+   * Update user profile
+   * PATCH /users/me
+   * @param {Object} payload - { profile: { name, companyName, phone, timezone, locale } }
+   * @param {Object} options - { authToken }
+   * @returns {Promise<User>}
+   */
+  async updateProfile(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/users/me`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(response, "Failed to update profile");
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return userUpdateResponseSchema.parse(data);
+  },
+
+  /**
+   * Update user preferences and experiments
+   * PATCH /users/me
+   * @param {Object} payload - { preferences, experiments }
+   * @param {Object} options - { authToken }
+   * @returns {Promise<User>}
+   */
+  async updatePreferences(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/users/me`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(response, "Failed to update preferences");
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return userUpdateResponseSchema.parse(data);
+  },
+
+  /**
+   * Change user password
+   * POST /users/me/change-password
+   * @param {Object} payload - { currentPassword, newPassword }
+   * @param {Object} options - { authToken }
+   * @returns {Promise<Object>}
+   */
+  async changePassword(payload, options = {}) {
+    const response = await fetch(`${API_BASE_URL}/users/me/change-password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(options.authToken),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      const message = data?.error?.message ?? data?.error ?? "Failed to change password";
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return changePasswordResponseSchema.parse(data);
+  },
 };
 
 export const SubscriptionApi = {
@@ -1786,194 +1172,6 @@ export const SubscriptionApi = {
     return subscriptionPurchaseResponseSchema.parse(data);
   },
 };
-
-const videoThumbnailSchema = z
-  .object({
-    description: z.string().optional().nullable(),
-    overlayText: z.string().optional().nullable(),
-  })
-  .optional()
-  .transform((data) => data ?? null);
-
-const videoJobSnapshotSchema = z.object({
-  jobId: z.string(),
-  title: z.string(),
-  company: z.string().nullable().optional(),
-  geo: z.string().nullable().optional(),
-  locationPolicy: z.string().nullable().optional(),
-  payRange: z.string().nullable().optional(),
-  benefits: z.array(z.string()).default([]),
-  roleFamily: z.string().nullable().optional(),
-});
-
-const storyboardShotSchema = z.object({
-  id: z.string(),
-  phase: z.string(),
-  order: z.number(),
-  startSeconds: z.number(),
-  durationSeconds: z.number(),
-  visual: z.string().optional().nullable(),
-  onScreenText: z.string().optional().nullable(),
-  voiceOver: z.string().optional().nullable(),
-});
-
-const videoCaptionSchema = z.object({
-  text: z.string(),
-  hashtags: z.array(z.string()).default([]),
-});
-
-const videoManifestSchema = z.object({
-  manifestId: z.string(),
-  version: z.number(),
-  placementName: z.string(),
-  job: videoJobSnapshotSchema,
-  storyboard: z.array(storyboardShotSchema).default([]),
-  caption: videoCaptionSchema,
-  thumbnail: videoThumbnailSchema,
-  compliance: z
-    .object({
-      flags: z
-        .array(
-          z.object({
-            id: z.string(),
-            label: z.string(),
-            severity: z.string(),
-            details: z.string().nullable().optional(),
-          })
-        )
-        .default([]),
-      qaChecklist: z
-        .array(
-          z.object({
-            id: z.string(),
-            label: z.string(),
-            status: z.string(),
-            details: z.string().nullable().optional(),
-          })
-        )
-        .default([]),
-    })
-    .default({ flags: [], qaChecklist: [] }),
-  tracking: z
-    .object({
-      utmSource: z.string(),
-      utmMedium: z.string(),
-      utmCampaign: z.string(),
-      utmContent: z.string(),
-    })
-    .optional(),
-});
-
-const generationMetricsSchema = z
-  .object({
-    secondsGenerated: z.number().nullable().optional(),
-    extendsRequested: z.number().nullable().optional(),
-    extendsCompleted: z.number().nullable().optional(),
-    model: z.string().nullable().optional(),
-    tier: z.string().nullable().optional(),
-    costEstimateUsd: z.number().nullable().optional(),
-    synthIdWatermark: z.boolean().nullable().optional(),
-  })
-  .nullable()
-  .optional();
-
-const veoStateSchema = z
-  .object({
-    operationName: z.string().nullable().optional(),
-    status: z.string().default("none"),
-    attempts: z.number().nullable().optional(),
-    lastFetchAt: z.union([z.string(), z.date()]).nullable().optional(),
-    hash: z.string().nullable().optional(),
-  })
-  .nullable()
-  .optional();
-
-const videoListItemSchema = z.object({
-  id: z.string(),
-  jobId: z.string(),
-  jobTitle: z.string(),
-  channelId: z.string(),
-  channelName: z.string(),
-  placementName: z.string(),
-  status: z.string(),
-  manifestVersion: z.number(),
-  durationSeconds: z.number().nullable().optional(),
-  updatedAt: z.union([z.string(), z.date()]).optional(),
-  thumbnail: videoThumbnailSchema,
-  hasVideo: z.boolean().optional().default(false),
-});
-
-const videoDetailSchema = z.object({
-  id: z.string(),
-  jobId: z.string(),
-  jobSnapshot: videoJobSnapshotSchema,
-  channelId: z.string(),
-  channelName: z.string(),
-  placementName: z.string(),
-  status: z.string(),
-  manifestVersion: z.number(),
-  // Manifest may be absent immediately after creation (generated async)
-  manifest: videoManifestSchema.optional().nullable(),
-  veo: veoStateSchema,
-  renderTask: z.record(z.string(), z.unknown()).nullable().optional(),
-  publishTask: z.record(z.string(), z.unknown()).nullable().optional(),
-  generationMetrics: generationMetricsSchema,
-  analytics: z.record(z.string(), z.unknown()).default({}),
-  auditLog: z
-    .array(
-      z.object({
-        id: z.string(),
-        type: z.string(),
-        message: z.string(),
-        occurredAt: z.union([z.string(), z.date()]),
-      })
-    )
-    .default([]),
-  playback: z
-    .object({
-      type: z.string(),
-      videoUrl: z.string().nullable().optional(),
-      posterUrl: z.string().nullable().optional(),
-      captionFileUrl: z.string().nullable().optional(),
-      storyboard: z.array(storyboardShotSchema).optional(),
-      durationSeconds: z.number().optional(),
-      caption: videoCaptionSchema.optional(),
-      synthesis: z
-        .object({
-          clipId: z.string().nullable().optional(),
-          extends: z
-            .array(
-              z.object({
-                hop: z.number().optional(),
-                clipId: z.string().nullable().optional(),
-              })
-            )
-            .optional(),
-        })
-        .nullable()
-        .optional(),
-    })
-    .nullable()
-    .optional(),
-  trackingString: z.string().nullable().optional(),
-  createdAt: z.union([z.string(), z.date()]).optional(),
-  updatedAt: z.union([z.string(), z.date()]).optional(),
-});
-
-const videoJobsResponseSchema = z.object({
-  jobs: z
-    .array(
-      z.object({
-        id: z.string(),
-        title: z.string(),
-        company: z.string().nullable().optional(),
-        location: z.string().optional(),
-        payRange: z.string().nullable().optional(),
-        benefits: z.array(z.string()).default([]),
-      })
-    )
-    .default([]),
-});
 
 export const VideoLibraryApi = {
   async fetchItems(filters = {}, options = {}) {
@@ -2203,29 +1401,6 @@ export const VideoLibraryApi = {
 // GOLDEN INTERVIEW API (Standalone - No Wizard Dependencies)
 // =============================================================================
 
-const goldenInterviewStartResponseSchema = z.object({
-  sessionId: z.string(),
-  message: z.string().optional(),
-  ui_tool: z
-    .object({
-      type: z.string(),
-      props: z.record(z.string(), z.unknown()).optional(),
-    })
-    .optional()
-    .nullable(),
-});
-
-const goldenInterviewChatResponseSchema = z.object({
-  message: z.string().optional(),
-  ui_tool: z
-    .object({
-      type: z.string(),
-      props: z.record(z.string(), z.unknown()).optional(),
-    })
-    .optional()
-    .nullable(),
-});
-
 export const GoldenInterviewApi = {
   /**
    * Start a new golden interview session
@@ -2287,5 +1462,145 @@ export const GoldenInterviewApi = {
 
     const data = await response.json();
     return goldenInterviewChatResponseSchema.parse(data);
+  },
+};
+
+// =============================================================================
+// AUTH API (Login, Signup, OAuth)
+// =============================================================================
+
+export const AuthApi = {
+  /**
+   * Login with email and password
+   * POST /auth/login
+   * @param {Object} payload - { email, password }
+   * @returns {Promise<{ user: User, token: string }>}
+   */
+  async login(payload) {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      const message = data?.error?.message ?? data?.error ?? "Login failed";
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return authResponseSchema.parse(data);
+  },
+
+  /**
+   * Register a new user
+   * POST /auth/signup
+   * @param {Object} payload - { email, password, name, companyName }
+   * @returns {Promise<{ user: User, token: string }>}
+   */
+  async signup(payload) {
+    const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      const message = data?.error?.message ?? data?.error ?? "Signup failed";
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return authResponseSchema.parse(data);
+  },
+
+  /**
+   * Sync OAuth user with backend (for NextAuth callbacks)
+   * POST /auth/oauth/google
+   * @param {Object} payload - { email, name, googleId }
+   * @returns {Promise<{ user: User, token: string }>}
+   */
+  async oauthGoogle(payload) {
+    const response = await fetch(`${API_BASE_URL}/auth/oauth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(response, "OAuth sync failed");
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    return authResponseSchema.parse(data);
+  },
+};
+
+// =============================================================================
+// COMPANY API (Streaming / Real-time)
+// =============================================================================
+
+export const CompanyApi = {
+  /**
+   * Subscribe to company update stream via EventSource
+   * GET /companies/stream/{companyId}
+   *
+   * @param {string} companyId - Company ID
+   * @param {Object} handlers - { onCompanyUpdate, onJobsUpdate, onError }
+   * @param {Object} options - { authToken }
+   * @returns {{ close: () => void }} - Object with close method to terminate the connection
+   */
+  subscribeToCompanyStream(companyId, handlers = {}, options = {}) {
+    const { onCompanyUpdate, onJobsUpdate, onError } = handlers;
+    const { authToken } = options;
+
+    const source = new EventSource(
+      `${API_BASE_URL}/companies/stream/${companyId}?token=${encodeURIComponent(authToken || "")}`,
+      { withCredentials: true }
+    );
+
+    const handleCompanyUpdate = (event) => {
+      try {
+        const payload = JSON.parse(event.data ?? "{}");
+        const company = payload.company ?? null;
+        if (company && onCompanyUpdate) {
+          onCompanyUpdate(company);
+        }
+      } catch {
+        // ignore malformed payloads
+      }
+    };
+
+    const handleJobsUpdate = (event) => {
+      try {
+        const payload = JSON.parse(event.data ?? "{}");
+        const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+        if (onJobsUpdate) {
+          onJobsUpdate(jobs);
+        }
+      } catch {
+        // ignore malformed payloads
+      }
+    };
+
+    source.addEventListener("company_updated", handleCompanyUpdate);
+    source.addEventListener("jobs_updated", handleJobsUpdate);
+
+    source.onerror = (error) => {
+      if (onError) {
+        onError(error);
+      }
+    };
+
+    return {
+      close: () => {
+        source.removeEventListener("company_updated", handleCompanyUpdate);
+        source.removeEventListener("jobs_updated", handleJobsUpdate);
+        source.close();
+      },
+    };
   },
 };

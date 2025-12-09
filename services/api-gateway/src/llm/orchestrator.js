@@ -77,6 +77,9 @@ export class LlmOrchestrator {
         maxTokens: this.resolveValue(task.maxTokens, selection.provider),
         taskType: taskName,
         route: requestRoute,
+        // Pass output schema for structured outputs (if defined on task)
+        outputSchema: task.outputSchema ?? null,
+        outputSchemaName: task.outputSchemaName ?? taskName,
       };
 
       llmLogger.info(

@@ -1,25 +1,29 @@
 /**
  * Golden Interviewer Service
  *
- * Orchestrates the interview process between User, Firestore, and LLM.
+ * Orchestrates the interview process between User, Firestore (via repository), and LLM.
  * Handles conversation turns, schema extraction, and UI tool selection.
  *
- * ARCHITECTURE: All LLM calls go through HTTP POST /api/llm.
- * This is the ONLY way the service invokes LLM models.
- * The service does NOT import or call llmClient or recordLlmUsageFromResult directly.
+ * ARCHITECTURE:
+ * - All LLM calls go through HTTP POST /api/llm.
+ * - All Firestore access goes through the golden-interviewer-repository.
+ * - The service does NOT import or call llmClient, recordLlmUsageFromResult, or Firestore directly.
  */
 
 import { nanoid } from "nanoid";
 import { estimateSchemaCompletion } from "./prompts.js";
 import { validateUIToolProps } from "./tools-definition.js";
 import { createInitialGoldenRecord } from "@wizard/core";
-
-// =============================================================================
-// CONSTANTS
-// =============================================================================
-
-const SESSIONS_COLLECTION = "golden_interview_sessions";
-const COMPANIES_COLLECTION = "companies";
+import {
+  getSession,
+  saveSession,
+  createSession as repoCreateSession,
+  getCompanyById,
+  buildAssistantMessage,
+  extractSessionStatus,
+  extractConversationHistory,
+  completeSession as repoCompleteSession,
+} from "../services/repositories/golden-interviewer-repository.js";
 
 // =============================================================================
 // GOLDEN INTERVIEWER SERVICE CLASS
@@ -28,7 +32,7 @@ const COMPANIES_COLLECTION = "companies";
 export class GoldenInterviewerService {
   /**
    * @param {object} options
-   * @param {object} options.firestore - Firestore adapter
+   * @param {object} options.firestore - Firestore adapter (passed to repository functions)
    * @param {object} options.logger - Logger instance
    * @param {string} options.apiBaseUrl - Base URL for internal API calls (e.g., "http://127.0.0.1:4000")
    */
@@ -119,24 +123,19 @@ export class GoldenInterviewerService {
    */
   async startSession({ userId, authToken, companyId = null, companyName = null }) {
     const sessionId = nanoid(12);
-    const now = new Date();
 
     // =========================================================================
-    // STEP 1: Fetch company data if companyId is provided
+    // STEP 1: Fetch company data if companyId is provided (via repository)
     // =========================================================================
     let companyData = null;
 
     if (companyId) {
       try {
-        const companyDoc = await this.firestore.getDocument(
-          COMPANIES_COLLECTION,
-          companyId
-        );
+        companyData = await getCompanyById(this.firestore, companyId);
 
-        if (companyDoc) {
-          companyData = { id: companyId, ...companyDoc };
+        if (companyData) {
           this.logger.info(
-            { sessionId, companyId, companyName: companyDoc.name },
+            { sessionId, companyId, companyName: companyData.name },
             "golden-interviewer.session.company_hydrated"
           );
         } else {
@@ -164,27 +163,15 @@ export class GoldenInterviewerService {
     const goldenSchema = createInitialGoldenRecord(sessionId, companyData);
 
     // =========================================================================
-    // STEP 3: Build and save session document
+    // STEP 3: Create session via repository
     // =========================================================================
-    const session = {
+    const session = await repoCreateSession({
+      firestore: this.firestore,
       sessionId,
       userId,
-      companyId, // Store for indexing/querying
-      createdAt: now,
-      updatedAt: now,
-      status: "active",
-      turnCount: 0,
-      goldenSchema, // Hydrated record with company context
-      conversationHistory: [],
-      metadata: {
-        completionPercentage: 0,
-        currentPhase: "opening",
-        lastToolUsed: null,
-      },
-    };
-
-    // Save session to Firestore
-    await this.firestore.saveDocument(SESSIONS_COLLECTION, sessionId, session);
+      companyId,
+      goldenSchema,
+    });
 
     this.logger.info(
       { sessionId, userId, companyId, hasCompanyContext: !!companyData },
@@ -196,20 +183,23 @@ export class GoldenInterviewerService {
     // =========================================================================
     const firstTurnResponse = await this.generateFirstTurn(session, authToken);
 
-    // Update session with first turn
-    session.conversationHistory.push({
-      role: "assistant",
+    // Update session with first turn via repository
+    const assistantMessage = buildAssistantMessage({
       content: firstTurnResponse.message,
-      timestamp: new Date(),
       uiTool: firstTurnResponse.ui_tool,
     });
+
+    session.conversationHistory.push(assistantMessage);
     session.turnCount = 1;
     session.metadata.lastToolUsed = firstTurnResponse.ui_tool?.type;
-    session.metadata.currentPhase =
-      firstTurnResponse.interview_phase || "opening";
+    session.metadata.currentPhase = firstTurnResponse.interview_phase || "opening";
     session.updatedAt = new Date();
 
-    await this.firestore.saveDocument(SESSIONS_COLLECTION, sessionId, session);
+    await saveSession({
+      firestore: this.firestore,
+      sessionId,
+      session,
+    });
 
     return {
       sessionId,
@@ -232,8 +222,8 @@ export class GoldenInterviewerService {
    * @returns {Promise<object>}
    */
   async processTurn({ sessionId, authToken, userMessage, uiResponse }) {
-    // Load session
-    const session = await this.loadSession(sessionId);
+    // Load session via repository
+    const session = await getSession(this.firestore, sessionId);
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
     }
@@ -351,12 +341,11 @@ export class GoldenInterviewerService {
     }
 
     // Add assistant response to history
-    session.conversationHistory.push({
-      role: "assistant",
+    const assistantMessage = buildAssistantMessage({
       content: parsed.message,
-      timestamp: new Date(),
       uiTool: parsed.ui_tool,
     });
+    session.conversationHistory.push(assistantMessage);
 
     // Update session metadata
     session.turnCount += 1;
@@ -378,8 +367,12 @@ export class GoldenInterviewerService {
       session.metadata.completionPercentage = parsed.completion_percentage;
     }
 
-    // Save updated session
-    await this.firestore.saveDocument(SESSIONS_COLLECTION, sessionId, session);
+    // Save updated session via repository
+    await saveSession({
+      firestore: this.firestore,
+      sessionId,
+      session,
+    });
 
     this.logger.info(
       {
@@ -407,63 +400,26 @@ export class GoldenInterviewerService {
    * @returns {Promise<object>}
    */
   async completeSession(sessionId) {
-    const session = await this.loadSession(sessionId);
+    const session = await getSession(this.firestore, sessionId);
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
     }
 
-    session.status = "completed";
-    session.updatedAt = new Date();
-
-    await this.firestore.saveDocument(SESSIONS_COLLECTION, sessionId, session);
+    const result = await repoCompleteSession({
+      firestore: this.firestore,
+      session,
+    });
 
     this.logger.info(
       {
         sessionId,
-        turnCount: session.turnCount,
-        completion: session.metadata?.completionPercentage,
+        turnCount: result.turnCount,
+        completion: result.completionPercentage,
       },
       "golden-interviewer.session.completed"
     );
 
-    return {
-      sessionId,
-      goldenSchema: session.goldenSchema,
-      completionPercentage: session.metadata?.completionPercentage,
-      turnCount: session.turnCount,
-    };
-  }
-
-  /**
-   * Load a session from Firestore
-   * @param {string} sessionId
-   * @returns {Promise<object|null>}
-   */
-  async loadSession(sessionId) {
-    try {
-      const doc = await this.firestore.getDocument(
-        SESSIONS_COLLECTION,
-        sessionId
-      );
-      if (!doc) return null;
-
-      // Convert Firestore timestamps
-      return {
-        ...doc,
-        createdAt: doc.createdAt?.toDate?.() || new Date(doc.createdAt),
-        updatedAt: doc.updatedAt?.toDate?.() || new Date(doc.updatedAt),
-        conversationHistory: (doc.conversationHistory || []).map((msg) => ({
-          ...msg,
-          timestamp: msg.timestamp?.toDate?.() || new Date(msg.timestamp),
-        })),
-      };
-    } catch (error) {
-      this.logger.error(
-        { sessionId, err: error },
-        "golden-interviewer.session.load_error"
-      );
-      return null;
-    }
+    return result;
   }
 
   /**
@@ -472,19 +428,8 @@ export class GoldenInterviewerService {
    * @returns {Promise<object|null>}
    */
   async getSessionStatus(sessionId) {
-    const session = await this.loadSession(sessionId);
-    if (!session) return null;
-
-    return {
-      sessionId: session.sessionId,
-      userId: session.userId,
-      status: session.status,
-      turnCount: session.turnCount,
-      completionPercentage: session.metadata?.completionPercentage || 0,
-      currentPhase: session.metadata?.currentPhase,
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt,
-    };
+    const session = await getSession(this.firestore, sessionId);
+    return extractSessionStatus(session);
   }
 
   // ===========================================================================
@@ -604,7 +549,7 @@ export class GoldenInterviewerService {
    * @returns {Promise<object|null>}
    */
   async getGoldenSchema(sessionId) {
-    const session = await this.loadSession(sessionId);
+    const session = await getSession(this.firestore, sessionId);
     return session?.goldenSchema || null;
   }
 
@@ -614,16 +559,8 @@ export class GoldenInterviewerService {
    * @returns {Promise<array>}
    */
   async getConversationHistory(sessionId) {
-    const session = await this.loadSession(sessionId);
-    if (!session) return [];
-
-    return session.conversationHistory.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-      timestamp: msg.timestamp,
-      uiTool: msg.uiTool ? { type: msg.uiTool.type } : undefined,
-      hasUiResponse: !!msg.uiResponse,
-    }));
+    const session = await getSession(this.firestore, sessionId);
+    return extractConversationHistory(session);
   }
 }
 
@@ -634,11 +571,13 @@ export class GoldenInterviewerService {
 /**
  * Create a Golden Interviewer service instance
  *
- * ARCHITECTURE: The service uses HTTP POST /api/llm for all LLM calls.
- * It does NOT import or call llmClient or recordLlmUsageFromResult directly.
+ * ARCHITECTURE:
+ * - The service uses HTTP POST /api/llm for all LLM calls.
+ * - The service uses the golden-interviewer-repository for all Firestore access.
+ * - It does NOT import or call llmClient, recordLlmUsageFromResult, or Firestore directly.
  *
  * @param {object} options
- * @param {object} options.firestore - Firestore adapter
+ * @param {object} options.firestore - Firestore adapter (passed to repository functions)
  * @param {object} options.logger - Logger instance
  * @param {string} options.apiBaseUrl - Base URL for internal API calls
  * @returns {GoldenInterviewerService}

@@ -1,4 +1,3 @@
-import "express-async-errors";
 import { createApp } from "./server.js";
 import { loadEnv, createLogger } from "@wizard/utils";
 import { createFirestoreAdapter, createBigQueryAdapter } from "@wizard/data";

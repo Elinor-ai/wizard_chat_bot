@@ -238,6 +238,7 @@ import { GoogleGenAI } from "@google/genai";
 import { llmLogger } from "../logger.js";
 import { logRawTraffic } from "../raw-traffic-logger.js";
 import { LLM_CORE_TASK } from "../../config/task-types.js";
+import { formatForGemini } from "../utils/schema-converter.js";
 
 const require = createRequire(import.meta.url);
 
@@ -380,6 +381,8 @@ export class GeminiAdapter {
     maxTokens = 800,
     taskType = null,
     route = null,
+    outputSchema = null,
+    outputSchemaName = null,
   }) {
     const userText = (user || "").trim();
     const systemText = (system || "").trim();
@@ -449,12 +452,55 @@ export class GeminiAdapter {
       config.systemInstruction = systemText;
     }
 
-    if (
-      mode === "json" &&
-      taskType !== LLM_CORE_TASK.IMAGE_GENERATION &&
-      !hasGroundingTools
-    ) {
-      config.responseMimeType = "application/json";
+    // JSON mode configuration
+    // Gemini API limitation: "Controlled generation" (responseMimeType AND responseJsonSchema)
+    // is NOT supported with Google Search/Maps grounding tools.
+    // When grounding is enabled, we skip both and rely on the prompt to request JSON output.
+    if (mode === "json" && taskType !== LLM_CORE_TASK.IMAGE_GENERATION) {
+      if (hasGroundingTools) {
+        // Grounding enabled: skip ALL controlled generation (Gemini API limitation)
+        // The prompt should request JSON output, and the parser will extract it from text
+        llmLogger.info(
+          {
+            taskType,
+            schemaName: outputSchemaName,
+            hasGroundingTools,
+            hasResponseMimeType: false,
+            hasResponseSchema: false,
+            reason: "grounding_blocks_controlled_generation",
+          },
+          "GeminiAdapter skipping JSON mode (incompatible with Search/Maps tools)"
+        );
+      } else {
+        // No grounding: safe to use controlled generation
+        config.responseMimeType = "application/json";
+
+        if (outputSchema) {
+          try {
+            const jsonSchema = formatForGemini(outputSchema);
+            if (jsonSchema) {
+              config.responseJsonSchema = jsonSchema;
+              llmLogger.info(
+                {
+                  taskType,
+                  schemaName: outputSchemaName,
+                  hasGroundingTools,
+                  hasResponseSchema: true,
+                },
+                "GeminiAdapter using native responseJsonSchema"
+              );
+            }
+          } catch (schemaError) {
+            llmLogger.warn(
+              {
+                taskType,
+                err: schemaError?.message,
+              },
+              "GeminiAdapter failed to convert outputSchema, falling back to JSON mode"
+            );
+          }
+        }
+      }
     }
 
     let response;

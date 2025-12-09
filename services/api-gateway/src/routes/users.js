@@ -1,7 +1,23 @@
+/**
+ * @file users.js
+ * User API Router - handles user profile and settings.
+ *
+ * ARCHITECTURE:
+ * - All Firestore access goes through user-repository.js
+ * - This router does NOT access firestore directly
+ */
+
 import { Router } from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { wrapAsync, httpError } from "@wizard/utils";
+import {
+  getUserByIdOrThrow,
+  updateUser,
+  updateUserPassword,
+  setUserMainCompany,
+  sanitizeUserForResponse
+} from "../services/repositories/index.js";
 
 function getAuthenticatedUserId(req) {
   const userId = req.user?.id;
@@ -50,20 +66,8 @@ export function usersRouter({ firestore, logger }) {
     "/me",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-
-      const user = await firestore.getDocument("users", userId);
-
-      if (!user) {
-        throw httpError(404, "User not found");
-      }
-
-      // Don't return password hash to client
-      const { passwordHash, ...authWithoutPassword } = user.auth;
-
-      res.json({
-        ...user,
-        auth: authWithoutPassword
-      });
+      const user = await getUserByIdOrThrow(firestore, userId);
+      res.json(sanitizeUserForResponse(user));
     })
   );
 
@@ -72,15 +76,8 @@ export function usersRouter({ firestore, logger }) {
     "/me",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-
       const payload = updateProfileSchema.parse(req.body ?? {});
-
-      // Get existing user
-      const existingUser = await firestore.getDocument("users", userId);
-
-      if (!existingUser) {
-        throw httpError(404, "User not found");
-      }
+      const existingUser = await getUserByIdOrThrow(firestore, userId);
 
       // Build update object
       const updates = {
@@ -108,21 +105,13 @@ export function usersRouter({ firestore, logger }) {
         };
       }
 
-      // Save updates
-      await firestore.saveDocument("users", userId, updates);
-
+      // Save updates via repository
+      await updateUser(firestore, userId, updates);
       logger.info({ userId }, "User profile updated");
 
-      // Fetch updated user
-      const updatedUser = await firestore.getDocument("users", userId);
-
-      // Don't return password hash to client
-      const { passwordHash, ...authWithoutPassword } = updatedUser.auth;
-
-      res.json({
-        ...updatedUser,
-        auth: authWithoutPassword
-      });
+      // Fetch and return updated user
+      const updatedUser = await getUserByIdOrThrow(firestore, userId);
+      res.json(sanitizeUserForResponse(updatedUser));
     })
   );
 
@@ -131,15 +120,8 @@ export function usersRouter({ firestore, logger }) {
     "/me/change-password",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-
       const payload = changePasswordSchema.parse(req.body ?? {});
-
-      // Get existing user
-      const existingUser = await firestore.getDocument("users", userId);
-
-      if (!existingUser) {
-        throw httpError(404, "User not found");
-      }
+      const existingUser = await getUserByIdOrThrow(firestore, userId);
 
       // Only allow password change for password provider
       if (existingUser.auth.provider !== "password") {
@@ -160,17 +142,9 @@ export function usersRouter({ firestore, logger }) {
         throw httpError(401, "Current password is incorrect");
       }
 
-      // Hash new password
+      // Hash new password and update via repository
       const newPasswordHash = await bcrypt.hash(payload.newPassword, 10);
-
-      // Update password
-      await firestore.saveDocument("users", userId, {
-        auth: {
-          ...existingUser.auth,
-          passwordHash: newPasswordHash
-        },
-        updatedAt: new Date()
-      });
+      await updateUserPassword(firestore, userId, existingUser.auth, newPasswordHash);
 
       logger.info({ userId }, "User password changed");
 
@@ -181,30 +155,17 @@ export function usersRouter({ firestore, logger }) {
     })
   );
 
+  // PATCH /users/me/main-company - Set main company
   router.patch(
     "/me/main-company",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
       const payload = setMainCompanySchema.parse(req.body ?? {});
-      const userDoc = await firestore.getDocument("users", userId);
-      if (!userDoc) {
-        throw httpError(404, "User not found");
-      }
-      const companyIds = Array.isArray(userDoc.profile?.companyIds)
-        ? userDoc.profile.companyIds.filter((value) => typeof value === "string" && value.trim().length > 0)
-        : [];
-      if (!companyIds.includes(payload.companyId)) {
-        throw httpError(400, "Company not linked to this user");
-      }
-      const nextProfile = {
-        ...(userDoc.profile ?? {}),
-        mainCompanyId: payload.companyId,
-        companyIds
-      };
-      await firestore.saveDocument("users", userId, {
-        profile: nextProfile,
-        updatedAt: new Date()
-      });
+      const userDoc = await getUserByIdOrThrow(firestore, userId);
+
+      // Set main company via repository (includes validation)
+      await setUserMainCompany(firestore, userId, userDoc.profile, payload.companyId);
+
       res.json({ success: true, mainCompanyId: payload.companyId });
     })
   );

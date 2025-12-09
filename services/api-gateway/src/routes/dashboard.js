@@ -1,6 +1,20 @@
+/**
+ * @file dashboard.js
+ * Dashboard API Router - handles dashboard data aggregation.
+ *
+ * ARCHITECTURE:
+ * - All Firestore access goes through dashboard-repository.js
+ * - This router does NOT access firestore directly
+ */
+
 import { Router } from "express";
 import { wrapAsync, httpError } from "@wizard/utils";
-import { JobAssetRecordSchema } from "@wizard/core";
+import {
+  loadSummaryData,
+  loadCampaignsData,
+  loadLedgerData,
+  loadActivityData
+} from "../services/repositories/index.js";
 
 function getAuthenticatedUserId(req) {
   const userId = req.user?.id;
@@ -8,34 +22,6 @@ function getAuthenticatedUserId(req) {
     throw httpError(401, "Unauthorized");
   }
   return userId;
-}
-
-function loadJobsForUser(firestore, userId) {
-  return firestore.listCollection("jobs", [
-    { field: "ownerUserId", operator: "==", value: userId }
-  ]);
-}
-
-async function loadAssetsForUser(firestore, userId) {
-  const docs = await firestore.queryDocuments(
-    "jobAssets",
-    "ownerUserId",
-    "==",
-    userId
-  );
-  return docs
-    .map((doc) => {
-      const parsed = JobAssetRecordSchema.safeParse(doc);
-      return parsed.success ? parsed.data : null;
-    })
-    .filter(Boolean);
-}
-
-async function loadCreditPurchases(firestore, userId) {
-  if (!firestore?.queryDocuments) {
-    return [];
-  }
-  return firestore.queryDocuments("creditPurchases", "userId", "==", userId);
 }
 
 function deriveJobTitle(job) {
@@ -271,11 +257,10 @@ export function dashboardRouter({ firestore, logger }) {
     "/summary",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const [jobs, assets, userDoc] = await Promise.all([
-        loadJobsForUser(firestore, userId),
-        loadAssetsForUser(firestore, userId),
-        firestore.getDocument("users", userId)
-      ]);
+
+      // Load data via repository
+      const { jobs, assets, userDoc } = await loadSummaryData(firestore, userId);
+
       const summary = computeSummary(jobs, assets);
       const usage = userDoc?.usage ?? {};
       const remainingCredits = Number(usage.remainingCredits ?? summary.usage.remainingCredits ?? 0);
@@ -301,7 +286,10 @@ export function dashboardRouter({ firestore, logger }) {
     "/campaigns",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const jobs = await loadJobsForUser(firestore, userId);
+
+      // Load data via repository
+      const jobs = await loadCampaignsData(firestore, userId);
+
       const campaigns = extractCampaigns(jobs);
       logger.info({ userId, campaignCount: campaigns.length }, "Fetched campaign overview");
       res.json({ campaigns });
@@ -312,10 +300,10 @@ export function dashboardRouter({ firestore, logger }) {
     "/ledger",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const [jobs, purchases] = await Promise.all([
-        loadJobsForUser(firestore, userId),
-        loadCreditPurchases(firestore, userId)
-      ]);
+
+      // Load data via repository
+      const { jobs, purchases } = await loadLedgerData(firestore, userId);
+
       const entries = extractLedger(jobs, purchases);
       logger.info({ userId, entryCount: entries.length }, "Fetched credit ledger entries");
       res.json({ entries });
@@ -326,10 +314,10 @@ export function dashboardRouter({ firestore, logger }) {
     "/activity",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const [jobs, assets] = await Promise.all([
-        loadJobsForUser(firestore, userId),
-        loadAssetsForUser(firestore, userId)
-      ]);
+
+      // Load data via repository
+      const { jobs, assets } = await loadActivityData(firestore, userId);
+
       const events = extractActivity(jobs, assets);
       logger.info({ userId, eventCount: events.length }, "Fetched recent dashboard activity");
       res.json({ events });

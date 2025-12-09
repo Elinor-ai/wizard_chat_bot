@@ -50,6 +50,23 @@ import {
   buildGoldenInterviewerSystemPrompt,
 } from "./prompts/golden-interviewer.js";
 import { parseGoldenInterviewerResult } from "./parsers/golden-interviewer.js";
+import {
+  SuggestOutputSchema,
+  RefineOutputSchema,
+  ChannelsOutputSchema,
+  CopilotAgentOutputSchema,
+  AssetMasterOutputSchema,
+  AssetChannelBatchOutputSchema,
+  AssetAdaptOutputSchema,
+  VideoConfigOutputSchema,
+  VideoStoryboardOutputSchema,
+  VideoCaptionOutputSchema,
+  VideoComplianceOutputSchema,
+  ImagePromptOutputSchema,
+  ImageCaptionOutputSchema,
+  CompanyIntelOutputSchema,
+  GoldenInterviewerOutputSchema,
+} from "./schemas/index.js";
 
 export const TASK_REGISTRY = {
   suggest: {
@@ -68,6 +85,8 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logSuggestionPreview,
+    outputSchema: SuggestOutputSchema,
+    outputSchemaName: "suggest_response",
   },
   refine: {
     system:
@@ -80,6 +99,8 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logRefinementPreview,
+    outputSchema: RefineOutputSchema,
+    outputSchemaName: "refine_response",
   },
   channels: {
     system:
@@ -92,17 +113,21 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logChannelPreview,
+    outputSchema: ChannelsOutputSchema,
+    outputSchemaName: "channels_response",
   },
   copilot_agent: {
     system:
       "You are Wizard's recruiting copilot agent. Decide intelligently whether to call a tool or answer directly. Always return valid JSON.",
     builder: buildCopilotAgentPrompt,
     parser: parseCopilotAgentResult,
-    mode: "text",
+    mode: "json",
     temperature: 0.3,
     maxTokens: { default: 800, gemini: 2048 },
     retries: 1,
     strictOnRetry: true,
+    outputSchema: CopilotAgentOutputSchema,
+    outputSchemaName: "copilot_agent_response",
   },
   asset_master: {
     system:
@@ -115,6 +140,8 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logAssetPreview,
+    outputSchema: AssetMasterOutputSchema,
+    outputSchemaName: "asset_master_response",
   },
   asset_channel_batch: {
     system:
@@ -127,6 +154,8 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logAssetPreview,
+    outputSchema: AssetChannelBatchOutputSchema,
+    outputSchemaName: "asset_channel_batch_response",
   },
   asset_adapt: {
     system:
@@ -139,6 +168,8 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logAssetPreview,
+    outputSchema: AssetAdaptOutputSchema,
+    outputSchemaName: "asset_adapt_response",
   },
   video_config: {
     system:
@@ -151,6 +182,8 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logVideoPreview,
+    outputSchema: VideoConfigOutputSchema,
+    outputSchemaName: "video_config_response",
   },
   video_storyboard: {
     system:
@@ -163,6 +196,8 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logVideoPreview,
+    outputSchema: VideoStoryboardOutputSchema,
+    outputSchemaName: "video_storyboard_response",
   },
   video_caption: {
     system:
@@ -175,6 +210,8 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logVideoPreview,
+    outputSchema: VideoCaptionOutputSchema,
+    outputSchemaName: "video_caption_response",
   },
   video_compliance: {
     system:
@@ -187,6 +224,8 @@ export const TASK_REGISTRY = {
     retries: 1,
     strictOnRetry: true,
     previewLogger: logVideoPreview,
+    outputSchema: VideoComplianceOutputSchema,
+    outputSchemaName: "video_compliance_response",
   },
   company_intel: {
     system:
@@ -197,7 +236,9 @@ export const TASK_REGISTRY = {
     temperature: 0.2,
     maxTokens: { default: 1000, gemini: 4096 },
     retries: 2,
-    strictOnRetry: true
+    strictOnRetry: true,
+    outputSchema: CompanyIntelOutputSchema,
+    outputSchemaName: "company_intel_response",
   },
   image_prompt_generation: {
     system:
@@ -209,9 +250,13 @@ export const TASK_REGISTRY = {
     maxTokens: { default: 600, gemini: 2048 },
     retries: 2,
     strictOnRetry: true,
-    previewLogger: logImagePromptPreview
+    previewLogger: logImagePromptPreview,
+    outputSchema: ImagePromptOutputSchema,
+    outputSchemaName: "image_prompt_response",
   },
   image_generation: {
+    // Note: image_generation is special - it directly generates images, not text
+    // No outputSchema as the response is binary image data
     system:
       "You are a bridge that forwards prompts to an image model. Always respond with JSON describing the resulting image payload.",
     builder: buildImageGenerationPayload,
@@ -231,7 +276,9 @@ export const TASK_REGISTRY = {
     temperature: 0.35,
     maxTokens: { default: 400, gemini: 800 },
     retries: 2,
-    strictOnRetry: true
+    strictOnRetry: true,
+    outputSchema: ImageCaptionOutputSchema,
+    outputSchemaName: "image_caption_response",
   },
   golden_interviewer: {
     // System prompt is dynamic - built per request based on current schema
@@ -250,6 +297,9 @@ export const TASK_REGISTRY = {
     maxTokens: { default: 4000, gemini: 8192 },
     retries: 2,
     strictOnRetry: true,
+    // Native structured output schema - enforces response structure at API level
+    outputSchema: GoldenInterviewerOutputSchema,
+    outputSchemaName: "golden_interviewer_response",
   },
 };
 

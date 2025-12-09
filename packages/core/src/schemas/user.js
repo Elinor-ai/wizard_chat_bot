@@ -44,7 +44,7 @@ export const UserSchema = z.object({
     billingCycleAnchor: TimestampSchema
   }),
   credits: z.object({
-    balance: NonNegativeNumber,
+    balance: z.number(), // Can go negative due to overdrafts or refund timing
     reserved: NonNegativeNumber,
     lifetimeUsed: NonNegativeNumber
   }),

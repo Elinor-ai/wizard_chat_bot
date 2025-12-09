@@ -1,6 +1,18 @@
+/**
+ * @file companies.js
+ * Company API Router
+ *
+ * ARCHITECTURE:
+ * - All LLM calls go through HTTP POST /api/llm.
+ * - All Firestore access goes through company-repository.js and user-repository.js.
+ * - This router does NOT import or call llmClient directly.
+ * - This router does NOT access firestore directly.
+ * - Background enrichment tasks call /api/llm with taskType: "company_intel".
+ */
+
 import { Router } from "express";
 import { z } from "zod";
-import { wrapAsync, httpError } from "@wizard/utils";
+import { wrapAsync, httpError, loadEnv } from "@wizard/utils";
 import {
   CompanySchema,
   CompanyDiscoveredJobSchema,
@@ -12,9 +24,93 @@ import {
   extractEmailDomain,
   isGenericEmailDomain,
   ensureCompanyEnrichmentQueued,
-  ensureCompanyForDomain,
-  runCompanyEnrichmentOnce
+  ensureCompanyForDomain
 } from "../services/company-intel.js";
+import {
+  getCompanyById,
+  getCompanyByDomain,
+  saveCompany,
+  getCompanyRefreshed,
+  listDiscoveredJobs,
+  listCompanyJobs,
+  subscribeToCompany,
+  subscribeToDiscoveredJobs,
+  getUserForCompanyResolution,
+  listCompaniesForUser,
+  sanitizeCompanyRecord
+} from "../services/repositories/index.js";
+import { linkCompanyToUser } from "../services/repositories/index.js";
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+/**
+ * Get auth token from request
+ * @param {Request} req
+ * @returns {string|null}
+ */
+function getAuthToken(req) {
+  return req.user?.token ?? null;
+}
+
+/**
+ * Trigger company enrichment via HTTP POST /api/llm
+ * This is the ONLY way this router triggers LLM operations.
+ *
+ * @param {object} options
+ * @param {string} options.apiBaseUrl - Base URL for internal API calls
+ * @param {string} options.authToken - Bearer token for authentication
+ * @param {string} options.companyId - Company ID to enrich
+ * @param {object} options.logger - Logger instance
+ * @returns {Promise<object|null>} - The enrichment result or null on failure
+ */
+async function triggerCompanyEnrichmentViaHttp({ apiBaseUrl, authToken, companyId, logger }) {
+  if (!authToken) {
+    logger?.warn?.({ companyId }, "company.enrichment.skipped_no_auth");
+    return null;
+  }
+
+  const url = `${apiBaseUrl}/api/llm`;
+
+  try {
+    logger?.info?.({ companyId }, "company.enrichment.http_request");
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        taskType: "company_intel",
+        context: { companyId },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      logger?.warn?.(
+        { companyId, status: response.status, error: errorText },
+        "company.enrichment.http_error"
+      );
+      return null;
+    }
+
+    const data = await response.json();
+    logger?.info?.(
+      { companyId, hasResult: !!data?.result },
+      "company.enrichment.http_success"
+    );
+    return data?.result ?? null;
+  } catch (err) {
+    logger?.error?.(
+      { companyId, err },
+      "company.enrichment.http_failed"
+    );
+    return null;
+  }
+}
 
 const PLACEHOLDER_URL_PATTERNS = [/example\.com/i, /sample/i, /placeholder/i, /dummy/i];
 const DomainStringSchema = z
@@ -23,42 +119,12 @@ const DomainStringSchema = z
   .regex(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)
   .transform((value) => value.trim().toLowerCase());
 
-function ensureEnumValue(enumShape, value, fallback) {
-  const allowed = Object.values(enumShape.enum ?? {});
-  return allowed.includes(value) ? value : fallback;
-}
-
-function sanitizeCompanyRecord(rawCompany, fallbackDomain = "") {
-  const fallbackDate = new Date();
-  const normalizedDomain =
-    typeof rawCompany.primaryDomain === "string" && rawCompany.primaryDomain.trim().length > 0
-      ? rawCompany.primaryDomain.toLowerCase()
-      : (fallbackDomain ?? "").toLowerCase();
-  return {
-    ...rawCompany,
-    name: typeof rawCompany.name === "string" ? rawCompany.name : "",
-    primaryDomain: normalizedDomain,
-    additionalDomains: Array.isArray(rawCompany.additionalDomains)
-      ? rawCompany.additionalDomains.filter((domain) => typeof domain === "string" && domain.trim())
-      : [],
-    enrichmentStatus: ensureEnumValue(
-      CompanyEnrichmentStatusEnum,
-      rawCompany.enrichmentStatus,
-      CompanyEnrichmentStatusEnum.enum.PENDING
-    ),
-    jobDiscoveryStatus: ensureEnumValue(
-      CompanyJobDiscoveryStatusEnum,
-      rawCompany.jobDiscoveryStatus,
-      CompanyJobDiscoveryStatusEnum.enum.UNKNOWN
-    ),
-    companyType: ensureEnumValue(CompanyTypeEnum, rawCompany.companyType, CompanyTypeEnum.enum.company),
-    createdAt: rawCompany.createdAt ?? rawCompany.updatedAt ?? fallbackDate,
-    updatedAt: rawCompany.updatedAt ?? rawCompany.createdAt ?? fallbackDate
-  };
-}
-
+/**
+ * Resolve company context for authenticated user via repository
+ */
 async function resolveCompanyContext({ firestore, user, logger }) {
-  const userDoc = await firestore.getDocument("users", user.id);
+  // Get user via repository
+  const userDoc = await getUserForCompanyResolution(firestore, user.id);
   if (!userDoc) {
     throw httpError(404, "User context not found");
   }
@@ -69,10 +135,12 @@ async function resolveCompanyContext({ firestore, user, logger }) {
     null;
   let lookupDomain = userDoc.profile?.companyDomain?.toLowerCase?.() ?? null;
 
+  // Get company by ID via repository
   if (profileCompanyId) {
-    rawCompany = await firestore.getDocument("companies", profileCompanyId);
+    rawCompany = await getCompanyById(firestore, profileCompanyId);
   }
 
+  // Fallback to domain lookup via repository
   if (!rawCompany) {
     const domainFromProfile = userDoc.profile?.companyDomain ?? null;
     const fallbackDomain = extractEmailDomain(userDoc.auth?.email ?? user.email ?? null);
@@ -81,7 +149,7 @@ async function resolveCompanyContext({ firestore, user, logger }) {
     if (!domain || isGenericEmailDomain(domain)) {
       throw httpError(404, "No company associated with this account");
     }
-    rawCompany = await firestore.getCompanyByDomain(domain);
+    rawCompany = await getCompanyByDomain(firestore, domain);
     if (!rawCompany) {
       throw httpError(404, "Company not found for this domain");
     }
@@ -106,10 +174,14 @@ async function resolveCompanyContext({ firestore, user, logger }) {
   return parsed.data;
 }
 
+/**
+ * Resolve company context for a specific company ID via repository
+ */
 async function resolveCompanyContextForUser({ firestore, user, logger, companyId }) {
   if (!companyId) {
     return resolveCompanyContext({ firestore, user, logger });
   }
+  // Use repository function to list companies for user
   const companies = await listCompaniesForUser({ firestore, user, logger });
   const targetCompany = companies.find((company) => company.id === companyId);
   if (!targetCompany) {
@@ -174,54 +246,6 @@ function mapLegacyJobForResponse(job) {
     createdAt: job.discoveredAt ?? null,
     updatedAt: job.discoveredAt ?? null
   };
-}
-
-export async function listCompaniesForUser({ firestore, user, logger }) {
-  const userDoc = await firestore.getDocument("users", user.id);
-  if (!userDoc) {
-    throw httpError(404, "User context not found");
-  }
-
-  const companies = new Map();
-  const collect = (rawCompany) => {
-    if (!rawCompany?.id) {
-      return;
-    }
-    const sanitized = sanitizeCompanyRecord(rawCompany, rawCompany.primaryDomain);
-    const parsed = CompanySchema.safeParse(sanitized);
-    if (!parsed.success) {
-      logger?.error?.(
-        { userId: user.id, companyId: rawCompany.id, issues: parsed.error?.flatten?.() },
-        "User company record invalid"
-      );
-      return;
-    }
-    companies.set(parsed.data.id, parsed.data);
-  };
-
-  const profileCompanyIds = Array.isArray(userDoc.profile?.companyIds)
-    ? userDoc.profile.companyIds.filter((value) => typeof value === "string" && value.trim().length > 0)
-    : [];
-  const mainCompanyId = userDoc.profile?.mainCompanyId ?? null;
-  const uniqueCompanyIds = new Set(profileCompanyIds);
-  if (typeof mainCompanyId === "string" && mainCompanyId.trim().length > 0) {
-    uniqueCompanyIds.add(mainCompanyId.trim());
-  }
-  for (const companyId of uniqueCompanyIds) {
-    const direct = await firestore.getDocument("companies", companyId);
-    collect(direct);
-  }
-
-  const domain = userDoc.profile?.companyDomain ?? null;
-  if (domain) {
-    const fromDomain = await firestore.getCompanyByDomain(domain);
-    collect(fromDomain);
-  }
-
-  const created = await firestore.queryDocuments("companies", "createdByUserId", "==", user.id);
-  created.forEach(collect);
-
-  return Array.from(companies.values());
 }
 
 function buildCompanyUpdatePatch(payload) {
@@ -321,8 +345,13 @@ const createCompanySchema = z.object({
   hqCity: z.string().optional()
 });
 
-export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
+export function companiesRouter({ firestore, bigQuery, logger }) {
   const router = Router();
+
+  // Determine API base URL for internal HTTP calls (same pattern as golden-interview)
+  const env = loadEnv();
+  const port = Number(env.PORT ?? 4000);
+  const apiBaseUrl = `http://127.0.0.1:${port}`;
 
   router.get(
     "/me",
@@ -348,14 +377,15 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
         throw httpError(401, "Unauthorized");
       }
       const company = await resolveCompanyContext({ firestore, user, logger });
-      const discoveredJobs = await firestore.listDiscoveredJobs(company.id);
+      // Load jobs via repository
+      const discoveredJobs = await listDiscoveredJobs(firestore, company.id);
       let jobs;
       if (discoveredJobs.length > 0) {
         jobs = discoveredJobs
           .map(mapDiscoveredJobForResponse)
           .filter(Boolean);
       } else {
-        const legacy = normalizeCompanyJobs(await firestore.listCompanyJobs(company.id));
+        const legacy = normalizeCompanyJobs(await listCompanyJobs(firestore, company.id));
         jobs = legacy.map(mapLegacyJobForResponse).filter(Boolean);
       }
       logger?.info?.(
@@ -380,6 +410,7 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
       if (!companyId) {
         throw httpError(400, "Company identifier required");
       }
+      // Get companies via repository
       const companies = await listCompaniesForUser({ firestore, user, logger });
       const targetCompany = companies.find((company) => company.id === companyId);
       if (!targetCompany) {
@@ -401,8 +432,9 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
       };
 
       sendEvent("company_updated", { company: targetCompany });
+      // Load jobs via repository
       const existingJobs =
-        (await firestore.listDiscoveredJobs(companyId))
+        (await listDiscoveredJobs(firestore, companyId))
           .map(mapDiscoveredJobForResponse)
           .filter(Boolean) ?? [];
       sendEvent("jobs_updated", { jobs: existingJobs });
@@ -413,8 +445,9 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
       }, 25_000);
       cleanups.push(() => clearInterval(heartbeat));
 
-      const companyUnsub = firestore.subscribeDocument(
-        "companies",
+      // Subscribe to company updates via repository
+      const companyUnsub = subscribeToCompany(
+        firestore,
         companyId,
         (doc) => {
           if (!doc) return;
@@ -434,9 +467,10 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
       );
       cleanups.push(companyUnsub);
 
-      const jobsUnsub = firestore.subscribeCollection(
-        "discoveredJobs",
-        [{ field: "companyId", operator: "==", value: companyId }],
+      // Subscribe to discovered jobs via repository
+      const jobsUnsub = subscribeToDiscoveredJobs(
+        firestore,
+        companyId,
         (docs) => {
           const mapped = docs.map(mapDiscoveredJobForResponse).filter(Boolean);
           sendEvent("jobs_updated", { jobs: mapped });
@@ -538,21 +572,25 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
         updates.profileConfirmed = false;
       }
 
-      await firestore.saveCompanyDocument(company.id, updates);
-      const refreshed = CompanySchema.parse(await firestore.getDocument("companies", company.id));
+      // Save via repository and get refreshed company
+      await saveCompany(firestore, company.id, updates);
+      const refreshed = await getCompanyRefreshed(firestore, company.id);
+
+      // Extract auth token before sending response (needed for background HTTP call)
+      const authToken = getAuthToken(req);
 
       res.json({
         company: refreshed,
         hasDiscoveredJobs: refreshed.jobDiscoveryStatus === "FOUND_JOBS"
       });
 
+      // Trigger enrichment via HTTP POST /api/llm (background, fire-and-forget)
       await ensureCompanyEnrichmentQueued({ firestore, logger, company: refreshed });
-      runCompanyEnrichmentOnce({
-        firestore,
-        bigQuery,
-        logger,
-        llmClient,
-        company: refreshed
+      triggerCompanyEnrichmentViaHttp({
+        apiBaseUrl,
+        authToken,
+        companyId: refreshed.id,
+        logger
       }).catch((err) => {
         logger.error({ companyId: refreshed.id, err }, "Background enrichment trigger failed after name confirmation");
       });
@@ -592,8 +630,9 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
 
       if (payload.approved) {
         updates.profileConfirmed = true;
-        await firestore.saveCompanyDocument(company.id, updates);
-        const refreshed = CompanySchema.parse(await firestore.getDocument("companies", company.id));
+        // Save via repository
+        await saveCompany(firestore, company.id, updates);
+        const refreshed = await getCompanyRefreshed(firestore, company.id);
         return res.json({
           company: refreshed,
           hasDiscoveredJobs: refreshed.jobDiscoveryStatus === "FOUND_JOBS"
@@ -622,21 +661,25 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
       updates.lastEnrichedAt = null;
       updates.lastJobDiscoveryAt = null;
 
-      await firestore.saveCompanyDocument(company.id, updates);
-      const refreshed = CompanySchema.parse(await firestore.getDocument("companies", company.id));
+      // Save via repository
+      await saveCompany(firestore, company.id, updates);
+      const refreshed = await getCompanyRefreshed(firestore, company.id);
       await ensureCompanyEnrichmentQueued({ firestore, logger, company: refreshed });
+
+      // Extract auth token before sending response (needed for background HTTP call)
+      const authToken = getAuthToken(req);
 
       res.json({
         company: refreshed,
         hasDiscoveredJobs: refreshed.jobDiscoveryStatus === "FOUND_JOBS"
       });
 
-      runCompanyEnrichmentOnce({
-        firestore,
-        bigQuery,
-        logger,
-        llmClient,
-        company: refreshed
+      // Trigger enrichment via HTTP POST /api/llm (background, fire-and-forget)
+      triggerCompanyEnrichmentViaHttp({
+        apiBaseUrl,
+        authToken,
+        companyId: refreshed.id,
+        logger
       }).catch((err) => {
         logger.error({ companyId: refreshed.id, err }, "Background enrichment trigger failed after profile update");
       });
@@ -678,42 +721,26 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
           company.locationHint ||
           ""
       };
-      const savedCompany = CompanySchema.parse(
-        await firestore.saveCompanyDocument(company.id, companyUpdates)
-      );
+      // Save company via repository
+      const savedRaw = await saveCompany(firestore, company.id, companyUpdates);
+      const savedCompany = CompanySchema.parse(savedRaw);
 
-      const userDoc = await firestore.getDocument("users", user.id);
-      if (!userDoc) {
-        throw httpError(404, "User not found");
-      }
-      const existingProfile = userDoc.profile ?? {};
-      const companyIds = Array.isArray(existingProfile.companyIds)
-        ? [...existingProfile.companyIds]
-        : [];
-      if (!companyIds.includes(savedCompany.id)) {
-        companyIds.push(savedCompany.id);
-      }
-      const nextProfile = {
-        ...existingProfile,
-        companyIds,
-        companyDomain: existingProfile.companyDomain ?? savedCompany.primaryDomain,
-        mainCompanyId: existingProfile.mainCompanyId ?? savedCompany.id
-      };
-      await firestore.saveDocument("users", user.id, {
-        profile: nextProfile,
-        updatedAt: new Date()
-      });
+      // Link company to user via repository
+      await linkCompanyToUser(firestore, user.id, savedCompany.id, savedCompany.primaryDomain);
 
       await ensureCompanyEnrichmentQueued({ firestore, logger, company: savedCompany });
 
+      // Extract auth token before sending response (needed for background HTTP call)
+      const authToken = getAuthToken(req);
+
       res.status(201).json({ company: savedCompany });
 
-      runCompanyEnrichmentOnce({
-        firestore,
-        bigQuery,
-        logger,
-        llmClient,
-        company: savedCompany
+      // Trigger enrichment via HTTP POST /api/llm (background, fire-and-forget)
+      triggerCompanyEnrichmentViaHttp({
+        apiBaseUrl,
+        authToken,
+        companyId: savedCompany.id,
+        logger
       }).catch((err) => {
         logger.error(
           { companyId: savedCompany.id, err },
@@ -771,11 +798,12 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
       if (!targetCompany) {
         throw httpError(404, "Company not found");
       }
-      const discoveredJobs = await firestore.listDiscoveredJobs(companyId);
+      // Load jobs via repository
+      const discoveredJobs = await listDiscoveredJobs(firestore, companyId);
       const jobs =
         discoveredJobs.length > 0
           ? discoveredJobs.map(mapDiscoveredJobForResponse).filter(Boolean)
-          : normalizeCompanyJobs(await firestore.listCompanyJobs(companyId))
+          : normalizeCompanyJobs(await listCompanyJobs(firestore, companyId))
               .map(mapLegacyJobForResponse)
               .filter(Boolean);
       logger?.info?.(
@@ -818,10 +846,9 @@ export function companiesRouter({ firestore, bigQuery, logger, llmClient }) {
           patch.website = `https://${payload.primaryDomain}`;
         }
       }
-      await firestore.saveCompanyDocument(targetCompany.id, patch);
-      const refreshed = CompanySchema.parse(
-        await firestore.getDocument("companies", targetCompany.id)
-      );
+      // Save via repository
+      await saveCompany(firestore, targetCompany.id, patch);
+      const refreshed = await getCompanyRefreshed(firestore, targetCompany.id);
       res.json({ company: refreshed });
     })
   );

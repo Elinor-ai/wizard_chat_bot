@@ -1,5 +1,6 @@
 import { llmLogger } from "../logger.js";
 import { logRawTraffic } from "../raw-traffic-logger.js";
+import { formatForOpenAI } from "../utils/schema-converter.js";
 
 export class OpenAIAdapter {
   constructor({ apiKey, apiUrl }) {
@@ -22,6 +23,8 @@ export class OpenAIAdapter {
     maxTokens = 800,
     taskType = null,
     route = null,
+    outputSchema = null,
+    outputSchemaName = null,
   }) {
     this.ensureKey();
 
@@ -43,7 +46,39 @@ export class OpenAIAdapter {
     };
 
     if (mode === "json") {
-      payload.response_format = { type: "json_object" };
+      // Use native structured outputs if outputSchema is provided
+      if (outputSchema) {
+        try {
+          const responseFormat = formatForOpenAI(
+            outputSchema,
+            outputSchemaName || "response"
+          );
+          if (responseFormat) {
+            payload.response_format = responseFormat;
+            llmLogger.info(
+              {
+                taskType,
+                schemaName: outputSchemaName,
+                hasStructuredOutput: true,
+              },
+              "OpenAIAdapter using native structured outputs"
+            );
+          } else {
+            payload.response_format = { type: "json_object" };
+          }
+        } catch (schemaError) {
+          llmLogger.warn(
+            {
+              taskType,
+              err: schemaError?.message,
+            },
+            "OpenAIAdapter failed to convert outputSchema, falling back to json_object"
+          );
+          payload.response_format = { type: "json_object" };
+        }
+      } else {
+        payload.response_format = { type: "json_object" };
+      }
     }
 
     await logRawTraffic({

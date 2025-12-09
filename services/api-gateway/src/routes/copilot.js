@@ -1,32 +1,21 @@
+/**
+ * @file copilot.js
+ * Copilot API Router - handles chat history retrieval
+ *
+ * ARCHITECTURE:
+ * - This router ONLY handles GET /chat for chat history
+ * - All LLM operations (POST copilot_agent) go through POST /api/llm
+ * - This router does NOT import or call llmClient directly
+ */
+
 import { Router } from "express";
 import { z } from "zod";
 import { wrapAsync, httpError } from "@wizard/utils";
 import { JobSchema } from "@wizard/core";
-import { WizardCopilotAgent } from "../copilot/agent.js";
-import { recordLlmUsageFromResult } from "../services/llm-usage-ledger.js";
-import { COPILOT_TOOLS } from "../copilot/tools.js";
-import {
-  DEFAULT_COPILOT_STAGE,
-  getToolsForStage,
-  listSupportedStages,
-  resolveStageConfig
-} from "../copilot/stages.js";
-import { loadCopilotHistory, appendCopilotMessages } from "../copilot/chat-store.js";
-import { loadCompanyContext } from "../services/company-context.js";
+import { loadCopilotHistory } from "../copilot/chat-store.js";
 import { serializeMessages } from "../wizard/job-helpers.js";
 
 const JOB_COLLECTION = "jobs";
-
-const stageEnum = z.enum(listSupportedStages());
-
-const postRequestSchema = z.object({
-  jobId: z.string(),
-  userMessage: z.string().min(1),
-  currentStepId: z.string().optional(),
-  clientMessageId: z.string().optional(),
-  stage: stageEnum.default(DEFAULT_COPILOT_STAGE),
-  contextId: z.string().optional().nullable()
-});
 
 const getRequestSchema = z.object({
   jobId: z.string()
@@ -78,22 +67,11 @@ async function loadJobForUser({ firestore, jobId, userId }) {
   return parsed.data;
 }
 
-export function copilotRouter({ firestore, bigQuery, llmClient, logger }) {
+export function copilotRouter({ firestore, logger }) {
   const router = Router();
-  const agent = new WizardCopilotAgent({
-    llmClient,
-    tools: COPILOT_TOOLS,
-    logger,
-    usageTracker: ({ result, usageContext }) =>
-      recordLlmUsageFromResult({
-        firestore,
-        bigQuery,
-        logger,
-        usageContext,
-        result
-      })
-  });
 
+  // GET /chat - Retrieve chat history
+  // Note: POST operations for copilot_agent go through POST /api/llm
   router.get(
     "/chat",
     wrapAsync(async (req, res) => {

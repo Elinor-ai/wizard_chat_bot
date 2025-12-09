@@ -1,7 +1,17 @@
+/**
+ * @file videos.js
+ * Video Library API Router - thin dispatcher for video operations.
+ *
+ * ARCHITECTURE:
+ * - LLM operations (create, regenerate, render, caption) go through HTTP POST /api/llm
+ * - This router does NOT import or call llmClient directly
+ * - Only Firestore-only operations (list, get, approve, publish, bulk) are handled directly
+ */
+
 import { Router } from "express";
 import { z } from "zod";
-import { wrapAsync, httpError } from "@wizard/utils";
-import { JobSchema, ChannelIdEnum } from "@wizard/core";
+import { wrapAsync, httpError, loadEnv } from "@wizard/utils";
+import { JobSchema, ChannelIdEnum, VideoLibraryItemSchema, VideoLibraryStatusEnum } from "@wizard/core";
 import { createVideoLibraryService } from "../video/service.js";
 import { createRenderer } from "../video/renderer.js";
 import { createPublisherRegistry } from "../video/publishers.js";
@@ -37,6 +47,45 @@ function getAuthenticatedUserId(req) {
     throw httpError(401, "Unauthorized");
   }
   return userId;
+}
+
+/**
+ * Trigger a video operation via HTTP POST /api/llm.
+ * This enforces the invariant: all LLM calls go through POST /api/llm.
+ *
+ * @param {Object} params
+ * @param {string} params.apiBaseUrl - Base URL for API calls
+ * @param {string} params.authToken - Bearer token for auth
+ * @param {string} params.taskType - LLM task type (e.g., "video_create_manifest")
+ * @param {Object} params.context - Task-specific context
+ * @param {Object} params.logger - Logger instance
+ * @returns {Promise<Object>} Result from the LLM endpoint
+ */
+async function triggerVideoOperationViaHttp({ apiBaseUrl, authToken, taskType, context, logger }) {
+  const url = `${apiBaseUrl}/api/llm`;
+  logger?.info?.({ taskType, context }, "videos.http_dispatch.start");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({ taskType, context }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    logger?.error?.(
+      { taskType, status: response.status, errorText },
+      "videos.http_dispatch.failed"
+    );
+    throw httpError(response.status, errorText || `Video operation failed: ${taskType}`);
+  }
+
+  const data = await response.json();
+  logger?.info?.({ taskType, hasResult: Boolean(data?.result) }, "videos.http_dispatch.complete");
+  return data.result;
 }
 
 async function loadJob(firestore, jobId, ownerUserId) {
@@ -122,14 +171,24 @@ function buildDetailResponse(item) {
   };
 }
 
-export function videosRouter({ firestore, bigQuery, llmClient, logger }) {
+// Videos routes - NO llmClient passed
+// All LLM calls go through HTTP POST /api/llm
+export function videosRouter({ firestore, bigQuery, logger }) {
   const router = Router();
+
+  // Determine API base URL for internal HTTP calls (same pattern as companies, golden-interview)
+  const env = loadEnv();
+  const port = Number(env.PORT ?? 4000);
+  const apiBaseUrl = `http://127.0.0.1:${port}`;
+
+  // Service is used ONLY for Firestore-only operations (list, get, approve, publish, bulk)
+  // LLM operations (create, regenerate, render, caption) go through HTTP POST /api/llm
   const renderer = createRenderer({ logger });
   const publisherRegistry = createPublisherRegistry({ logger });
   const service = createVideoLibraryService({
     firestore,
     bigQuery,
-    llmClient,
+    llmClient: null, // No llmClient - LLM operations go through HTTP
     renderer,
     publisherRegistry,
     logger
@@ -145,28 +204,47 @@ export function videosRouter({ firestore, bigQuery, llmClient, logger }) {
     })
   );
 
+  // POST / - Create video manifest via HTTP POST /api/llm
+  // Note: LLM calls for storyboard/caption/compliance go through POST /api/llm
   router.post(
     "/",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
+      const authToken = req.user?.token;
+      if (!authToken) {
+        throw httpError(401, "Missing auth token");
+      }
       const payload = createRequestSchema.parse(req.body ?? {});
+
+      // Verify job exists and belongs to user (auth check before HTTP call)
       const job = await loadJob(firestore, payload.jobId, userId);
       if (!job) {
         throw httpError(404, "Job not found");
       }
-      const { item, renderQueued } = await service.createItem({
-        job,
-        channelId: payload.channelId,
-        recommendedMedium: payload.recommendedMedium,
-        ownerUserId: userId
+
+      // Trigger video_create_manifest via HTTP POST /api/llm
+      const result = await triggerVideoOperationViaHttp({
+        apiBaseUrl,
+        authToken,
+        taskType: "video_create_manifest",
+        context: {
+          jobId: payload.jobId,
+          channelId: payload.channelId,
+          recommendedMedium: payload.recommendedMedium,
+        },
+        logger,
       });
+
+      const item = result?.item;
       if (!item) {
         throw httpError(500, "Failed to create video item");
       }
+
       const responseBody = {
         item: buildDetailResponse(item)
       };
-      if (renderQueued) {
+      // Check if render was auto-queued (async provider)
+      if (item.status === "generating") {
         responseBody.renderStatus = {
           assetId: item.id,
           status: "PROCESSING"
@@ -216,21 +294,38 @@ export function videosRouter({ firestore, bigQuery, llmClient, logger }) {
     })
   );
 
+  // POST /:id/regenerate - Regenerate video manifest via HTTP POST /api/llm
+  // Note: LLM calls for storyboard/caption/compliance go through POST /api/llm
   router.post(
     "/:id/regenerate",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
+      const authToken = req.user?.token;
+      if (!authToken) {
+        throw httpError(401, "Missing auth token");
+      }
       const payload = createRequestSchema.pick({ jobId: true, recommendedMedium: true }).parse(req.body ?? {});
+
+      // Verify job exists and belongs to user (auth check before HTTP call)
       const job = await loadJob(firestore, payload.jobId, userId);
       if (!job) {
         throw httpError(404, "Job not found for regeneration");
       }
-      const item = await service.regenerateManifest({
-        ownerUserId: userId,
-        itemId: req.params.id,
-        job,
-        recommendedMedium: payload.recommendedMedium
+
+      // Trigger video_regenerate via HTTP POST /api/llm
+      const result = await triggerVideoOperationViaHttp({
+        apiBaseUrl,
+        authToken,
+        taskType: "video_regenerate",
+        context: {
+          jobId: payload.jobId,
+          itemId: req.params.id,
+          recommendedMedium: payload.recommendedMedium,
+        },
+        logger,
       });
+
+      const item = result?.item;
       if (!item) {
         throw httpError(404, "Video item not found");
       }
@@ -238,33 +333,62 @@ export function videosRouter({ firestore, bigQuery, llmClient, logger }) {
     })
   );
 
+  // POST /:id/render - Trigger video render via HTTP POST /api/llm
+  // Note: Video generation (Veo/Sora) is handled by the orchestrator
   router.post(
     "/:id/render",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const item = await service.triggerRender({ ownerUserId: userId, itemId: req.params.id });
-      if (!item?.item) {
+      const authToken = req.user?.token;
+      if (!authToken) {
+        throw httpError(401, "Missing auth token");
+      }
+
+      // Trigger video_render via HTTP POST /api/llm
+      const result = await triggerVideoOperationViaHttp({
+        apiBaseUrl,
+        authToken,
+        taskType: "video_render",
+        context: { itemId: req.params.id },
+        logger,
+      });
+
+      const item = result?.item;
+      if (!item) {
         throw httpError(404, "Video item not found");
       }
-      res
-        .status(item.httpStatus ?? 200)
-        .json({ item: buildDetailResponse(item.item) });
+      res.status(200).json({ item: buildDetailResponse(item) });
     })
   );
 
+  // POST /:id/caption - Update video caption via HTTP POST /api/llm
+  // Note: Caption update is handled by the orchestrator for consistency
   router.post(
     "/:id/caption",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
+      const authToken = req.user?.token;
+      if (!authToken) {
+        throw httpError(401, "Missing auth token");
+      }
       const payload = captionUpdateSchema.parse(req.body ?? {});
-      const item = await service.updateCaption({
-        ownerUserId: userId,
-        itemId: req.params.id,
-        caption: {
-          text: payload.captionText.trim(),
-          hashtags: payload.hashtags ?? []
-        }
+
+      // Trigger video_caption_update via HTTP POST /api/llm
+      const result = await triggerVideoOperationViaHttp({
+        apiBaseUrl,
+        authToken,
+        taskType: "video_caption_update",
+        context: {
+          itemId: req.params.id,
+          caption: {
+            text: payload.captionText.trim(),
+            hashtags: payload.hashtags ?? []
+          }
+        },
+        logger,
       });
+
+      const item = result?.item;
       if (!item) {
         throw httpError(404, "Video item not found");
       }

@@ -68,25 +68,29 @@ export function createApp({ logger, firestore, bigQuery, llmClient }) {
 
   app.use("/auth", authRouter({ firestore, bigQuery, logger }));
   app.use("/contact", contactRouter({ logger }));
+  // Copilot routes - NO llmClient or bigQuery passed
+  // GET /chat only - LLM calls go through POST /api/llm with taskType: "copilot_agent"
   app.use(
     "/wizard/copilot",
     authMiddleware,
-    copilotRouter({ firestore, bigQuery, llmClient, logger })
+    copilotRouter({ firestore, logger })
   );
   app.use(
     "/wizard",
     authMiddleware,
-    wizardRouter({ firestore, bigQuery, logger, llmClient })
+    wizardRouter({ firestore, logger })
   );
   app.use(
     "/assets",
     authMiddleware,
     assetsRouter({ firestore, bigQuery, logger })
   );
+  // Videos routes - NO llmClient passed
+  // All LLM calls go through HTTP POST /api/llm
   app.use(
     "/videos",
     authMiddleware,
-    videosRouter({ firestore, bigQuery, llmClient, logger })
+    videosRouter({ firestore, bigQuery, logger })
   );
   app.use(
     "/dashboard",
@@ -98,10 +102,12 @@ export function createApp({ logger, firestore, bigQuery, llmClient }) {
     authMiddleware,
     usersRouter({ firestore, bigQuery, logger })
   );
+  // Companies routes - NO llmClient passed
+  // All LLM calls go through HTTP POST /api/llm
   app.use(
     "/companies",
     authMiddleware,
-    companiesRouter({ firestore, bigQuery, logger, llmClient })
+    companiesRouter({ firestore, bigQuery, logger })
   );
   // Golden Interview routes - NO llmClient or bigQuery passed
   // All LLM calls go through HTTP POST /api/llm

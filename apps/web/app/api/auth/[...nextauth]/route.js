@@ -1,7 +1,6 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+import { AuthApi } from "../../../../lib/api-client";
 
 const handler = NextAuth({
   providers: [
@@ -15,22 +14,11 @@ const handler = NextAuth({
       if (account.provider === "google") {
         try {
           // Send user data to our backend to create/update user
-          const response = await fetch(`${API_BASE_URL}/auth/oauth/google`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: user.email,
-              name: user.name,
-              googleId: account.providerAccountId,
-            }),
+          const data = await AuthApi.oauthGoogle({
+            email: user.email,
+            name: user.name,
+            googleId: account.providerAccountId,
           });
-
-          if (!response.ok) {
-            console.error("Failed to sync user with backend");
-            return false;
-          }
-
-          const data = await response.json();
           // Store user data in the token for later use
           user.backendUser = data.user;
           user.backendToken = data.token;

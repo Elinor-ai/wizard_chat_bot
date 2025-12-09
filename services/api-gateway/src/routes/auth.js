@@ -1,3 +1,12 @@
+/**
+ * @file auth.js
+ * Authentication API Router - handles login, signup, and OAuth.
+ *
+ * ARCHITECTURE:
+ * - All Firestore access goes through user-repository.js
+ * - This router does NOT access firestore directly
+ */
+
 import { Router } from "express";
 import { z } from "zod";
 import { v4 as uuid } from "uuid";
@@ -6,6 +15,14 @@ import { wrapAsync, httpError } from "@wizard/utils";
 import { UserSchema } from "@wizard/core";
 import { issueAuthToken } from "../utils/auth-tokens.js";
 import { ensureCompanyForEmail } from "../services/company-intel.js";
+import {
+  getUserByEmail,
+  userExistsByEmail,
+  createUser,
+  updateUser,
+  updateUserLoginInfo,
+  sanitizeUserForResponse
+} from "../services/repositories/index.js";
 
 const signupSchema = z.object({
   email: z.string().email(),
@@ -145,7 +162,8 @@ async function linkUserToCompany({ firestore, logger, user }) {
   }
 
   if (changed) {
-    await firestore.saveDocument("users", user.id, {
+    // Use repository function for user update
+    await updateUser(firestore, user.id, {
       profile: nextProfile,
       updatedAt: new Date()
     });
@@ -170,18 +188,12 @@ export function authRouter({ firestore, logger }) {
     wrapAsync(async (req, res) => {
       const payload = loginSchema.parse(req.body ?? {});
 
-      const existingUsers = await firestore.queryDocuments(
-        "users",
-        "auth.email",
-        "==",
-        payload.email
-      );
+      // Get user by email via repository
+      const existing = await getUserByEmail(firestore, payload.email);
 
-      if (existingUsers.length === 0) {
+      if (!existing) {
         throw httpError(404, "Account not found. Please sign up.");
       }
-
-      const existing = existingUsers[0];
 
       // Check if user is using password provider
       if (existing.auth.provider === "password") {
@@ -196,26 +208,16 @@ export function authRouter({ firestore, logger }) {
         }
       }
 
-      // Update last login
-      const now = new Date();
-      const updatedUsage = {
-        ...(existing.usage ?? {}),
-        lastActiveAt: now
-      };
-      const updatedSecurity = {
-        ...(existing.security ?? {}),
-        lastLoginAt: now
-      };
-      await firestore.saveDocument("users", existing.id, {
-        usage: updatedUsage,
-        security: updatedSecurity,
-        updatedAt: now
-      });
+      // Update last login via repository
+      await updateUserLoginInfo(firestore, existing.id, existing.usage, existing.security);
 
-      const { passwordHash, ...authWithoutPassword } = existing.auth;
+      // Build updated user with new login info
+      const now = new Date();
+      const updatedUsage = { ...(existing.usage ?? {}), lastActiveAt: now };
+      const updatedSecurity = { ...(existing.security ?? {}), lastLoginAt: now };
+
       let sanitizedUser = {
-        ...existing,
-        auth: authWithoutPassword,
+        ...sanitizeUserForResponse(existing),
         usage: updatedUsage,
         security: updatedSecurity
       };
@@ -236,29 +238,19 @@ export function authRouter({ firestore, logger }) {
     wrapAsync(async (req, res) => {
       const payload = signupSchema.parse(req.body ?? {});
 
-      const existingUsers = await firestore.queryDocuments(
-        "users",
-        "auth.email",
-        "==",
-        payload.email
-      );
-
-      if (existingUsers.length > 0) {
+      // Check if user exists via repository
+      const exists = await userExistsByEmail(firestore, payload.email);
+      if (exists) {
         throw httpError(409, "Account already exists. Please log in.");
       }
 
-      // Hash password
+      // Hash password and create user via repository
       const passwordHash = await bcrypt.hash(payload.password, 10);
-
       const newUser = buildNewUser(payload, passwordHash);
-      const storedUser = await firestore.saveDocument("users", newUser.id, newUser);
+      const storedUser = await createUser(firestore, newUser);
       logger.info({ email: payload.email, userId: newUser.id }, "Created new user");
 
-      const { passwordHash: _, ...authWithoutPassword } = storedUser.auth;
-      let sanitizedUser = {
-        ...storedUser,
-        auth: authWithoutPassword
-      };
+      let sanitizedUser = sanitizeUserForResponse(storedUser);
       sanitizedUser = await linkUserToCompany({ firestore, logger, user: sanitizedUser });
       const token = issueAuthToken(sanitizedUser);
 
@@ -280,42 +272,25 @@ export function authRouter({ firestore, logger }) {
         throw httpError(400, "Missing required OAuth fields");
       }
 
-      // Check if user already exists
-      const existingUsers = await firestore.queryDocuments(
-        "users",
-        "auth.email",
-        "==",
-        email
-      );
+      // Check if user already exists via repository
+      const existingUser = await getUserByEmail(firestore, email);
 
       let user;
       let isNew = false;
 
-      if (existingUsers.length > 0) {
-        // User exists - update last login
-        user = existingUsers[0];
-        const now = new Date();
-        const updatedUsage = {
-          ...(user.usage ?? {}),
-          lastActiveAt: now
-        };
-        const updatedSecurity = {
-          ...(user.security ?? {}),
-          lastLoginAt: now
-        };
-        await firestore.saveDocument("users", user.id, {
-          usage: updatedUsage,
-          security: updatedSecurity,
-          updatedAt: now
-        });
+      if (existingUser) {
+        // User exists - update last login via repository
+        user = existingUser;
+        await updateUserLoginInfo(firestore, user.id, user.usage, user.security);
 
+        const now = new Date();
         user = {
           ...user,
-          usage: updatedUsage,
-          security: updatedSecurity
+          usage: { ...(user.usage ?? {}), lastActiveAt: now },
+          security: { ...(user.security ?? {}), lastLoginAt: now }
         };
       } else {
-        // Create new user
+        // Create new user via repository
         isNew = true;
         const payload = {
           email,
@@ -328,15 +303,11 @@ export function authRouter({ firestore, logger }) {
         // Update providerUid to use Google ID
         newUser.auth.providerUid = `google:${googleId}`;
 
-        user = await firestore.saveDocument("users", newUser.id, newUser);
+        user = await createUser(firestore, newUser);
         logger.info({ email, userId: newUser.id }, "Created new user via Google OAuth");
       }
 
-      const { passwordHash: _, ...authWithoutPassword } = user.auth;
-      let sanitizedUser = {
-        ...user,
-        auth: authWithoutPassword
-      };
+      let sanitizedUser = sanitizeUserForResponse(user);
       sanitizedUser = await linkUserToCompany({ firestore, logger, user: sanitizedUser });
       const token = issueAuthToken(sanitizedUser);
 

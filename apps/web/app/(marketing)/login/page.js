@@ -5,9 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useUser } from "../../../components/user-context";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+import { AuthApi } from "../../../lib/api-client";
 
 export default function LoginPage() {
   const { setUser } = useUser();
@@ -29,21 +27,10 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: form.email,
-          password: form.password
-        })
+      const data = await AuthApi.login({
+        email: form.email,
+        password: form.password
       });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error?.message ?? "Login failed");
-      }
-
-      const data = await response.json();
       setUser({
         ...data.user,
         authToken: data.token,

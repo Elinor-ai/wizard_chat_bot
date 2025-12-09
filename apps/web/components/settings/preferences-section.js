@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Bell, Mail, Megaphone, Globe, Beaker, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useUser } from '../user-context';
+import { UsersApi } from '../../lib/api-client';
 
 export default function PreferencesSection({ user }) {
   const { setUser } = useUser();
@@ -55,24 +56,10 @@ export default function PreferencesSection({ user }) {
     setMessage(null);
 
     try {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
-      const response = await fetch(`${apiBaseUrl}/users/me`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${user.authToken}`,
-        },
-        body: JSON.stringify({
-          preferences,
-          experiments,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update preferences');
-      }
-
-      const updatedUser = await response.json();
+      const updatedUser = await UsersApi.updatePreferences(
+        { preferences, experiments },
+        { authToken: user.authToken }
+      );
       setUser({
         ...updatedUser,
         authToken: user.authToken,
@@ -80,7 +67,7 @@ export default function PreferencesSection({ user }) {
       setMessage({ type: 'success', text: 'Preferences saved successfully!' });
     } catch (error) {
       console.error('Error updating preferences:', error);
-      setMessage({ type: 'error', text: 'Failed to save preferences. Please try again.' });
+      setMessage({ type: 'error', text: error.message || 'Failed to save preferences. Please try again.' });
     } finally {
       setIsSaving(false);
     }

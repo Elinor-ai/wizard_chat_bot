@@ -357,10 +357,12 @@ Frontend: displays them in the assets grid
 
 ## 🔐 Authentication & Security
 
-- **Clerk Auth**: user management  
-- **JWT tokens**: on every request  
-- **Firestore Security Rules**: access control  
-- **Service Account**: access to GCP services  
+- **NextAuth.js**: Session management and OAuth (Google) on frontend
+- **Custom JWT tokens**: Issued by backend, validated on every request
+- **Firestore Security Rules**: Access control
+- **Service Account**: Access to GCP services
+
+For detailed auth documentation, see [AUTH_ARCHITECTURE.md](./AUTH_ARCHITECTURE.md).  
 
 ---
 
@@ -515,11 +517,11 @@ npm run dev:api
 
 If you are new to the system, start here:
 
-1. **Read README.md** — high-level overview
+1. **Read [DEVELOPER_ONBOARDING.md](./DEVELOPER_ONBOARDING.md)** — setup and commands
 2. **Understand the flow**: User → Frontend → API Gateway → LLM → DB
 3. **Run the system** with `npm run dev`
 4. **Walk through the Job Launcher flow** manually
-5. **Drop console.log breakpoints** to understand the flow
+5. **Read [AUTH_ARCHITECTURE.md](./AUTH_ARCHITECTURE.md)** — understand authentication
 6. **Read `page.js`** — the heart of the wizard
 
 ---

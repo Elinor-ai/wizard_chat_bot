@@ -1,3 +1,12 @@
+/**
+ * @file subscriptions.js
+ * Subscription API Router - handles credit purchases and plans.
+ *
+ * ARCHITECTURE:
+ * - All Firestore access goes through repositories
+ * - This router does NOT access firestore directly
+ */
+
 import { Router } from "express";
 import { z } from "zod";
 import { wrapAsync, httpError } from "@wizard/utils";
@@ -6,8 +15,17 @@ import {
   getSubscriptionPlan,
   listSubscriptionPlans
 } from "../config/subscription-plans.js";
-
-const CREDIT_PURCHASE_COLLECTION = "creditPurchases";
+import {
+  getUserByIdOrThrow,
+  sanitizeUserForResponse
+} from "../services/repositories/index.js";
+import {
+  recordCreditPurchase,
+  updateUserCredits,
+  calculateCreditsAfterPurchase,
+  buildPaymentRecord,
+  buildPurchaseResponse
+} from "../services/repositories/index.js";
 
 function getAuthenticatedUserId(req) {
   const userId = req.user?.id;
@@ -15,20 +33,6 @@ function getAuthenticatedUserId(req) {
     throw httpError(401, "Unauthorized");
   }
   return userId;
-}
-
-function sanitizeUser(userDoc) {
-  if (!userDoc) return null;
-  let sanitizedAuth = userDoc.auth;
-  if (sanitizedAuth?.passwordHash) {
-    // eslint-disable-next-line no-unused-vars
-    const { passwordHash, ...rest } = sanitizedAuth;
-    sanitizedAuth = rest;
-  }
-  return {
-    ...userDoc,
-    auth: sanitizedAuth
-  };
 }
 
 function detectCardBrand(cardNumber) {
@@ -84,24 +88,13 @@ export function subscriptionsRouter({ firestore, logger }) {
         throw httpError(400, "Unknown subscription plan");
       }
 
-      const userDoc = await firestore.getDocument("users", userId);
-      if (!userDoc) {
-        throw httpError(404, "User not found");
-      }
+      // Get user via repository
+      const userDoc = await getUserByIdOrThrow(firestore, userId);
 
-      const creditsSnapshot = {
-        balance: Number(userDoc.usage?.remainingCredits ?? userDoc.credits?.balance ?? 0) + plan.totalCredits,
-        reserved: Number(userDoc.credits?.reserved ?? 0),
-        lifetimeUsed: Number(userDoc.credits?.lifetimeUsed ?? 0)
-      };
+      // Calculate new credit balances via repository helper
+      const { creditsSnapshot, usageSnapshot } = calculateCreditsAfterPurchase(userDoc, plan.totalCredits);
 
-      const usageSnapshot = {
-        ...(userDoc.usage ?? {}),
-        remainingCredits:
-          Number(userDoc.usage?.remainingCredits ?? 0) + plan.totalCredits
-      };
-      creditsSnapshot.balance = usageSnapshot.remainingCredits + creditsSnapshot.reserved;
-
+      // Build payment method details
       const sanitizedPayment = {
         cardholder: payload.payment.cardholder || "Sandbox User",
         cardNumber: payload.payment.cardNumber || "000000000000",
@@ -110,60 +103,36 @@ export function subscriptionsRouter({ firestore, logger }) {
         postalCode: payload.payment.postalCode || ""
       };
 
-      const paymentRecord = {
-        userId,
-        planId: plan.id,
-        planName: plan.name,
-        creditsPurchased: plan.credits,
-        bonusCredits: plan.bonusCredits ?? 0,
-        totalCredits: plan.totalCredits,
-        priceUsd: plan.priceUsd,
-        currency: plan.currency,
-        usdPerCredit: plan.effectiveUsdPerCredit,
-        paymentMethod: {
-          brand: detectCardBrand(sanitizedPayment.cardNumber),
-          last4: sanitizedPayment.cardNumber.slice(-4) || "0000",
-          cardholder: sanitizedPayment.cardholder
-        },
-        createdAt: new Date()
+      const paymentMethod = {
+        brand: detectCardBrand(sanitizedPayment.cardNumber),
+        last4: sanitizedPayment.cardNumber.slice(-4) || "0000",
+        cardholder: sanitizedPayment.cardholder
       };
 
-      const purchaseEntry = await firestore.addDocument(
-        CREDIT_PURCHASE_COLLECTION,
-        paymentRecord
-      );
+      // Build and record payment via repository
+      const paymentRecord = buildPaymentRecord({ userId, plan, paymentMethod });
+      const purchaseEntry = await recordCreditPurchase(firestore, paymentRecord);
 
-      const updatedUser = await firestore.saveDocument("users", userId, {
-        credits: creditsSnapshot,
-        usage: usageSnapshot,
-        updatedAt: new Date()
-      });
+      // Update user credits via repository
+      await updateUserCredits(firestore, userId, creditsSnapshot, usageSnapshot);
 
       logger.info(
         { userId, planId: plan.id, purchaseId: purchaseEntry.id },
         "subscriptions.purchase_recorded"
       );
 
-      res.json({
-        purchase: {
-          id: purchaseEntry.id,
-          planId: plan.id,
-          planName: plan.name,
-          credits: plan.credits,
-          bonusCredits: plan.bonusCredits ?? 0,
-          totalCredits: plan.totalCredits,
-          priceUsd: plan.priceUsd,
-          currency: plan.currency,
-          processedAt: paymentRecord.createdAt,
-          paymentMethod: {
-            brand: paymentRecord.paymentMethod.brand,
-            last4: paymentRecord.paymentMethod.last4
-          }
-        },
-        credits: creditsSnapshot,
-        usage: usageSnapshot,
-        user: sanitizeUser(updatedUser)
-      });
+      // Fetch updated user for response
+      const updatedUser = await getUserByIdOrThrow(firestore, userId);
+
+      // Build and return response via repository helper
+      res.json(buildPurchaseResponse({
+        purchaseEntry,
+        plan,
+        paymentMethod,
+        creditsSnapshot,
+        usageSnapshot,
+        user: sanitizeUserForResponse(updatedUser)
+      }));
     })
   );
 

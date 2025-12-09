@@ -7,6 +7,13 @@ import {
   resolveGroundingPricing
 } from "../config/pricing-rates.js";
 import { LLM_CORE_TASK, LLM_SPECIAL_TASK } from "../config/task-types.js";
+import {
+  normalizeTokens,
+  sanitizeMetadata,
+  updateUserUsageCounters,
+  recordToFirestore,
+  recordToBigQuery
+} from "./repositories/llm-usage-repository.js";
 
 const MILLION = 1_000_000;
 
@@ -17,75 +24,6 @@ const DEBUG_TASKS = new Set([
   LLM_CORE_TASK.IMAGE_CAPTION,
   LLM_SPECIAL_TASK.VIDEO_GENERATION
 ]);
-
-function normalizeTokens(value) {
-  if (value === undefined || value === null) {
-    return 0;
-  }
-  const num = Number(value);
-  if (!Number.isFinite(num) || num < 0) {
-    return 0;
-  }
-  return Math.round(num);
-}
-
-function sanitizeMetadata(metadata) {
-  if (!metadata || typeof metadata !== "object") {
-    return undefined;
-  }
-  const finishReason =
-    typeof metadata.finishReason === "string" ? metadata.finishReason : undefined;
-  if (!finishReason) {
-    return undefined;
-  }
-  return { finishReason };
-}
-
-async function updateUserUsageCounters({
-  firestore,
-  logger,
-  userId,
-  tokensUsed,
-  creditsUsed,
-  timestamp
-}) {
-  if (!userId || tokensUsed <= 0) {
-    return;
-  }
-  try {
-    const userDoc = await firestore.getDocument("users", userId);
-    if (!userDoc) {
-      return;
-    }
-    const usageSnapshot =
-      typeof userDoc.usage === "object" && userDoc.usage !== null
-        ? { ...userDoc.usage }
-        : {};
-    usageSnapshot.totalTokensUsed = normalizeTokens(usageSnapshot.totalTokensUsed) + tokensUsed;
-    usageSnapshot.remainingCredits = (usageSnapshot.remainingCredits ?? 0) - creditsUsed;
-    usageSnapshot.lastActiveAt = timestamp;
-
-    const creditsSnapshot =
-      typeof userDoc.credits === "object" && userDoc.credits !== null
-        ? { ...userDoc.credits }
-        : {};
-    creditsSnapshot.balance = usageSnapshot.remainingCredits;
-    if (typeof creditsSnapshot.reserved !== "number") {
-      creditsSnapshot.reserved = 0;
-    }
-    if (typeof creditsSnapshot.lifetimeUsed !== "number") {
-      creditsSnapshot.lifetimeUsed = 0;
-    }
-
-    await firestore.saveDocument("users", userId, {
-      usage: usageSnapshot,
-      credits: creditsSnapshot,
-      updatedAt: new Date()
-    });
-  } catch (error) {
-    logger?.warn?.({ err: error, userId }, "llm.usage.user_update_failed");
-  }
-}
 
 function maybeLogPricingDebug({
   logger,
@@ -393,42 +331,8 @@ export async function recordLlmUsage({
     estimatedCostUsd: entryPayload.estimatedCostUsd
   });
 
-  try {
-    await firestore.recordLlmUsage(entryPayload);
-  } catch (error) {
-    logger?.warn?.({ err: error }, "llm.usage.ledger_write_failed");
-  }
-
-  if (bigQuery?.addDocument) {
-    try {
-      await bigQuery.addDocument(entryPayload);
-      logger?.debug?.(
-        {
-          taskType: entryPayload.taskType,
-          provider: entryPayload.provider,
-          model: entryPayload.model,
-          tokensUsed: entryPayload.totalTokens
-        },
-        "Successfully recorded LLM usage to BigQuery"
-      );
-    } catch (error) {
-      // Check if it's a permission error
-      const isPermissionError = error.message?.includes("Permission") || error.message?.includes("denied");
-      const logLevel = isPermissionError ? "warn" : "error";
-
-      logger?.[logLevel]?.(
-        {
-          err: error,
-          taskType: entryPayload.taskType,
-          errorType: isPermissionError ? "permission_denied" : "insertion_failed",
-          hint: isPermissionError
-            ? "Grant bigquery.tables.updateData permission to the service account"
-            : "Check data format and BigQuery table schema"
-        },
-        "Failed to record LLM usage to BigQuery, continuing with Firestore only"
-      );
-    }
-  }
+  await recordToFirestore({ firestore, logger, entryPayload });
+  await recordToBigQuery({ bigQuery, logger, entryPayload });
 
   await updateUserUsageCounters({
     firestore,

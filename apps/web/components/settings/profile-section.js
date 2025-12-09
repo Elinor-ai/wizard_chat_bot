@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { User, Mail, Building2, Phone, Globe, Clock, CheckCircle2, AlertCircle, Key } from 'lucide-react';
 import { useUser } from '../user-context';
+import { UsersApi } from '../../lib/api-client';
 
 export default function ProfileSection({ user }) {
   const { setUser } = useUser();
@@ -93,41 +94,19 @@ export default function ProfileSection({ user }) {
     }
 
     try {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
-      const profileResponse = await fetch(`${apiBaseUrl}/users/me`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${user.authToken}`,
-        },
-        body: JSON.stringify({
-          profile: formData,
-        }),
-      });
-
-      if (!profileResponse.ok) {
-        throw new Error('Failed to update profile');
-      }
-
-      let updatedUser = await profileResponse.json();
+      const updatedUser = await UsersApi.updateProfile(
+        { profile: formData },
+        { authToken: user.authToken }
+      );
 
       if (shouldChangePassword) {
-        const passwordResponse = await fetch(`${apiBaseUrl}/users/me/change-password`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${user.authToken}`,
-          },
-          body: JSON.stringify({
+        await UsersApi.changePassword(
+          {
             currentPassword: passwordForm.currentPassword,
             newPassword: passwordForm.newPassword,
-          }),
-        });
-
-        if (!passwordResponse.ok) {
-          const payload = await passwordResponse.json().catch(() => null);
-          throw new Error(payload?.error?.message ?? 'Failed to change password');
-        }
+          },
+          { authToken: user.authToken }
+        );
       }
 
       const mergedUser = {
@@ -144,7 +123,7 @@ export default function ProfileSection({ user }) {
       });
     } catch (error) {
       console.error('Error updating profile:', error);
-      setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
+      setMessage({ type: 'error', text: error.message || 'Failed to update profile. Please try again.' });
     } finally {
       setIsSaving(false);
     }
