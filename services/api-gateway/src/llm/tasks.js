@@ -45,6 +45,11 @@ import {
   logImagePromptPreview
 } from "./logger.js";
 import { LLM_TASK_CONFIG } from "../config/llm-config.js";
+import {
+  buildGoldenInterviewerTurnPrompt,
+  buildGoldenInterviewerSystemPrompt,
+} from "./prompts/golden-interviewer.js";
+import { parseGoldenInterviewerResult } from "./parsers/golden-interviewer.js";
 
 export const TASK_REGISTRY = {
   suggest: {
@@ -227,6 +232,24 @@ export const TASK_REGISTRY = {
     maxTokens: { default: 400, gemini: 800 },
     retries: 2,
     strictOnRetry: true
+  },
+  golden_interviewer: {
+    // System prompt is dynamic - built per request based on current schema
+    // The systemBuilder function is called by the orchestrator when present
+    systemBuilder: buildGoldenInterviewerSystemPrompt,
+    system: [
+      "You are the Golden Extraction Agent, an expert interviewer conducting an engaging, conversational interview to extract comprehensive job information.",
+      "You select visually engaging UI components for each question and extract data into a structured Golden Schema.",
+      "You are warm, professional, and genuinely curious. You ask follow-up questions naturally.",
+      "You MUST respond with valid JSON matching the specified response format.",
+    ].join(" "),
+    builder: buildGoldenInterviewerTurnPrompt,
+    parser: parseGoldenInterviewerResult,
+    mode: "json",
+    temperature: 0.7,
+    maxTokens: { default: 4000, gemini: 8192 },
+    retries: 2,
+    strictOnRetry: true,
   },
 };
 

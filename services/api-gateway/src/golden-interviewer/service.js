@@ -3,18 +3,15 @@
  *
  * Orchestrates the interview process between User, Firestore, and LLM.
  * Handles conversation turns, schema extraction, and UI tool selection.
+ *
+ * ARCHITECTURE: All LLM calls go through HTTP POST /api/llm.
+ * This is the ONLY way the service invokes LLM models.
+ * The service does NOT import or call llmClient or recordLlmUsageFromResult directly.
  */
 
-import { z } from "zod";
 import { nanoid } from "nanoid";
-import {
-  buildSystemPrompt,
-  buildFirstTurnPrompt,
-  buildContinueTurnPrompt,
-  estimateSchemaCompletion,
-  identifyMissingFields,
-} from "./prompts.js";
-import { validateUIToolProps, getUIToolSchema } from "./tools-definition.js";
+import { estimateSchemaCompletion } from "./prompts.js";
+import { validateUIToolProps } from "./tools-definition.js";
 import { createInitialGoldenRecord } from "@wizard/core";
 
 // =============================================================================
@@ -23,62 +20,6 @@ import { createInitialGoldenRecord } from "@wizard/core";
 
 const SESSIONS_COLLECTION = "golden_interview_sessions";
 const COMPANIES_COLLECTION = "companies";
-const DEFAULT_MODEL = "gemini-2.0-flash";
-const MAX_TOKENS = 2000;
-
-// =============================================================================
-// SCHEMAS
-// =============================================================================
-
-const SessionSchema = z.object({
-  sessionId: z.string(),
-  userId: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  status: z.enum(["active", "completed", "abandoned"]),
-  turnCount: z.number(),
-  goldenSchema: z.record(z.any()).optional(),
-  conversationHistory: z.array(
-    z.object({
-      role: z.enum(["user", "assistant"]),
-      content: z.string(),
-      timestamp: z.date(),
-      uiTool: z
-        .object({
-          type: z.string(),
-          props: z.record(z.any()),
-        })
-        .optional(),
-      uiResponse: z.record(z.any()).optional(),
-    })
-  ),
-  metadata: z
-    .object({
-      completionPercentage: z.number().optional(),
-      currentPhase: z.string().optional(),
-      lastToolUsed: z.string().optional(),
-    })
-    .optional(),
-});
-
-const LLMResponseSchema = z.object({
-  message: z.string(),
-  extraction: z
-    .object({
-      updates: z.record(z.any()).optional(),
-      confidence: z.record(z.number()).optional(),
-    })
-    .optional(),
-  ui_tool: z
-    .object({
-      type: z.string(),
-      props: z.record(z.any()),
-    })
-    .optional(),
-  next_priority_fields: z.array(z.string()).optional(),
-  completion_percentage: z.number().optional(),
-  interview_phase: z.string().optional(),
-});
 
 // =============================================================================
 // GOLDEN INTERVIEWER SERVICE CLASS
@@ -88,13 +29,79 @@ export class GoldenInterviewerService {
   /**
    * @param {object} options
    * @param {object} options.firestore - Firestore adapter
-   * @param {object} options.llmAdapter - LLM adapter (OpenAI-compatible)
    * @param {object} options.logger - Logger instance
+   * @param {string} options.apiBaseUrl - Base URL for internal API calls (e.g., "http://127.0.0.1:4000")
    */
-  constructor({ firestore, llmAdapter, logger }) {
+  constructor({ firestore, logger, apiBaseUrl }) {
     this.firestore = firestore;
-    this.llmAdapter = llmAdapter;
     this.logger = logger;
+    this.apiBaseUrl = apiBaseUrl;
+  }
+
+  // ===========================================================================
+  // INTERNAL: HTTP call to /api/llm
+  // ===========================================================================
+
+  /**
+   * Call the LLM via HTTP POST /api/llm
+   * This is the ONLY way this service invokes LLM models.
+   *
+   * @param {object} options
+   * @param {string} options.authToken - Bearer token for authentication
+   * @param {object} options.context - Context to pass to the LLM
+   * @returns {Promise<object>} - The LLM result
+   */
+  async callLlmApi({ authToken, context }) {
+    const url = `${this.apiBaseUrl}/api/llm`;
+
+    this.logger.info(
+      {
+        taskType: "golden_interviewer",
+        sessionId: context.sessionId,
+        turnNumber: context.turnNumber,
+        isFirstTurn: context.isFirstTurn,
+      },
+      "golden-interviewer.llm_api.request"
+    );
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        taskType: "golden_interviewer",
+        context,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      this.logger.error(
+        {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+          sessionId: context.sessionId,
+        },
+        "golden-interviewer.llm_api.http_error"
+      );
+      throw new Error(`LLM API call failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    this.logger.info(
+      {
+        sessionId: context.sessionId,
+        hasResult: !!data.result,
+        hasError: !!data.result?.error,
+      },
+      "golden-interviewer.llm_api.response"
+    );
+
+    return data.result;
   }
 
   // ===========================================================================
@@ -105,11 +112,12 @@ export class GoldenInterviewerService {
    * Start a new interview session with optional company hydration
    * @param {object} options
    * @param {string} options.userId - User ID
+   * @param {string} options.authToken - Bearer token for LLM API calls
    * @param {string} [options.companyId] - Optional company ID to pre-load context
    * @param {string} [options.companyName] - Optional company name fallback
    * @returns {Promise<{sessionId: string, response: object}>}
    */
-  async startSession({ userId, companyId = null, companyName = null }) {
+  async startSession({ userId, authToken, companyId = null, companyName = null }) {
     const sessionId = nanoid(12);
     const now = new Date();
 
@@ -184,9 +192,9 @@ export class GoldenInterviewerService {
     );
 
     // =========================================================================
-    // STEP 4: Generate first turn with hydrated context
+    // STEP 4: Generate first turn with hydrated context (via HTTP /api/llm)
     // =========================================================================
-    const firstTurnResponse = await this.generateFirstTurn(session);
+    const firstTurnResponse = await this.generateFirstTurn(session, authToken);
 
     // Update session with first turn
     session.conversationHistory.push({
@@ -218,11 +226,12 @@ export class GoldenInterviewerService {
    * Process a conversation turn
    * @param {object} options
    * @param {string} options.sessionId - Session ID
+   * @param {string} options.authToken - Bearer token for LLM API calls
    * @param {string} [options.userMessage] - User's text message
    * @param {object} [options.uiResponse] - Response from UI component
    * @returns {Promise<object>}
    */
-  async processTurn({ sessionId, userMessage, uiResponse }) {
+  async processTurn({ sessionId, authToken, userMessage, uiResponse }) {
     // Load session
     const session = await this.loadSession(sessionId);
     if (!session) {
@@ -245,23 +254,75 @@ export class GoldenInterviewerService {
       });
     }
 
-    // Generate next turn
-    const turnPrompt = buildContinueTurnPrompt({
-      userMessage,
+    // Generate next turn via HTTP POST /api/llm
+    const llmContext = {
       currentSchema: session.goldenSchema || {},
+      conversationHistory: session.conversationHistory,
+      userMessage,
       uiResponse,
       previousToolType: previousTool,
       turnNumber: session.turnCount + 1,
-    });
+      isFirstTurn: false,
+      sessionId,
+    };
 
-    const llmResponse = await this.invokeLLM({
-      systemPrompt: buildSystemPrompt({ currentSchema: session.goldenSchema }),
-      userPrompt: turnPrompt,
-      conversationHistory: session.conversationHistory,
-    });
+    let llmResponse;
+    try {
+      llmResponse = await this.callLlmApi({ authToken, context: llmContext });
+    } catch (error) {
+      this.logger.error(
+        { sessionId, err: error },
+        "golden-interviewer.turn.llm_api_error"
+      );
+      // Return a fallback response that keeps the conversation going
+      return {
+        message: "I had trouble processing that. Let me try asking differently...",
+        ui_tool: {
+          type: "smart_textarea",
+          props: {
+            title: "Tell me more",
+            prompts: ["What else would you like to share about this role?"],
+          },
+        },
+        completion_percentage: session.metadata?.completionPercentage || 0,
+        interview_phase: session.metadata?.currentPhase || "opening",
+        extracted_fields: [],
+        next_priority_fields: [],
+      };
+    }
 
-    // Parse and validate LLM response
-    const parsed = this.parseLLMResponse(llmResponse);
+    // Handle error from LLM
+    if (llmResponse.error) {
+      this.logger.error(
+        { sessionId, error: llmResponse.error },
+        "golden-interviewer.turn.llm_error"
+      );
+      // Return a fallback response that keeps the conversation going
+      return {
+        message: "I had trouble processing that. Let me try asking differently...",
+        ui_tool: {
+          type: "smart_textarea",
+          props: {
+            title: "Tell me more",
+            prompts: ["What else would you like to share about this role?"],
+          },
+        },
+        completion_percentage: session.metadata?.completionPercentage || 0,
+        interview_phase: session.metadata?.currentPhase || "opening",
+        extracted_fields: [],
+        next_priority_fields: [],
+      };
+    }
+
+    // Convert from camelCase (llm-client) to snake_case for internal use
+    const parsed = {
+      message: llmResponse.message,
+      extraction: llmResponse.extraction,
+      ui_tool: llmResponse.uiTool,
+      next_priority_fields: llmResponse.nextPriorityFields,
+      completion_percentage: llmResponse.completionPercentage,
+      interview_phase: llmResponse.interviewPhase,
+    };
 
     // Apply schema extractions
     if (parsed.extraction?.updates) {
@@ -427,142 +488,80 @@ export class GoldenInterviewerService {
   }
 
   // ===========================================================================
-  // LLM INTEGRATION
+  // LLM INTEGRATION (via HTTP POST /api/llm)
   // ===========================================================================
 
   /**
-   * Generate the first turn of the conversation
+   * Generate the first turn of the conversation via HTTP POST /api/llm.
    * @param {object} session
+   * @param {string} authToken - Bearer token for LLM API calls
    * @returns {Promise<object>}
    */
-  async generateFirstTurn(session) {
-    const systemPrompt = buildSystemPrompt({
-      currentSchema: session.goldenSchema,
-    });
-    const userPrompt = buildFirstTurnPrompt();
-
-    const response = await this.invokeLLM({
-      systemPrompt,
-      userPrompt,
+  async generateFirstTurn(session, authToken) {
+    const llmContext = {
+      currentSchema: session.goldenSchema || {},
       conversationHistory: [],
-    });
+      isFirstTurn: true,
+      turnNumber: 1,
+      sessionId: session.sessionId,
+    };
 
-    return this.parseLLMResponse(response);
-  }
-
-  /**
-   * Invoke the LLM with the given prompts
-   * @param {object} options
-   * @param {string} options.systemPrompt
-   * @param {string} options.userPrompt
-   * @param {array} options.conversationHistory
-   * @returns {Promise<object>}
-   */
-  async invokeLLM({ systemPrompt, userPrompt, conversationHistory }) {
-    // Build full user prompt including conversation history context
-    let fullUserPrompt = userPrompt;
-
-    // Add relevant conversation history (last 10 turns for context)
-    const recentHistory = conversationHistory.slice(-20);
-    if (recentHistory.length > 0) {
-      const historyText = recentHistory
-        .map(
-          (msg) =>
-            `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`
-        )
-        .join("\n\n");
-      fullUserPrompt = `Previous conversation:\n${historyText}\n\n---\n\nCurrent turn:\n${userPrompt}`;
-    }
-
+    let llmResponse;
     try {
-      const response = await this.llmAdapter.invoke({
-        model: DEFAULT_MODEL,
-        system: systemPrompt,
-        user: fullUserPrompt,
-        mode: "json",
-        temperature: 0.7,
-        maxTokens: MAX_TOKENS,
-        taskType: "golden_interviewer",
-      });
-
-      return response;
+      llmResponse = await this.callLlmApi({ authToken, context: llmContext });
     } catch (error) {
       this.logger.error(
-        { err: error },
-        "golden-interviewer.llm.invocation_error"
+        { sessionId: session.sessionId, err: error },
+        "golden-interviewer.first_turn.llm_api_error"
       );
-      throw error;
-    }
-  }
-
-  /**
-   * Parse and validate LLM response
-   * @param {object} response
-   * @returns {object}
-   */
-  parseLLMResponse(response) {
-    let parsed;
-
-    try {
-      // Handle both direct JSON and text response
-      if (response.json) {
-        parsed = response.json;
-      } else if (response.text) {
-        // Try to extract JSON from text
-        const jsonMatch = response.text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error("No JSON found in response");
-        }
-      } else {
-        throw new Error("Invalid response format");
-      }
-
-      // Validate against schema
-      const result = LLMResponseSchema.safeParse(parsed);
-      if (!result.success) {
-        this.logger.warn(
-          { errors: result.error.errors },
-          "golden-interviewer.llm.response_validation_warning"
-        );
-        // Return what we have, with defaults
-        return {
-          message: parsed.message || "Let me ask you another question...",
-          extraction: parsed.extraction || {},
-          ui_tool: parsed.ui_tool,
-          next_priority_fields: parsed.next_priority_fields || [],
-          completion_percentage: parsed.completion_percentage || 0,
-          interview_phase: parsed.interview_phase || "opening",
-        };
-      }
-
-      return result.data;
-    } catch (error) {
-      this.logger.error(
-        { err: error, rawResponse: response?.text?.slice(0, 500) },
-        "golden-interviewer.llm.parse_error"
-      );
-
-      // Return a fallback response
+      // Return fallback response
       return {
-        message:
-          "I had trouble processing that. Let me try asking differently...",
-        extraction: {},
+        message: "Hello! I'm here to learn about your job opportunity. Let's start with something simple.",
         ui_tool: {
           type: "smart_textarea",
           props: {
-            title: "Tell me more",
-            prompts: [
-              "What else would you like to share about this role?",
-              "Is there anything specific you'd like to add?",
-            ],
+            title: "Tell me about the role",
+            prompts: ["What position are you hiring for?"],
           },
         },
         completion_percentage: 0,
         interview_phase: "opening",
       };
     }
+
+    // Handle error from LLM
+    if (llmResponse.error) {
+      this.logger.error(
+        {
+          sessionId: session.sessionId,
+          error: llmResponse.error,
+        },
+        "golden-interviewer.first_turn.llm_error"
+      );
+      // Return fallback response
+      return {
+        message: "Hello! I'm here to learn about your job opportunity. Let's start with something simple.",
+        ui_tool: {
+          type: "smart_textarea",
+          props: {
+            title: "Tell me about the role",
+            prompts: ["What position are you hiring for?"],
+          },
+        },
+        completion_percentage: 0,
+        interview_phase: "opening",
+      };
+    }
+
+    // Convert from camelCase (llm-client) to snake_case (API contract)
+    return {
+      message: llmResponse.message,
+      extraction: llmResponse.extraction,
+      ui_tool: llmResponse.uiTool,
+      next_priority_fields: llmResponse.nextPriorityFields,
+      completion_percentage: llmResponse.completionPercentage,
+      interview_phase: llmResponse.interviewPhase,
+    };
   }
 
   // ===========================================================================
@@ -634,16 +633,20 @@ export class GoldenInterviewerService {
 
 /**
  * Create a Golden Interviewer service instance
+ *
+ * ARCHITECTURE: The service uses HTTP POST /api/llm for all LLM calls.
+ * It does NOT import or call llmClient or recordLlmUsageFromResult directly.
+ *
  * @param {object} options
  * @param {object} options.firestore - Firestore adapter
- * @param {object} options.llmAdapter - LLM adapter
  * @param {object} options.logger - Logger instance
+ * @param {string} options.apiBaseUrl - Base URL for internal API calls
  * @returns {GoldenInterviewerService}
  */
 export function createGoldenInterviewerService({
   firestore,
-  llmAdapter,
   logger,
+  apiBaseUrl,
 }) {
-  return new GoldenInterviewerService({ firestore, llmAdapter, logger });
+  return new GoldenInterviewerService({ firestore, logger, apiBaseUrl });
 }

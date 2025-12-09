@@ -103,6 +103,8 @@ export function createApp({ logger, firestore, bigQuery, llmClient }) {
     authMiddleware,
     companiesRouter({ firestore, bigQuery, logger, llmClient })
   );
+  // Golden Interview routes - NO llmClient or bigQuery passed
+  // All LLM calls go through HTTP POST /api/llm
   app.use(
     "/golden-interview",
     authMiddleware,

@@ -34,6 +34,7 @@ export const LLM_CORE_TASK = {
   IMAGE_PROMPT_GENERATION: "image_prompt_generation",
   IMAGE_GENERATION: "image_generation",
   IMAGE_CAPTION: "image_caption",
+  GOLDEN_INTERVIEWER: "golden_interviewer",
 };
 
 /**

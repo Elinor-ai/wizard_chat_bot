@@ -586,6 +586,93 @@ async function runImageGeneration(context) {
   }
 }
 
+/**
+ * Process a Golden Interviewer conversation turn.
+ *
+ * @param {object} context - The context for the turn
+ * @param {object} context.currentSchema - Current state of the golden schema
+ * @param {array} context.conversationHistory - Previous conversation messages
+ * @param {string} [context.userMessage] - User's text message
+ * @param {object} [context.uiResponse] - Response from UI component
+ * @param {string} [context.previousToolType] - The UI tool that was displayed
+ * @param {number} [context.turnNumber] - Current turn number
+ * @param {boolean} [context.isFirstTurn] - Whether this is the first turn
+ * @returns {Promise<object>} - The LLM response with message, extraction, uiTool, etc.
+ */
+async function askGoldenInterviewerTurn(context) {
+  try {
+    llmLogger.info(
+      {
+        sessionId: context?.sessionId ?? null,
+        turnNumber: context?.turnNumber ?? null,
+        isFirstTurn: context?.isFirstTurn ?? false,
+        hasUserMessage: Boolean(context?.userMessage),
+        hasUiResponse: Boolean(context?.uiResponse),
+      },
+      "askGoldenInterviewerTurn:start"
+    );
+
+    const result = await orchestrator.run(
+      LLM_CORE_TASK.GOLDEN_INTERVIEWER,
+      context
+    );
+
+    if (result.error) {
+      llmLogger.error(
+        {
+          task: LLM_CORE_TASK.GOLDEN_INTERVIEWER,
+          provider: result.provider,
+          model: result.model,
+          reason: result.error.reason,
+          message: result.error.message,
+        },
+        "askGoldenInterviewerTurn:error"
+      );
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model,
+        },
+      };
+    }
+
+    llmLogger.info(
+      {
+        provider: result.provider,
+        model: result.model,
+        completionPercentage: result.completionPercentage ?? 0,
+        interviewPhase: result.interviewPhase ?? null,
+        hasUiTool: Boolean(result.uiTool),
+      },
+      "askGoldenInterviewerTurn:success"
+    );
+
+    return {
+      provider: result.provider,
+      model: result.model,
+      message: result.message,
+      extraction: result.extraction ?? {},
+      uiTool: result.uiTool ?? null,
+      nextPriorityFields: result.nextPriorityFields ?? [],
+      completionPercentage: result.completionPercentage ?? 0,
+      interviewPhase: result.interviewPhase ?? "opening",
+      metadata: result.metadata ?? null,
+    };
+  } catch (error) {
+    llmLogger.error(
+      { err: error },
+      "askGoldenInterviewerTurn orchestrator failure"
+    );
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error),
+      },
+    };
+  }
+}
+
 export const llmClient = {
   askSuggestions,
   askChannelRecommendations,
@@ -601,5 +688,6 @@ export const llmClient = {
   runCopilotAgent,
   askHeroImagePrompt,
   askImageCaption,
-  runImageGeneration
+  runImageGeneration,
+  askGoldenInterviewerTurn,
 };

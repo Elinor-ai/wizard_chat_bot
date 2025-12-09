@@ -395,7 +395,7 @@ export default function ProfileSection({ user }) {
           >
             <option value="en-US">English (US)</option>
             <option value="en-GB">English (UK)</option>
-            <option value="he-IL">עברית (ישראל)</option>
+            <option value="he-IL">Hebrew (Israel)</option>
             <option value="es-ES">Español (España)</option>
             <option value="fr-FR">Français (France)</option>
             <option value="de-DE">Deutsch (Deutschland)</option>

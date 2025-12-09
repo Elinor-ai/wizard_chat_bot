@@ -183,7 +183,7 @@
 
 import React from "react";
 
-// מיפוי מהיר של המחרוזות שהשרת שולח לאמוג'יז
+// Quick mapping from server string values to emojis
 const ICON_MAP = {
   rocket: "🚀",
   store: "🏪",
@@ -203,17 +203,17 @@ const ICON_MAP = {
  */
 export default function GradientCardGrid({
   options,
-  items, // תמיכה בשמות חלופיים
+  items, // Support alternate prop naming
   value,
   onChange,
   multiple = false,
   columns = 2,
   title,
 }) {
-  // 1. נרמול והגנה על המידע - מונע קריסה אם ה-AI שולח שם לא צפוי
+  // 1. Normalize and guard data to avoid crashes from unexpected keys
   const rawData = options || items || [];
 
-  // 2. בדיקה שהמידע הוא אכן מערך
+  // 2. Ensure we are working with an array
   const dataToRender = Array.isArray(rawData) ? rawData : [];
 
   if (dataToRender.length === 0) {
@@ -221,7 +221,7 @@ export default function GradientCardGrid({
     return null;
   }
 
-  // ניהול בחירה (יחיד או מרובה)
+  // Selection management (single or multi)
   const selectedIds = multiple
     ? Array.isArray(value)
       ? value
@@ -242,14 +242,14 @@ export default function GradientCardGrid({
     }
   };
 
-  // רספונסיביות
+  // Responsive grid configuration
   const gridCols = {
     2: "grid-cols-1 sm:grid-cols-2",
     3: "grid-cols-1 sm:grid-cols-3",
     4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
   };
 
-  // צבעי גיבוי למקרה שה-Tailwind Gradients לא עובדים
+  // Fallback gradients if Tailwind ones fail
   const defaultGradients = [
     "from-violet-500 to-indigo-600",
     "from-pink-500 to-rose-600",
@@ -261,7 +261,7 @@ export default function GradientCardGrid({
 
   return (
     <div className="w-full space-y-4">
-      {/* תיקון צבע כותרת: הוספנו צבע כהה כדי שיראו אותו על רקע לבן */}
+      {/* Title color fix: use dark text so it is visible on a light background */}
       {title && (
         <h3 className="text-lg font-semibold text-slate-800 dark:text-white">
           {title}
@@ -274,12 +274,12 @@ export default function GradientCardGrid({
         {dataToRender.map((option, index) => {
           const isSelected = selectedIds.includes(option.id);
 
-          // בחירת גרדיאנט (עם Fallback)
+          // Gradient selection (with fallback)
           const gradientClass =
             option.gradient ||
             defaultGradients[index % defaultGradients.length];
 
-          // המרת האייקון הטקסטואלי לאמוג'י
+          // Convert textual icon to emoji
           const displayIcon = ICON_MAP[option.icon] || option.icon || "✨";
 
           return (
@@ -296,9 +296,7 @@ export default function GradientCardGrid({
                 }
               `}
             >
-              {/* Layer 1: Background Color (Fallback if gradient fails)
-                  אנחנו שמים צבע רקע כהה כברירת מחדל כדי שהטקסט הלבן יבלוט 
-              */}
+              {/* Layer 1: Background color (fallback if gradient fails). Default dark background keeps white text legible. */}
               <div className="absolute inset-0 bg-slate-800" />
 
               {/* Layer 2: Gradient */}
@@ -341,7 +339,7 @@ export default function GradientCardGrid({
                   {displayIcon}
                 </span>
 
-                {/* Label - תמיד לבן כי יש לנו רקע כהה מובטח */}
+                {/* Label - always white because we guarantee a dark background */}
                 <span className="text-white font-bold text-lg leading-tight drop-shadow-md">
                   {option.label}
                 </span>

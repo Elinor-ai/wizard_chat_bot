@@ -67,7 +67,11 @@ const REFINEMENT_COLLECTION = "jobRefinements";
 const SUPPORTED_CHANNELS = CampaignSchema.shape.channel.options;
 const COPILOT_STAGE_ENUM = z.enum(listSupportedStages());
 
-const TASK_METHOD_MAP = {
+/**
+ * Map of task types to llmClient method names.
+ * This is the canonical source of truth for task routing.
+ */
+export const TASK_METHOD_MAP = {
   suggest: "askSuggestions",
   refine: "askRefineJob",
   channels: "askChannelRecommendations",
@@ -81,10 +85,16 @@ const TASK_METHOD_MAP = {
   video_compliance: "askVideoCompliance",
   image_prompt_generation: "askHeroImagePrompt",
   image_generation: "runImageGeneration",
-  image_caption: "askImageCaption"
+  image_caption: "askImageCaption",
+  golden_interviewer: "askGoldenInterviewerTurn",
 };
 
-function resolveUsageType(taskType) {
+/**
+ * Resolve the usage type for billing/logging based on task type.
+ * @param {string} taskType
+ * @returns {"text" | "image" | "video"}
+ */
+export function resolveUsageType(taskType) {
   if (taskType === LLM_CORE_TASK.IMAGE_GENERATION) return "image";
   if (taskType.startsWith("video_")) return "video";
   return "text";

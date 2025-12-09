@@ -62,9 +62,15 @@ export class LlmOrchestrator {
         getRequestContext()?.route ??
         null;
 
+      // Support dynamic system prompts via systemBuilder function
+      const systemPrompt =
+        typeof task.systemBuilder === "function"
+          ? task.systemBuilder(builderContext)
+          : task.system;
+
       const options = {
         model: selection.model,
-        system: task.system,
+        system: systemPrompt,
         user: userPrompt,
         mode: task.mode ?? "text",
         temperature: task.temperature ?? 0.2,

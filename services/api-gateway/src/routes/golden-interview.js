@@ -2,14 +2,17 @@
  * Golden Interview API Router
  *
  * Handles HTTP endpoints for the Golden Interviewer service.
+ *
+ * ARCHITECTURE: All LLM calls go through HTTP POST /api/llm.
+ * The Golden Interviewer service does NOT import or call llmClient
+ * or recordLlmUsageFromResult directly.
+ * It uses fetch() to call the /api/llm endpoint.
  */
 
 import { Router } from "express";
 import { z } from "zod";
-import { wrapAsync, httpError } from "@wizard/utils";
+import { wrapAsync, httpError, loadEnv } from "@wizard/utils";
 import { createGoldenInterviewerService } from "../golden-interviewer/service.js";
-import { GeminiAdapter } from "../llm/providers/gemini-adapter.js";
-import { loadEnv } from "@wizard/utils";
 
 // =============================================================================
 // REQUEST SCHEMAS
@@ -23,10 +26,6 @@ const ChatRequestSchema = z.object({
   sessionId: z.string().min(1),
   userMessage: z.string().optional(),
   uiResponse: z.record(z.any()).optional()
-});
-
-const GetSessionSchema = z.object({
-  sessionId: z.string().min(1)
 });
 
 // =============================================================================
@@ -44,6 +43,19 @@ function getAuthenticatedUserId(req) {
     throw httpError(401, "Unauthorized");
   }
   return userId;
+}
+
+/**
+ * Get auth token from request
+ * @param {Request} req
+ * @returns {string}
+ */
+function getAuthToken(req) {
+  const token = req.user?.token;
+  if (!token) {
+    throw httpError(401, "Missing auth token");
+  }
+  return token;
 }
 
 /**
@@ -74,20 +86,17 @@ function verifySessionOwnership(session, userId) {
 export function goldenInterviewRouter({ firestore, logger }) {
   const router = Router();
 
-  // Load environment for Vertex AI
-  loadEnv();
+  // Determine API base URL for internal HTTP calls
+  const env = loadEnv();
+  const port = Number(env.PORT ?? 4000);
+  const apiBaseUrl = `http://127.0.0.1:${port}`;
 
-  // Create LLM adapter (using Gemini via Vertex AI with service account auth)
-  const llmAdapter = new GeminiAdapter({
-    // Uses GOOGLE_CLOUD_LOCATION and FIRESTORE_PROJECT_ID from env
-    // Authentication via service-account.json / ADC
-  });
-
-  // Create service instance
+  // Create service instance - NO llmClient, NO bigQuery
+  // All LLM calls go through HTTP POST /api/llm
   const interviewService = createGoldenInterviewerService({
     firestore,
-    llmAdapter,
-    logger
+    logger,
+    apiBaseUrl,
   });
 
   // ===========================================================================
@@ -119,12 +128,14 @@ export function goldenInterviewRouter({ firestore, logger }) {
     "/start",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
+      const authToken = getAuthToken(req);
       const body = StartSessionSchema.parse(req.body || {});
 
       logger.info({ userId }, "golden-interview.start.request");
 
       const result = await interviewService.startSession({
         userId,
+        authToken,
         initialData: body.initialData || {}
       });
 
@@ -167,6 +178,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
     "/chat",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
+      const authToken = getAuthToken(req);
       const body = ChatRequestSchema.parse(req.body);
 
       // Verify session ownership
@@ -187,6 +199,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
 
       const result = await interviewService.processTurn({
         sessionId: body.sessionId,
+        authToken,
         userMessage: body.userMessage,
         uiResponse: body.uiResponse
       });
