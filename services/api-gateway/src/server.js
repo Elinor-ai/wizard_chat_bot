@@ -16,6 +16,7 @@ import { videosRouter } from "./routes/videos.js";
 import { companiesRouter } from "./routes/companies.js";
 import { subscriptionsRouter } from "./routes/subscriptions.js";
 import { llmRouter } from "./routes/llm.js";
+import { goldenInterviewRouter } from "./routes/golden-interview.js";
 import {
   getBaseUsdPerCredit,
   listSubscriptionPlans,
@@ -101,6 +102,11 @@ export function createApp({ logger, firestore, bigQuery, llmClient }) {
     "/companies",
     authMiddleware,
     companiesRouter({ firestore, bigQuery, logger, llmClient })
+  );
+  app.use(
+    "/golden-interview",
+    authMiddleware,
+    goldenInterviewRouter({ firestore, logger })
   );
   const publicSubscriptionsRouter = express.Router();
   publicSubscriptionsRouter.get("/plans", (req, res, next) => {

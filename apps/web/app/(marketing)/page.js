@@ -5,6 +5,7 @@ import { signOut, useSession } from "next-auth/react";
 import { useUser } from "../../components/user-context";
 import Link from "next/link";
 import { WizardLaunchTrigger } from "../../components/wizard/launch-wizard-trigger";
+import { InterviewLaunchTrigger } from "../../components/golden-interview/interview-launch-trigger";
 
 const highlights = [
   {
@@ -93,6 +94,18 @@ export default function MarketingPage() {
             </div>
           ) : displayUser ? (
             <>
+              <InterviewLaunchTrigger>
+                {({ onClick }) => (
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-primary-600 px-5 py-2 text-white shadow-sm transition hover:bg-primary-700"
+                  >
+                    <span>✨</span>
+                    Start AI Interview
+                  </button>
+                )}
+              </InterviewLaunchTrigger>
               <WizardLaunchTrigger>
                 {({ onClick }) => (
                   <button
