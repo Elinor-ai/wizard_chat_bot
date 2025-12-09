@@ -147,5 +147,7 @@ export {
   UniqueValueSchema,
   ExtractionMetadataSchema,
   // Main schema
-  UniversalGoldenSchema
+  UniversalGoldenSchema,
+  // Factory function
+  createInitialGoldenRecord
 } from "./schemas/golden-schema.js";

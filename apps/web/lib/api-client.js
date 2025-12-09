@@ -2228,20 +2228,23 @@ const goldenInterviewChatResponseSchema = z.object({
 
 export const GoldenInterviewApi = {
   /**
-   * Start a new golden interview session (fresh start, no context required)
+   * Start a new golden interview session
    * POST /golden-interview/start
-   * @param {Object} options - { authToken, signal }
+   * @param {Object} options - { authToken, signal, initialData? }
+   * @param {Object} options.initialData - Optional pre-flight context (e.g., { companyId })
    * @returns {Promise<{ sessionId: string, message?: string, ui_tool?: object }>}
    */
   async startSession(options = {}) {
+    const { authToken, signal, initialData = {} } = options;
+
     const response = await fetch(`${API_BASE_URL}/golden-interview/start`, {
       method: "POST",
-      signal: options.signal,
+      signal,
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(options.authToken),
+        ...authHeaders(authToken),
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ initialData }),
     });
 
     if (!response.ok) {

@@ -15,12 +15,14 @@ import {
   identifyMissingFields,
 } from "./prompts.js";
 import { validateUIToolProps, getUIToolSchema } from "./tools-definition.js";
+import { createInitialGoldenRecord } from "@wizard/core";
 
 // =============================================================================
 // CONSTANTS
 // =============================================================================
 
 const SESSIONS_COLLECTION = "golden_interview_sessions";
+const COMPANIES_COLLECTION = "companies";
 const DEFAULT_MODEL = "gemini-2.0-flash";
 const MAX_TOKENS = 2000;
 
@@ -100,24 +102,71 @@ export class GoldenInterviewerService {
   // ===========================================================================
 
   /**
-   * Start a new interview session
+   * Start a new interview session with optional company hydration
    * @param {object} options
    * @param {string} options.userId - User ID
-   * @param {object} [options.initialData] - Optional initial schema data
+   * @param {string} [options.companyId] - Optional company ID to pre-load context
+   * @param {string} [options.companyName] - Optional company name fallback
    * @returns {Promise<{sessionId: string, response: object}>}
    */
-  async startSession({ userId, initialData = {} }) {
+  async startSession({ userId, companyId = null, companyName = null }) {
     const sessionId = nanoid(12);
     const now = new Date();
 
+    // =========================================================================
+    // STEP 1: Fetch company data if companyId is provided
+    // =========================================================================
+    let companyData = null;
+
+    if (companyId) {
+      try {
+        const companyDoc = await this.firestore.getDocument(
+          COMPANIES_COLLECTION,
+          companyId
+        );
+
+        if (companyDoc) {
+          companyData = { id: companyId, ...companyDoc };
+          this.logger.info(
+            { sessionId, companyId, companyName: companyDoc.name },
+            "golden-interviewer.session.company_hydrated"
+          );
+        } else {
+          this.logger.warn(
+            { sessionId, companyId },
+            "golden-interviewer.session.company_not_found"
+          );
+        }
+      } catch (error) {
+        this.logger.error(
+          { sessionId, companyId, err: error },
+          "golden-interviewer.session.company_fetch_error"
+        );
+      }
+    }
+
+    // Fallback: if no company data but we have a name, create minimal context
+    if (!companyData && companyName) {
+      companyData = { name: companyName };
+    }
+
+    // =========================================================================
+    // STEP 2: Create hydrated Golden Record using factory function
+    // =========================================================================
+    const goldenSchema = createInitialGoldenRecord(sessionId, companyData);
+
+    // =========================================================================
+    // STEP 3: Build and save session document
+    // =========================================================================
     const session = {
       sessionId,
       userId,
+      companyId, // Store for indexing/querying
       createdAt: now,
       updatedAt: now,
       status: "active",
       turnCount: 0,
-      goldenSchema: initialData,
+      goldenSchema, // Hydrated record with company context
       conversationHistory: [],
       metadata: {
         completionPercentage: 0,
@@ -130,11 +179,13 @@ export class GoldenInterviewerService {
     await this.firestore.saveDocument(SESSIONS_COLLECTION, sessionId, session);
 
     this.logger.info(
-      { sessionId, userId },
+      { sessionId, userId, companyId, hasCompanyContext: !!companyData },
       "golden-interviewer.session.created"
     );
 
-    // Generate first turn (greeting + first question)
+    // =========================================================================
+    // STEP 4: Generate first turn with hydrated context
+    // =========================================================================
     const firstTurnResponse = await this.generateFirstTurn(session);
 
     // Update session with first turn

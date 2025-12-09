@@ -11,15 +11,21 @@ import { getComponent } from "./registry";
  *
  * This component is completely independent - no Wizard dependencies.
  * On mount, it calls /golden-interview/start to create a fresh session.
- * The agent will ask for company/role context as its first question.
+ *
+ * Props:
+ * - companyId: (optional) Pre-selected company ID from URL params
+ * - companyName: (optional) Pre-selected company name for immediate display
+ *
+ * If companyId is provided, the agent starts with that context.
+ * Otherwise, the agent will ask for company/role context as its first question.
  *
  * Features:
- * - Auto-initializes session on mount
+ * - Auto-initializes session on mount with optional pre-flight context
  * - Conversational chat with dynamic UI components
  * - Handles both text input and rich interactive inputs from registry
  * - Auto-scroll, typing indicators, error handling
  */
-export default function ChatInterface() {
+export default function ChatInterface({ companyId = null, companyName = null }) {
   const { user } = useUser();
   const router = useRouter();
   const authToken = user?.authToken;
@@ -57,7 +63,13 @@ export default function ChatInterface() {
       setError(null);
 
       try {
-        const response = await GoldenInterviewApi.startSession({ authToken });
+        // Build initialData with company context if provided
+        const initialData = companyId ? { companyId } : {};
+
+        const response = await GoldenInterviewApi.startSession({
+          authToken,
+          initialData,
+        });
 
         setSessionId(response.sessionId);
 
@@ -300,7 +312,9 @@ export default function ChatInterface() {
                 Golden Interview
               </h1>
               <p className="text-xs text-slate-500">
-                Let&apos;s capture what makes your role unique
+                {companyName
+                  ? `Hiring for ${companyName}`
+                  : "Let's capture what makes your role unique"}
               </p>
             </div>
           </div>

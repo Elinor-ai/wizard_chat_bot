@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import ChatInterface from "../../components/golden-interview/ChatInterface";
 
 function LoadingFallback() {
@@ -14,10 +15,28 @@ function LoadingFallback() {
   );
 }
 
+/**
+ * Inner component that reads URL search params.
+ * Separated to work correctly with Suspense boundary.
+ */
+function GoldenInterviewContent() {
+  const searchParams = useSearchParams();
+
+  const companyId = searchParams.get("companyId") || null;
+  const companyName = searchParams.get("companyName") || null;
+
+  return (
+    <ChatInterface
+      companyId={companyId}
+      companyName={companyName}
+    />
+  );
+}
+
 export default function GoldenInterviewPage() {
   return (
     <Suspense fallback={<LoadingFallback />}>
-      <ChatInterface />
+      <GoldenInterviewContent />
     </Suspense>
   );
 }
