@@ -86,7 +86,16 @@ export class UnifiedVideoRenderer {
     return { client, key };
   }
 
-  async renderVideo(provider, request, context = {}) {
+  /**
+   * Renders a video using the appropriate provider and strategy.
+   *
+   * @param {string} provider - "veo" or "sora"
+   * @param {import('./contracts.js').VideoGenerationRequest} request
+   * @param {Object} context - Job context
+   * @param {import('./contracts.js').RenderPlan} [renderPlan] - Optional render plan for multi-extend
+   * @returns {Promise<{videoUrl: string, seconds: number | null}>}
+   */
+  async renderVideo(provider, request, context = {}, renderPlan = null) {
     const { client, key } = this.selectClient(provider);
     const trafficContext = {
       provider: key,
@@ -102,8 +111,81 @@ export class UnifiedVideoRenderer {
         ? `${client.baseUrl}/videos`
         : null;
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MULTI_EXTEND STRATEGY: Use VeoClient's generateWithRenderPlan
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (
+      key === "veo" &&
+      renderPlan?.strategy === "multi_extend" &&
+      typeof client.generateWithRenderPlan === "function"
+    ) {
+      // Extract segment contexts for segment-aware prompting
+      const segmentContexts = request.segmentContexts ?? null;
+
+      this.logger?.info?.(
+        {
+          provider: key,
+          strategy: renderPlan.strategy,
+          segmentCount: renderPlan.segments?.length,
+          finalPlannedSeconds: renderPlan.finalPlannedSeconds,
+          hasSegmentContexts: Boolean(segmentContexts?.length),
+          segmentPhases: segmentContexts?.map(s => s.phase) ?? [],
+          jobId: context.jobId,
+          itemId: context.itemId,
+        },
+        "[Renderer] Starting multi-extend generation"
+      );
+
+      try {
+        // Pass segment contexts to enable segment-specific prompting
+        const result = await client.generateWithRenderPlan(request, renderPlan, segmentContexts);
+        let finalUrl = result.videoUrl;
+
+        // Measure actual duration if not provided
+        let measuredSeconds = Number(result.seconds) || null;
+        if (!measuredSeconds) {
+          const localPath = resolveLocalPathFromUrl(finalUrl);
+          if (localPath) {
+            try {
+              measuredSeconds = await probeDurationSeconds(localPath);
+            } catch (err) {
+              this.logger?.debug?.(
+                { err, provider: key, jobId: context.jobId },
+                "[Renderer] ffprobe duration failed for multi-extend"
+              );
+            }
+          }
+        }
+
+        const seconds = measuredSeconds ?? renderPlan.finalPlannedSeconds ?? null;
+
+        this.logger?.info?.(
+          { provider: key, jobId: context.jobId, itemId: context.itemId, videoUrl: finalUrl, seconds },
+          "[Renderer] Multi-extend success"
+        );
+        return { videoUrl: finalUrl, seconds };
+      } catch (err) {
+        if (err instanceof VideoRendererError) throw err;
+        throw new VideoRendererError(err.message || "Multi-extend generation failed", {
+          code: "PROVIDER_ERROR",
+          context: { provider: key, strategy: "multi_extend" },
+        });
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SINGLE_SHOT / FALLBACK_SHORTER: Use standard single-call flow
+    // ═══════════════════════════════════════════════════════════════════════════
     this.logger?.info?.(
-      { provider: key, aspectRatio: request.aspectRatio, duration: request.duration, jobId: context.jobId, itemId: context.itemId },
+      {
+        provider: key,
+        aspectRatio: request.aspectRatio,
+        duration: request.duration,
+        strategy: renderPlan?.strategy ?? "legacy",
+        hasProviderOptions: !!(request.providerOptions?.sora || request.providerOptions?.veo),
+        jobId: context.jobId,
+        itemId: context.itemId,
+      },
       "[Renderer] Starting generation"
     );
 
@@ -174,10 +256,12 @@ export class UnifiedVideoRenderer {
               context,
             });
           }
+          // Use request duration as fallback if provider doesn't return actual seconds
+          // Note: Duration clamping is handled by each provider client
           const fallbackPlanned =
             Number.isFinite(Number(request?.duration)) &&
             Number(request.duration) > 0
-              ? Math.min(Number(request.duration), 8)
+              ? Number(request.duration)
               : null;
 
           let measuredSeconds = Number(status.seconds) || null;

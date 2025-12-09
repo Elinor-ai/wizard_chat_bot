@@ -365,6 +365,35 @@ async function askAssetAdapt(context) {
   }
 }
 
+async function askVideoConfig(context) {
+  try {
+    const result = await orchestrator.run(LLM_CORE_TASK.VIDEO_CONFIG, context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model
+        }
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      videoConfig: result.videoConfig ?? null,
+      metadata: result.metadata ?? null
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "askVideoConfig orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error)
+      }
+    };
+  }
+}
+
 async function askVideoStoryboard(context) {
   try {
     const result = await orchestrator.run(LLM_CORE_TASK.VIDEO_STORYBOARD, context);
@@ -565,6 +594,7 @@ export const llmClient = {
   askAssetMaster,
   askAssetChannelBatch,
   askAssetAdapt,
+  askVideoConfig,
   askVideoStoryboard,
   askVideoCaption,
   askVideoCompliance,

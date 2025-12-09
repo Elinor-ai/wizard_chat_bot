@@ -26,6 +26,7 @@ export const LLM_CORE_TASK = {
   ASSET_MASTER: "asset_master",
   ASSET_CHANNEL_BATCH: "asset_channel_batch",
   ASSET_ADAPT: "asset_adapt",
+  VIDEO_CONFIG: "video_config",
   VIDEO_STORYBOARD: "video_storyboard",
   VIDEO_CAPTION: "video_caption",
   VIDEO_COMPLIANCE: "video_compliance",

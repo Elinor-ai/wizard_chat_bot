@@ -211,11 +211,22 @@ export function createVideoLibraryService({
     return firestore.saveDocument(COLLECTION, itemId, payload);
   }
 
+  /**
+   * Creates a new video library item with manifest.
+   *
+   * @param {Object} params
+   * @param {Object} params.job - The job posting data
+   * @param {string} params.channelId - Target channel ID
+   * @param {string} [params.recommendedMedium] - Preferred video medium
+   * @param {string} params.ownerUserId - Owner user ID
+   * @param {import('./renderers/contracts.js').ProviderOptions} [params.providerOptions] - Provider-specific overrides
+   */
   async function createItem({
     job,
     channelId,
     recommendedMedium,
     ownerUserId,
+    providerOptions,
   }) {
     const itemId = uuid();
     const channelName = deriveChannelName(channelId);
@@ -230,6 +241,7 @@ export function createVideoLibraryService({
       logger,
       version: 1,
       usageTracker,
+      providerOptions,
     });
     const now = new Date().toISOString();
     const baseItem = {
@@ -298,11 +310,22 @@ export function createVideoLibraryService({
     return getItem({ ownerUserId: item.ownerUserId, itemId: item.id });
   }
 
+  /**
+   * Regenerates a video manifest for an existing item.
+   *
+   * @param {Object} params
+   * @param {string} params.ownerUserId - Owner user ID
+   * @param {string} params.itemId - Item ID to regenerate
+   * @param {Object} params.job - The job posting data
+   * @param {string} [params.recommendedMedium] - Preferred video medium
+   * @param {import('./renderers/contracts.js').ProviderOptions} [params.providerOptions] - Provider-specific overrides
+   */
   async function regenerateManifest({
     ownerUserId,
     itemId,
     job,
     recommendedMedium,
+    providerOptions,
   }) {
     const existing = await getItem({ ownerUserId, itemId });
     if (!existing) {
@@ -319,6 +342,7 @@ export function createVideoLibraryService({
       logger,
       version: existing.manifestVersion + 1,
       usageTracker,
+      providerOptions,
     });
     const manifests = [...existing.manifests, manifest];
     const updates = {
@@ -451,6 +475,14 @@ export function createVideoLibraryService({
       },
       "render.trigger.completed"
     );
+
+    // Debug logging for video URL tracking
+    console.log(`\n🎬 [Video Service Debug] ═══════════════════════════════════════`);
+    console.log(`   Item ID: ${itemId}`);
+    console.log(`   Render Status: ${renderTask.status}`);
+    console.log(`   Video URL: ${renderTask.result?.videoUrl ?? "NOT SET"}`);
+    console.log(`   Duration (seconds): ${renderTask.metrics?.secondsGenerated ?? "NOT SET"}`);
+    console.log(`═══════════════════════════════════════════════════════════════\n`);
     const updated = await updateItem(
       existing,
       {

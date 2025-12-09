@@ -106,5 +106,12 @@ export {
   VideoPublishTaskSchema,
   VideoAuditLogEntrySchema,
   VideoLibraryStatusEnum,
-  VideoLibraryItemSchema
+  VideoLibraryItemSchema,
+  // VideoConfig LLM architecture schemas
+  VideoLengthPresetEnum,
+  VideoConfigSchema,
+  RenderStrategyEnum,
+  RenderSegmentKindEnum,
+  RenderSegmentSchema,
+  RenderPlanSchema
 } from "./schemas/video-library.js";

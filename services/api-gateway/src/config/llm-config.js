@@ -17,7 +17,7 @@ const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
 // .env should only contain keys, endpoints, and timeouts.
 // ═══════════════════════════════════════════════════════════════════════════════
 const DEFAULT_VIDEO_PROVIDER = "veo";
-const DEFAULT_VEO_MODEL = "veo-3.1-generate-preview";
+const DEFAULT_VEO_MODEL = "veo-3.1-fast-generate-preview";
 const DEFAULT_SORA_MODEL = "sora-2-pro";
 
 /**
@@ -68,6 +68,7 @@ const GEMINI_TASKS = [
   LLM_CORE_TASK.ASSET_MASTER,
   LLM_CORE_TASK.ASSET_CHANNEL_BATCH,
   LLM_CORE_TASK.ASSET_ADAPT,
+  LLM_CORE_TASK.VIDEO_CONFIG,
   LLM_CORE_TASK.VIDEO_STORYBOARD,
   LLM_CORE_TASK.VIDEO_CAPTION,
   LLM_CORE_TASK.VIDEO_COMPLIANCE,

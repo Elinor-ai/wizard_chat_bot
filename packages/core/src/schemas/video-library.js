@@ -62,6 +62,47 @@ export const VideoThumbnailSchema = z.object({
   overlayText: z.string().nullable().optional()
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// VIDEO CONFIG (LLM Intent Layer)
+// Represents the creative/strategic intent for video generation.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const VideoLengthPresetEnum = z.enum(["short", "medium", "long"]);
+
+export const VideoConfigSchema = z.object({
+  lengthPreset: VideoLengthPresetEnum.optional(),
+  targetSeconds: z.number().positive().optional(),
+  primaryChannelFocus: z.string().nullable().optional(),
+  tone: z.string().optional(),
+  hasVoiceOver: z.boolean().optional(),
+  audioStyle: z.string().optional(),
+  visualStyle: z.string().optional(),
+  notesForStoryboard: z.string().nullable().optional()
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RENDER PLAN (Execution Layer)
+// Deterministic execution plan derived from VideoConfig + channel specs.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const RenderStrategyEnum = z.enum(["single_shot", "multi_extend", "fallback_shorter"]);
+export const RenderSegmentKindEnum = z.enum(["initial", "extend"]);
+
+export const RenderSegmentSchema = z.object({
+  kind: RenderSegmentKindEnum,
+  seconds: z.number().positive()
+});
+
+export const RenderPlanSchema = z.object({
+  provider: z.string(),
+  modelId: z.string(),
+  strategy: RenderStrategyEnum,
+  segments: z.array(RenderSegmentSchema).min(1),
+  finalPlannedSeconds: z.number().positive(),
+  aspectRatio: z.string().optional(),
+  resolution: z.string().optional()
+});
+
 export const VideoAssetManifestSchema = z.object({
   manifestId: z.string(),
   version: z.number().int().min(1),
@@ -87,7 +128,12 @@ export const VideoAssetManifestSchema = z.object({
     promptVersion: z.string().default("2024.11.video"),
     warnings: z.array(z.string()).default([]),
     targetDurationSeconds: z.number().positive().nullable().optional(),
-    plannedExtends: z.number().int().nonnegative().nullable().optional()
+    plannedExtends: z.number().int().nonnegative().nullable().optional(),
+    // Provider-specific options for video generation (Sora/Veo)
+    providerOptions: z.record(z.string(), z.unknown()).nullable().optional(),
+    // New fields for VideoConfig LLM architecture (Step 1: data models only)
+    videoConfig: VideoConfigSchema.nullable().optional(),
+    renderPlan: RenderPlanSchema.nullable().optional()
   })
 });
 

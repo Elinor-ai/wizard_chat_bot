@@ -7,6 +7,7 @@ import {
   buildAssetChannelBatchPrompt,
   buildAssetAdaptPrompt
 } from "./prompts/assets.js";
+import { buildVideoConfigPrompt } from "./prompts/video-config.js";
 import { buildVideoStoryboardPrompt } from "./prompts/video-storyboard.js";
 import { buildVideoCaptionPrompt } from "./prompts/video-caption.js";
 import { buildVideoCompliancePrompt } from "./prompts/video-compliance.js";
@@ -19,6 +20,7 @@ import {
   parseAssetChannelBatchResult,
   parseAssetAdaptResult
 } from "./parsers/assets.js";
+import { parseVideoConfigResult } from "./parsers/video-config.js";
 import { parseVideoStoryboardResult } from "./parsers/video-storyboard.js";
 import { parseVideoCaptionResult } from "./parsers/video-caption.js";
 import { parseVideoComplianceResult } from "./parsers/video-compliance.js";
@@ -132,6 +134,18 @@ export const TASK_REGISTRY = {
     retries: 2,
     strictOnRetry: true,
     previewLogger: logAssetPreview,
+  },
+  video_config: {
+    system:
+      "You are a video creative strategist for short-form recruiting videos. Decide on creative intent like tone, pacing, and style. Do NOT mention APIs or technical details. Respond with valid JSON only.",
+    builder: buildVideoConfigPrompt,
+    parser: parseVideoConfigResult,
+    mode: "json",
+    temperature: 0.3,
+    maxTokens: { default: 600, gemini: 2048 },
+    retries: 2,
+    strictOnRetry: true,
+    previewLogger: logVideoPreview,
   },
   video_storyboard: {
     system:

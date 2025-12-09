@@ -1502,11 +1502,30 @@ function VideoCard({ content, status }) {
   const caption = content?.caption ?? content?.body ?? "Video being generated...";
   const durationSeconds = content?.durationSeconds ?? 0;
 
+  // Debug logging
+  console.log("[VideoCard Debug] ═══════════════════════════════════");
+  console.log("  content:", content);
+  console.log("  videoUrl:", videoUrl);
+  console.log("  durationSeconds:", durationSeconds);
+  console.log("  status:", status);
+  console.log("═══════════════════════════════════════════════════════");
+
   const formatDuration = (seconds) => {
     if (!seconds || seconds === 0) return "0:00";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const handleVideoError = (e) => {
+    console.error("[VideoCard] Video load error:", e.target.error);
+    console.error("[VideoCard] Video src:", e.target.currentSrc);
+  };
+
+  const handleVideoLoaded = (e) => {
+    console.log("[VideoCard] Video loaded successfully!");
+    console.log("[VideoCard] Duration from video element:", e.target.duration);
+    console.log("[VideoCard] Video dimensions:", e.target.videoWidth, "x", e.target.videoHeight);
   };
 
   return (
@@ -1518,6 +1537,8 @@ function VideoCard({ content, status }) {
             poster={posterUrl}
             className="h-auto w-full"
             style={{ maxHeight: "300px" }}
+            onError={handleVideoError}
+            onLoadedMetadata={handleVideoLoaded}
           >
             <source src={videoUrl} type="video/mp4" />
             Your browser does not support the video tag.
