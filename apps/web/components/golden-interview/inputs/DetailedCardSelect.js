@@ -1,16 +1,8 @@
 "use client";
 
-/**
- * DetailedCardSelect - List/Grid of cards with Icon + Title + Description
- * @param {Object} props
- * @param {Array<{id: string, title: string, description: string, icon: React.ReactNode, badge?: string}>} props.options
- * @param {string|Array<string>} props.value - Selected id(s)
- * @param {function} props.onChange - Callback with selected value(s)
- * @param {boolean} [props.multiple=false] - Allow multiple selections
- * @param {"list"|"grid"} [props.layout="list"] - Layout mode
- * @param {string} [props.title] - Section title
- * @param {string} [props.selectedColor="#8b5cf6"] - Selection highlight color
- */
+import { useState, useEffect } from "react";
+import DynamicIcon from "./DynamicIcon";
+
 export default function DetailedCardSelect({
   options,
   value,
@@ -18,38 +10,54 @@ export default function DetailedCardSelect({
   multiple = false,
   layout = "list",
   title,
-  selectedColor = "#8b5cf6"
+  selectedColor = "#8b5cf6",
 }) {
+  // Internal state to ensure selection works even if parent state has issues
+  const [internalValue, setInternalValue] = useState(value);
+
+  // Sync internal state with external value prop
+  useEffect(() => {
+    setInternalValue(value);
+  }, [value]);
+
+  // Use internal value for display, falling back to prop value
+  const currentValue = internalValue !== undefined ? internalValue : value;
+
   const selectedIds = multiple
-    ? Array.isArray(value)
-      ? value
+    ? Array.isArray(currentValue)
+      ? currentValue
       : []
-    : value
-      ? [value]
+    : currentValue
+      ? [currentValue]
       : [];
 
   const handleSelect = (optionId) => {
+    let newValue;
+
     if (multiple) {
       const isSelected = selectedIds.includes(optionId);
-      const newSelection = isSelected
+      newValue = isSelected
         ? selectedIds.filter((id) => id !== optionId)
         : [...selectedIds, optionId];
-      onChange(newSelection);
     } else {
-      onChange(optionId === value ? null : optionId);
+      newValue = optionId === currentValue ? null : optionId;
+    }
+
+    // Update internal state immediately for responsive UI
+    setInternalValue(newValue);
+
+    // Notify parent
+    if (onChange) {
+      onChange(newValue);
     }
   };
 
   const containerClass =
-    layout === "grid"
-      ? "grid grid-cols-2 gap-3"
-      : "flex flex-col gap-3";
+    layout === "grid" ? "grid grid-cols-2 gap-3" : "flex flex-col gap-3";
 
   return (
     <div className="w-full space-y-4">
-      {title && (
-        <h3 className="text-lg font-semibold text-white">{title}</h3>
-      )}
+      {title && <h3 className="text-lg font-semibold text-black">{title}</h3>}
 
       <div className={containerClass}>
         {options.map((option) => {
@@ -57,19 +65,20 @@ export default function DetailedCardSelect({
 
           return (
             <button
+              type="button"
               key={option.id}
               onClick={() => handleSelect(option.id)}
               className={`relative p-4 rounded-xl border transition-all duration-200 text-left group ${
                 isSelected
                   ? "border-transparent"
-                  : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                  : "bg-green/5 border-green/10 hover:bg-green/10 hover:border-green/20"
               }`}
               style={{
                 backgroundColor: isSelected ? `${selectedColor}15` : undefined,
                 borderColor: isSelected ? selectedColor : undefined,
                 boxShadow: isSelected
                   ? `0 4px 20px ${selectedColor}25`
-                  : undefined
+                  : undefined,
               }}
             >
               {/* Selection indicator line */}
@@ -83,18 +92,25 @@ export default function DetailedCardSelect({
               <div className="flex items-start gap-4">
                 {/* Icon container */}
                 <div
-                  className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all ${
-                    isSelected
-                      ? "scale-105"
-                      : "bg-white/5 group-hover:bg-white/10"
+                  className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
+                    isSelected ? "scale-105" : "bg-black/5 group-hover:bg-white/10"
                   }`}
                   style={{
                     backgroundColor: isSelected
                       ? `${selectedColor}25`
-                      : undefined
+                      : undefined,
                   }}
                 >
-                  {option.icon}
+                  <DynamicIcon
+                    name={option.icon}
+                    size={24}
+                    className={`transition-colors ${
+                      isSelected ? "text-black" : "text-black/70"
+                    }`}
+                    style={{
+                      color: isSelected ? selectedColor : undefined,
+                    }}
+                  />
                 </div>
 
                 {/* Content */}
@@ -102,7 +118,7 @@ export default function DetailedCardSelect({
                   <div className="flex items-center gap-2">
                     <h4
                       className={`font-semibold transition-colors ${
-                        isSelected ? "text-white" : "text-white/90"
+                        isSelected ? "text-black" : "text-black/90"
                       }`}
                     >
                       {option.title}
@@ -112,14 +128,14 @@ export default function DetailedCardSelect({
                         className="px-2 py-0.5 rounded-full text-[10px] font-medium"
                         style={{
                           backgroundColor: `${selectedColor}30`,
-                          color: selectedColor
+                          color: selectedColor,
                         }}
                       >
                         {option.badge}
                       </span>
                     )}
                   </div>
-                  <p className="text-white/50 text-sm mt-1 line-clamp-2">
+                  <p className="text-black/50 text-sm mt-1 line-clamp-2">
                     {option.description}
                   </p>
                 </div>
@@ -130,7 +146,7 @@ export default function DetailedCardSelect({
                     isSelected ? "border-transparent" : "border-white/20"
                   }`}
                   style={{
-                    backgroundColor: isSelected ? selectedColor : "transparent"
+                    backgroundColor: isSelected ? selectedColor : "transparent",
                   }}
                 >
                   {isSelected && (

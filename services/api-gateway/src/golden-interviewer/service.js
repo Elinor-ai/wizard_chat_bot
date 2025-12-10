@@ -91,7 +91,9 @@ export class GoldenInterviewerService {
         },
         "golden-interviewer.llm_api.http_error"
       );
-      throw new Error(`LLM API call failed: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `LLM API call failed: ${response.status} ${response.statusText}`
+      );
     }
 
     const data = await response.json();
@@ -121,7 +123,12 @@ export class GoldenInterviewerService {
    * @param {string} [options.companyName] - Optional company name fallback
    * @returns {Promise<{sessionId: string, response: object}>}
    */
-  async startSession({ userId, authToken, companyId = null, companyName = null }) {
+  async startSession({
+    userId,
+    authToken,
+    companyId = null,
+    companyName = null,
+  }) {
     const sessionId = nanoid(12);
 
     // =========================================================================
@@ -259,6 +266,10 @@ export class GoldenInterviewerService {
     let llmResponse;
     try {
       llmResponse = await this.callLlmApi({ authToken, context: llmContext });
+      console.log(
+        "🔍 [Backend] RAW LLM Response:",
+        JSON.stringify(llmResponse, null, 2)
+      );
     } catch (error) {
       this.logger.error(
         { sessionId, err: error },
@@ -266,7 +277,8 @@ export class GoldenInterviewerService {
       );
       // Return a fallback response that keeps the conversation going
       return {
-        message: "I had trouble processing that. Let me try asking differently...",
+        message:
+          "I had trouble processing that. Let me try asking differently...",
         ui_tool: {
           type: "smart_textarea",
           props: {
@@ -289,7 +301,8 @@ export class GoldenInterviewerService {
       );
       // Return a fallback response that keeps the conversation going
       return {
-        message: "I had trouble processing that. Let me try asking differently...",
+        message:
+          "I had trouble processing that. Let me try asking differently...",
         ui_tool: {
           type: "smart_textarea",
           props: {
@@ -313,7 +326,7 @@ export class GoldenInterviewerService {
       completion_percentage: llmResponse.completionPercentage,
       interview_phase: llmResponse.interviewPhase,
     };
-
+    console.log("🔍 [Backend] parsed :", JSON.stringify(parsed, null, 2));
     // Apply schema extractions
     if (parsed.extraction?.updates) {
       session.goldenSchema = this.applySchemaUpdates(
@@ -461,7 +474,8 @@ export class GoldenInterviewerService {
       );
       // Return fallback response
       return {
-        message: "Hello! I'm here to learn about your job opportunity. Let's start with something simple.",
+        message:
+          "Hello! I'm here to learn about your job opportunity. Let's start with something simple.",
         ui_tool: {
           type: "smart_textarea",
           props: {
@@ -485,7 +499,8 @@ export class GoldenInterviewerService {
       );
       // Return fallback response
       return {
-        message: "Hello! I'm here to learn about your job opportunity. Let's start with something simple.",
+        message:
+          "Hello! I'm here to learn about your job opportunity. Let's start with something simple.",
         ui_tool: {
           type: "smart_textarea",
           props: {

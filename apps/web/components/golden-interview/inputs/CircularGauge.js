@@ -1,22 +1,19 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 
 /**
- * CircularGauge - A circular SVG slider with centered text display
- * @param {Object} props
- * @param {number} props.value - Current value
- * @param {function} props.onChange - Callback when value changes
- * @param {number} [props.min=0] - Minimum value
- * @param {number} [props.max=100] - Maximum value
- * @param {number} [props.step=1] - Step increment
- * @param {string} [props.label] - Label text displayed above value
- * @param {string} [props.unit] - Unit suffix (e.g., "$", "K", "%")
- * @param {string} [props.prefix] - Value prefix (e.g., "$")
- * @param {function} [props.formatValue] - Custom value formatter
- * @param {string} [props.trackColor] - Track background color
- * @param {string} [props.progressColor] - Progress arc color/gradient
- * @param {number} [props.size=200] - SVG size in pixels
+ * CircularGauge - Production Ready
+ * Expects strict schema match from LLM.
+ * * @param {Object} props
+ * @param {number} props.value - Current value (controlled by parent)
+ * @param {function} props.onChange - Callback for value changes
+ * @param {number} props.min - Minimum value
+ * @param {number} props.max - Maximum value
+ * @param {string} props.label - Center label (e.g., "Base Salary")
+ * @param {string} props.unit - Unit suffix (e.g., "$")
+ * @param {string} props.prefix - Prefix (e.g. "$")
+ * @param {Array<{value: number, label: string}>} props.markers - Specific points to label on the arc
  */
 export default function CircularGauge({
   value,
@@ -28,7 +25,8 @@ export default function CircularGauge({
   unit = "",
   prefix = "",
   formatValue,
-  trackColor = "rgba(255,255,255,0.1)",
+  markers = [], // <--- New Prop
+  trackColor = "rgba(0,0,0,0.1)",
   progressColor = "url(#gaugeGradient)",
   size = 200,
 }) {
@@ -36,7 +34,7 @@ export default function CircularGauge({
   const [isDragging, setIsDragging] = useState(false);
 
   const strokeWidth = size * 0.08;
-  const radius = (size - strokeWidth) / 2 - 10;
+  const radius = (size - strokeWidth) / 2 - 20; // Reduced radius slightly to fit markers
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
 
@@ -48,26 +46,20 @@ export default function CircularGauge({
     ? formatValue(normalizedValue)
     : `${prefix}${normalizedValue.toLocaleString()}${unit}`;
 
+  // Calculate position logic
   const getValueFromAngle = useCallback(
     (clientX, clientY) => {
       if (!svgRef.current) return value;
-
       const rect = svgRef.current.getBoundingClientRect();
       const x = clientX - rect.left - center;
       const y = clientY - rect.top - center;
-
-      // Calculate angle from bottom-left (-135deg) to bottom-right (135deg)
       let angle = Math.atan2(y, x) * (180 / Math.PI);
-
-      // Normalize angle to our 270-degree arc starting from bottom-left
       angle = angle + 135;
       if (angle < 0) angle += 360;
       if (angle > 270) angle = angle > 315 ? 0 : 270;
-
       const newPercentage = Math.min(Math.max(angle / 270, 0), 1);
       const rawValue = min + newPercentage * (max - min);
       const steppedValue = Math.round(rawValue / step) * step;
-
       return Math.min(Math.max(steppedValue, min), max);
     },
     [center, min, max, step, value]
@@ -93,8 +85,7 @@ export default function CircularGauge({
     setIsDragging(false);
   }, []);
 
-  // Attach global mouse events when dragging
-  useState(() => {
+  useEffect(() => {
     if (isDragging) {
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
@@ -105,37 +96,69 @@ export default function CircularGauge({
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
-  // Calculate knob position
+  // Knob Position
   const knobAngle = -135 + percentage * 270;
   const knobX = center + radius * Math.cos((knobAngle * Math.PI) / 180);
   const knobY = center + radius * Math.sin((knobAngle * Math.PI) / 180);
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center select-none">
       <svg
         ref={svgRef}
         width={size}
         height={size}
-        className="cursor-pointer select-none"
+        className="cursor-pointer"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        style={{ touchAction: "none" }}
       >
         <defs>
           <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#6366f1" />
-            <stop offset="50%" stopColor="#8b5cf6" />
-            <stop offset="100%" stopColor="#d946ef" />
+            <stop offset="0%" stopColor="#34d399" />
+            <stop offset="100%" stopColor="#10b981" />
           </linearGradient>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
         </defs>
+
+        {/* Markers Rendering */}
+        {markers.map((marker, idx) => {
+          const mPct = (marker.value - min) / (max - min);
+          // Don't render if out of bounds
+          if (mPct < 0 || mPct > 1) return null;
+
+          const mAngle = -135 + mPct * 270;
+          const mRad = (mAngle * Math.PI) / 180;
+          // Position text slightly outside the circle radius
+          const textR = radius + 15;
+          const tx = center + textR * Math.cos(mRad);
+          const ty = center + textR * Math.sin(mRad);
+
+          return (
+            <g key={idx}>
+              {/* Small tick line */}
+              <line
+                x1={center + (radius - 5) * Math.cos(mRad)}
+                y1={center + (radius - 5) * Math.sin(mRad)}
+                x2={center + radius * Math.cos(mRad)}
+                y2={center + radius * Math.sin(mRad)}
+                stroke="#9ca3af"
+                strokeWidth="2"
+              />
+              {/* Label */}
+              <text
+                x={tx}
+                y={ty}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                className="text-[10px] fill-gray-500 font-medium"
+                style={{ fontSize: size * 0.05 }}
+              >
+                {marker.label}
+              </text>
+            </g>
+          );
+        })}
 
         {/* Background track */}
         <circle
@@ -163,7 +186,6 @@ export default function CircularGauge({
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
           transform={`rotate(135 ${center} ${center})`}
-          filter="url(#glow)"
           className="transition-all duration-150"
         />
 
@@ -172,17 +194,19 @@ export default function CircularGauge({
           cx={knobX}
           cy={knobY}
           r={strokeWidth * 0.8}
-          fill="black"
-          filter="url(#glow)"
-          className="cursor-grab active:cursor-grabbing"
+          fill="white"
+          stroke="#e5e7eb"
+          strokeWidth="1"
+          className="cursor-grab active:cursor-grabbing shadow-lg"
         />
 
-        {/* Center text */}
+        {/* Center Text */}
         <text
           x={center}
-          y={center - 10}
+          y={center - 15}
           textAnchor="middle"
-          className="fill-black/60 text-sm font-medium"
+          className="fill-gray-400 font-medium"
+          style={{ fontSize: size * 0.08 }}
         >
           {label}
         </text>
@@ -190,7 +214,8 @@ export default function CircularGauge({
           x={center}
           y={center + 15}
           textAnchor="middle"
-          className="fill-black text-2xl font-bold"
+          className="fill-gray-900 font-bold"
+          style={{ fontSize: size * 0.16 }}
         >
           {displayValue}
         </text>

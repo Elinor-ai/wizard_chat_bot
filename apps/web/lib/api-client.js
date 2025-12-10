@@ -425,12 +425,15 @@ export const WizardApi = {
       params.set("jobId", jobId);
     }
     const query = params.toString();
-    const response = await fetch(`${API_BASE_URL}/assets${query ? `?${query}` : ""}`, {
-      method: "GET",
-      headers: {
-        ...authHeaders(options.authToken)
+    const response = await fetch(
+      `${API_BASE_URL}/assets${query ? `?${query}` : ""}`,
+      {
+        method: "GET",
+        headers: {
+          ...authHeaders(options.authToken),
+        },
       }
-    });
+    );
 
     if (!response.ok) {
       throw new Error("Failed to load global assets");
@@ -704,7 +707,10 @@ export const WizardApi = {
           id: m?.id,
           role: m?.role,
           hasContent: Boolean(m?.content),
-          contentPreview: typeof m?.content === "string" ? m.content.slice(0, 100) : typeof m?.content,
+          contentPreview:
+            typeof m?.content === "string"
+              ? m.content.slice(0, 100)
+              : typeof m?.content,
         })),
         rawData: payload,
       });
@@ -1074,7 +1080,10 @@ export const UsersApi = {
     });
 
     if (!response.ok) {
-      const message = await extractErrorMessage(response, "Failed to update profile");
+      const message = await extractErrorMessage(
+        response,
+        "Failed to update profile"
+      );
       throw new Error(message);
     }
 
@@ -1100,7 +1109,10 @@ export const UsersApi = {
     });
 
     if (!response.ok) {
-      const message = await extractErrorMessage(response, "Failed to update preferences");
+      const message = await extractErrorMessage(
+        response,
+        "Failed to update preferences"
+      );
       throw new Error(message);
     }
 
@@ -1127,7 +1139,8 @@ export const UsersApi = {
 
     if (!response.ok) {
       const data = await response.json().catch(() => null);
-      const message = data?.error?.message ?? data?.error ?? "Failed to change password";
+      const message =
+        data?.error?.message ?? data?.error ?? "Failed to change password";
       throw new Error(message);
     }
 
@@ -1303,8 +1316,8 @@ export const VideoLibraryApi = {
         taskType: LLM_TASK.VIDEO_RENDER,
         context: { itemId },
       }),
-   });
-   if (!response.ok) {
+    });
+    if (!response.ok) {
       const message = await extractErrorMessage(
         response,
         "Failed to trigger render"
@@ -1332,8 +1345,8 @@ export const VideoLibraryApi = {
         taskType: LLM_TASK.VIDEO_CAPTION_UPDATE,
         context: { itemId, ...payload },
       }),
-   });
-   if (!response.ok) {
+    });
+    if (!response.ok) {
       const message = await extractErrorMessage(
         response,
         "Failed to update caption"
@@ -1400,6 +1413,29 @@ export const VideoLibraryApi = {
 // =============================================================================
 // GOLDEN INTERVIEW API (Standalone - No Wizard Dependencies)
 // =============================================================================
+
+const goldenInterviewStartResponseSchema = z.object({
+  sessionId: z.string(),
+  message: z.string().optional(),
+  ui_tool: z
+    .object({
+      type: z.string(),
+      props: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional()
+    .nullable(),
+});
+
+const goldenInterviewChatResponseSchema = z.object({
+  message: z.string().optional(),
+  ui_tool: z
+    .object({
+      type: z.string(),
+      props: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional()
+    .nullable(),
+});
 
 export const GoldenInterviewApi = {
   /**

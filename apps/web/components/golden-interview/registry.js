@@ -151,21 +151,22 @@ export const COMPONENT_CATALOG = {
         },
         segments: {
           type: "array",
-          description: "Array of segment definitions for the stacked bar",
+          description: "MUST be an array of segment OBJECTS (not strings). Each segment object MUST have id, label, value, and color properties. The color property is MANDATORY for rendering.",
           required: true,
           items: {
             type: "object",
+            required: ["id", "label", "value", "color"],
             properties: {
-              id: { type: "string", description: "Unique identifier for segment" },
-              label: { type: "string", description: "Display label for segment" },
-              color: { type: "string", description: "CSS color for segment (hex or named)" },
-              value: { type: "number", description: "Initial value (percentage)" }
+              id: { type: "string", description: "Unique identifier for segment (required)" },
+              label: { type: "string", description: "Display label for segment (required)" },
+              color: { type: "string", description: "MANDATORY hex color string for segment visual (e.g., '#6366f1')" },
+              value: { type: "number", description: "Initial percentage value (required, 0-100)" }
             }
           },
           example: [
-            { id: "base", label: "Base Salary", color: "#6366f1", value: 70 },
-            { id: "bonus", label: "Bonus", color: "#8b5cf6", value: 20 },
-            { id: "equity", label: "Equity", color: "#d946ef", value: 10 }
+            { "id": "base", "label": "Base Salary", "color": "#6366f1", "value": 70 },
+            { "id": "bonus", "label": "Bonus", "color": "#8b5cf6", "value": 20 },
+            { "id": "equity", "label": "Equity", "color": "#d946ef", "value": 10 }
           ]
         },
         total: {

@@ -21,13 +21,13 @@ import { createGoldenInterviewerService } from "../golden-interviewer/service.js
 // =============================================================================
 
 const StartSessionSchema = z.object({
-  initialData: z.record(z.any()).optional()
+  initialData: z.record(z.any()).optional(),
 });
 
 const ChatRequestSchema = z.object({
   sessionId: z.string().min(1),
   userMessage: z.string().optional(),
-  uiResponse: z.record(z.any()).optional()
+  uiResponse: z.any().optional(),
 });
 
 // =============================================================================
@@ -138,7 +138,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
       const result = await interviewService.startSession({
         userId,
         authToken,
-        initialData: body.initialData || {}
+        initialData: body.initialData || {},
       });
 
       logger.info(
@@ -149,7 +149,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
       res.json({
         success: true,
         sessionId: result.sessionId,
-        response: result.response
+        response: result.response,
       });
     })
   );
@@ -194,7 +194,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
           userId,
           sessionId: body.sessionId,
           hasMessage: !!body.userMessage,
-          hasUiResponse: !!body.uiResponse
+          hasUiResponse: !!body.uiResponse,
         },
         "golden-interview.chat.request"
       );
@@ -203,7 +203,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
         sessionId: body.sessionId,
         authToken,
         userMessage: body.userMessage,
-        uiResponse: body.uiResponse
+        uiResponse: body.uiResponse,
       });
 
       logger.info(
@@ -211,14 +211,27 @@ export function goldenInterviewRouter({ firestore, logger }) {
           sessionId: body.sessionId,
           completion: result.completion_percentage,
           phase: result.interview_phase,
-          extractedCount: result.extracted_fields?.length || 0
+          extractedCount: result.extracted_fields?.length || 0,
         },
         "golden-interview.chat.success"
       );
 
+      // Add this log:
+      console.log(
+        "📤 [API] Sending to Client:",
+        JSON.stringify(
+          {
+            ui_tool: result.ui_tool,
+            message: result.message,
+          },
+          null,
+          2
+        )
+      );
+
       res.json({
         success: true,
-        ...result
+        ...result,
       });
     })
   );
@@ -250,7 +263,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
 
       res.json({
         success: true,
-        session: sessionStatus
+        session: sessionStatus,
       });
     })
   );
@@ -280,7 +293,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
       res.json({
         success: true,
         sessionId,
-        goldenSchema: schema || {}
+        goldenSchema: schema || {},
       });
     })
   );
@@ -313,7 +326,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
       res.json({
         success: true,
         sessionId,
-        history
+        history,
       });
     })
   );
@@ -350,14 +363,14 @@ export function goldenInterviewRouter({ firestore, logger }) {
         {
           sessionId,
           turnCount: result.turnCount,
-          completion: result.completionPercentage
+          completion: result.completionPercentage,
         },
         "golden-interview.complete.success"
       );
 
       res.json({
         success: true,
-        ...result
+        ...result,
       });
     })
   );
@@ -373,7 +386,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
       return res.status(400).json({
         success: false,
         error: "Validation error",
-        details: err.errors
+        details: err.errors,
       });
     }
 

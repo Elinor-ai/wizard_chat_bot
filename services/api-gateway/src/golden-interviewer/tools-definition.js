@@ -18,57 +18,73 @@ export const UI_TOOLS_SCHEMA = {
   circular_gauge: {
     name: "circular_gauge",
     description:
-      "A circular SVG slider for selecting numerical values within a range. Ideal for salary, budget, team size, or any numeric input where a visual dial metaphor works well.",
+      "A circular SVG slider for selecting numerical values within a range. Includes labeled markers on the gauge arc for reference points (e.g., 'Entry', 'Market', 'Expert'). Ideal for salary, budget, team size, or any numeric input where a visual dial metaphor works well.",
     category: "visual_quantifiers",
     valueType: "number",
     props: {
       label: {
         type: "string",
-        description: "Title displayed in the center of the gauge above the value",
-        required: false,
-        example: "Annual Salary"
+        description: "Title displayed in the center of the gauge above the value. REQUIRED.",
+        required: true,
+        example: "Annual Compensation"
       },
       min: {
         type: "number",
-        description: "Minimum value of the scale",
-        required: false,
-        default: 0,
+        description: "Minimum value of the scale. REQUIRED. Markers must have values >= this.",
+        required: true,
         example: 30000
       },
       max: {
         type: "number",
-        description: "Maximum value of the scale",
-        required: false,
-        default: 100,
-        example: 200000
+        description: "Maximum value of the scale. REQUIRED. Markers must have values <= this.",
+        required: true,
+        example: 150000
       },
       step: {
         type: "number",
         description: "Increment step for the value",
         required: false,
         default: 1,
-        example: 5000
+        example: 1000
       },
       unit: {
         type: "string",
-        description: "Suffix displayed after the value (e.g., '$', 'K', '%', 'people')",
+        description: "Suffix displayed after the value (e.g., '/yr', 'K', '%', 'people')",
         required: false,
         default: "",
-        example: "K"
+        example: "/yr"
       },
       prefix: {
         type: "string",
-        description: "Prefix displayed before the value (e.g., '$')",
+        description: "Prefix displayed before the value (e.g., '$', '€')",
         required: false,
         default: "",
         example: "$"
+      },
+      markers: {
+        type: "array",
+        description: "Reference markers displayed on the gauge arc. Each marker's value MUST be within [min, max] range.",
+        required: true,
+        items: {
+          type: "object",
+          required: ["value", "label"],
+          properties: {
+            value: { type: "number", description: "Numeric position on the gauge (must be >= min and <= max)" },
+            label: { type: "string", description: "Text label displayed at this position" }
+          }
+        },
+        example: [
+          { value: 45000, label: "Entry" },
+          { value: 85000, label: "Market" },
+          { value: 130000, label: "Expert" }
+        ]
       }
     },
     useCases: [
-      "Salary range selection",
-      "Team size estimation",
-      "Budget allocation",
-      "Percentage selection"
+      "Salary range selection with market benchmarks",
+      "Team size estimation with tier labels",
+      "Budget allocation with category markers",
+      "Percentage selection with threshold indicators"
     ],
     schemaMapping: [
       "financial_reality.base_compensation.amount_or_range",
@@ -92,15 +108,16 @@ export const UI_TOOLS_SCHEMA = {
       },
       segments: {
         type: "array",
-        description: "Array of segment definitions for the stacked bar",
+        description: "MUST be an array of segment OBJECTS. Each object MUST have id, label, color, value. Color is MANDATORY hex string.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label", "color", "value"],
           properties: {
-            id: { type: "string", description: "Unique identifier for segment" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string", description: "Display label for segment" },
-            color: { type: "string", description: "CSS color for segment (hex or named)" },
-            value: { type: "number", description: "Initial value (percentage)" }
+            color: { type: "string", description: "MANDATORY hex color string (e.g., '#6366f1')" },
+            value: { type: "number", description: "Initial percentage value (0-100)" }
           }
         },
         example: [
@@ -152,10 +169,11 @@ export const UI_TOOLS_SCHEMA = {
         required: false,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string", enum: ["options", "RSUs", "phantom", "profit_interest"] },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID.", enum: ["options", "RSUs", "phantom", "profit_interest"] },
             label: { type: "string" },
-            icon: { type: "string" },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'trending-up', 'gift', 'ghost', 'coins'). Do NOT use emojis." },
             description: { type: "string" }
           }
         }
@@ -240,12 +258,13 @@ export const UI_TOOLS_SCHEMA = {
       },
       items: {
         type: "array",
-        description: "Array of bipolar scales to display",
+        description: "Array of bipolar scales to display. Each item MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "leftLabel", "rightLabel", "value"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             leftLabel: { type: "string" },
             rightLabel: { type: "string" },
             value: { type: "number" }
@@ -283,23 +302,24 @@ export const UI_TOOLS_SCHEMA = {
       },
       dimensions: {
         type: "array",
-        description: "Array of dimensions/axes for the radar chart",
+        description: "Array of dimensions/axes for the radar chart. Each dimension MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label", "value"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
             value: { type: "number" },
-            icon: { type: "string" }
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'book-open', 'target', 'lock-open', 'trending-up', 'scale'). Do NOT use emojis." }
           }
         },
         example: [
-          { id: "learning", label: "Learning", value: 50, icon: "📚" },
-          { id: "impact", label: "Impact", value: 50, icon: "🎯" },
-          { id: "autonomy", label: "Autonomy", value: 50, icon: "🔓" },
-          { id: "growth", label: "Growth", value: 50, icon: "📈" },
-          { id: "balance", label: "Balance", value: 50, icon: "⚖️" }
+          { id: "learning", label: "Learning", value: 50, icon: "book-open" },
+          { id: "impact", label: "Impact", value: 50, icon: "target" },
+          { id: "autonomy", label: "Autonomy", value: 50, icon: "lock-open" },
+          { id: "growth", label: "Growth", value: 50, icon: "trending-up" },
+          { id: "balance", label: "Balance", value: 50, icon: "scale" }
         ]
       },
       max: {
@@ -331,15 +351,16 @@ export const UI_TOOLS_SCHEMA = {
       },
       dials: {
         type: "array",
-        description: "Array of dial definitions",
+        description: "Array of dial definitions. Each dial MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label", "value"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
             value: { type: "number" },
-            icon: { type: "string" },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'target', 'calendar', 'wrench'). Do NOT use emojis." },
             description: { type: "string" }
           }
         }
@@ -367,15 +388,16 @@ export const UI_TOOLS_SCHEMA = {
       },
       metrics: {
         type: "array",
-        description: "Array of metrics to rate",
+        description: "Array of metrics to rate. Each metric MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label", "value"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
             value: { type: "number" },
-            icon: { type: "string" },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'crown', 'users', 'file-text'). Do NOT use emojis." },
             weight: { type: "number" }
           }
         }
@@ -402,7 +424,7 @@ export const UI_TOOLS_SCHEMA = {
   icon_grid: {
     name: "icon_grid",
     description:
-      "A grid of square cards with icons supporting single or multi-select. Perfect for benefits, amenities, or feature selection.",
+      "A grid of square cards with icons supporting single or multi-select. Perfect for benefits, amenities, or feature selection. CRITICAL: options MUST be an array of OBJECTS, not strings.",
     category: "grids_selectors",
     valueType: "string | array",
     props: {
@@ -413,24 +435,25 @@ export const UI_TOOLS_SCHEMA = {
       },
       options: {
         type: "array",
-        description: "Array of selectable options",
+        description: "MUST be an array of OBJECTS (NOT strings). Each object MUST have id, label, and icon properties. Do NOT pass an array of strings like ['Health', 'Dental'] - this will crash the component.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label", "icon"],
           properties: {
-            id: { type: "string" },
-            label: { type: "string" },
-            icon: { type: "string" },
-            description: { type: "string" }
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
+            label: { type: "string", description: "Display label for the option (required)." },
+            icon: { type: "string", description: "REQUIRED. Lucide React icon name in kebab-case (e.g., 'heart-pulse', 'smile', 'eye'). Do NOT use emojis." },
+            description: { type: "string", description: "Optional tooltip description." }
           }
         },
         example: [
-          { id: "health", label: "Health Insurance", icon: "🏥" },
-          { id: "dental", label: "Dental", icon: "🦷" },
-          { id: "vision", label: "Vision", icon: "👓" },
-          { id: "401k", label: "401k Match", icon: "💰" },
-          { id: "pto", label: "Unlimited PTO", icon: "🏖️" },
-          { id: "remote", label: "Remote Work", icon: "🏠" }
+          { "id": "health", "label": "Health Insurance", "icon": "heart-pulse" },
+          { "id": "dental", "label": "Dental Coverage", "icon": "smile" },
+          { "id": "vision", "label": "Vision", "icon": "eye" },
+          { "id": "401k", "label": "401k Match", "icon": "piggy-bank" },
+          { "id": "pto", "label": "Unlimited PTO", "icon": "palm-tree" },
+          { "id": "remote", "label": "Remote Work", "icon": "home" }
         ]
       },
       multiple: {
@@ -468,7 +491,7 @@ export const UI_TOOLS_SCHEMA = {
   detailed_cards: {
     name: "detailed_cards",
     description:
-      "A list or grid of cards containing Icon + Title + Description. Ideal for detailed option selection like shift patterns or management styles.",
+      "A list or grid of cards containing Icon + Title + Description. Ideal for detailed option selection like shift patterns or management styles. IMPORTANT: Each option MUST have a UNIQUE id.",
     category: "grids_selectors",
     valueType: "string | array",
     props: {
@@ -479,15 +502,16 @@ export const UI_TOOLS_SCHEMA = {
       },
       options: {
         type: "array",
-        description: "Array of detailed card options",
+        description: "Array of detailed card options. CRITICAL: Each option MUST have a STRICTLY UNIQUE id - do NOT use the same id twice or the component will crash.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "title"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array. Use descriptive ids like 'option_1', 'fixed_schedule', etc." },
             title: { type: "string" },
             description: { type: "string" },
-            icon: { type: "string" },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'calendar', 'refresh-cw', 'clock'). Do NOT use emojis." },
             badge: { type: "string" }
           }
         }
@@ -531,14 +555,15 @@ export const UI_TOOLS_SCHEMA = {
       },
       options: {
         type: "array",
-        description: "Array of gradient card options",
+        description: "Array of gradient card options. Each option MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
-            icon: { type: "string" },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'zap', 'heart', 'palette'). Do NOT use emojis." },
             gradient: { type: "string" },
             description: { type: "string" }
           }
@@ -583,14 +608,15 @@ export const UI_TOOLS_SCHEMA = {
       },
       traits: {
         type: "array",
-        description: "Array of predefined trait options",
+        description: "Array of predefined trait options. Each trait MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
-            icon: { type: "string" }
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'search', 'sparkles', 'crown', 'heart'). Do NOT use emojis." }
           }
         }
       },
@@ -638,18 +664,19 @@ export const UI_TOOLS_SCHEMA = {
       },
       centerIcon: {
         type: "string",
-        description: "Icon for the central node",
+        description: "Lucide React icon name for the central node in kebab-case (e.g., 'user'). Do NOT use emojis.",
         required: false,
-        default: "👤"
+        default: "user"
       },
       rings: {
         type: "array",
-        description: "Array of ring/layer definitions",
+        description: "Array of ring/layer definitions. Each ring MUST have a UNIQUE id.",
         required: false,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
             maxCount: { type: "number" },
             color: { type: "string" }
@@ -687,14 +714,15 @@ export const UI_TOOLS_SCHEMA = {
       },
       items: {
         type: "array",
-        description: "Array of toggleable items",
+        description: "Array of toggleable items. Each item MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
-            icon: { type: "string" },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'help-circle', 'door-open', 'trending-down'). Do NOT use emojis." },
             description: { type: "string" }
           }
         }
@@ -738,14 +766,15 @@ export const UI_TOOLS_SCHEMA = {
       },
       groups: {
         type: "array",
-        description: "Array of chip groups with their items",
+        description: "Array of chip groups with their items. Each group MUST have a UNIQUE groupId, and each item within MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["groupId", "groupLabel", "items"],
           properties: {
-            groupId: { type: "string" },
+            groupId: { type: "string", description: "STRICTLY UNIQUE group identifier. MUST NOT duplicate any other groupId." },
             groupLabel: { type: "string" },
-            items: { type: "array" }
+            items: { type: "array", items: { type: "object", required: ["id", "label"], properties: { id: { type: "string", description: "STRICTLY UNIQUE item identifier across ALL groups." }, label: { type: "string" } } } }
           }
         }
       },
@@ -787,14 +816,15 @@ export const UI_TOOLS_SCHEMA = {
       },
       rows: {
         type: "array",
-        description: "Array of rows to display",
+        description: "Array of rows to display. Each row MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
-            icon: { type: "string" }
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'person-standing', 'weight', 'footprints'). Do NOT use emojis." }
           }
         }
       },
@@ -837,14 +867,15 @@ export const UI_TOOLS_SCHEMA = {
       },
       items: {
         type: "array",
-        description: "Array of expandable items",
+        description: "Array of expandable items. Each item MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
-            icon: { type: "string" },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'target', 'lightbulb', 'users'). Do NOT use emojis." },
             placeholder: { type: "string" }
           }
         }
@@ -881,15 +912,16 @@ export const UI_TOOLS_SCHEMA = {
       },
       categories: {
         type: "array",
-        description: "Array of perk categories with their items",
+        description: "Array of perk categories with their items. Each category MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label", "items"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE category identifier. MUST NOT duplicate any other ID." },
             label: { type: "string" },
-            icon: { type: "string" },
-            items: { type: "array" }
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'pizza', 'dumbbell', 'plane'). Do NOT use emojis." },
+            items: { type: "array", description: "Array of perk items. Each item MUST have a UNIQUE id and icon (Lucide name) across all categories." }
           }
         }
       }
@@ -919,14 +951,15 @@ export const UI_TOOLS_SCHEMA = {
       },
       items: {
         type: "array",
-        description: "Array of countable items",
+        description: "Array of countable items. Each item MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
-            icon: { type: "string" },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'palm-tree', 'thermometer', 'baby'). Do NOT use emojis." },
             unit: { type: "string" },
             min: { type: "number" },
             max: { type: "number" },
@@ -982,23 +1015,24 @@ export const UI_TOOLS_SCHEMA = {
       },
       categories: {
         type: "array",
-        description: "Array of categories to allocate tokens to",
+        description: "Array of categories to allocate tokens to. Each category MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
-            icon: { type: "string" },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'briefcase', 'users', 'dollar-sign'). Do NOT use emojis." },
             description: { type: "string" }
           }
         }
       },
       tokenIcon: {
         type: "string",
-        description: "Emoji for tokens",
+        description: "Lucide React icon name for tokens in kebab-case (e.g., 'circle', 'coins'). Do NOT use emojis.",
         required: false,
-        default: "🪙"
+        default: "circle"
       }
     },
     useCases: [
@@ -1023,12 +1057,13 @@ export const UI_TOOLS_SCHEMA = {
       },
       cards: {
         type: "array",
-        description: "Array of cards to swipe through",
+        description: "Array of cards to swipe through. Each card MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             title: { type: "string" },
             subtitle: { type: "string" },
             content: { type: "string" }
@@ -1079,12 +1114,13 @@ export const UI_TOOLS_SCHEMA = {
       },
       reactions: {
         type: "array",
-        description: "Array of reaction options",
+        description: "Array of reaction options. Each reaction MUST have a UNIQUE id.",
         required: false,
         items: {
           type: "object",
+          required: ["id", "emoji", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             emoji: { type: "string" },
             label: { type: "string" },
             color: { type: "string" }
@@ -1123,7 +1159,7 @@ export const UI_TOOLS_SCHEMA = {
           id: { type: "string" },
           title: { type: "string" },
           description: { type: "string" },
-          icon: { type: "string" },
+          icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'building', 'rocket'). Do NOT use emojis." },
           color: { type: "string" }
         }
       },
@@ -1135,7 +1171,7 @@ export const UI_TOOLS_SCHEMA = {
           id: { type: "string" },
           title: { type: "string" },
           description: { type: "string" },
-          icon: { type: "string" },
+          icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'sprout', 'crown'). Do NOT use emojis." },
           color: { type: "string" }
         }
       },
@@ -1365,12 +1401,13 @@ export const UI_TOOLS_SCHEMA = {
       },
       flow: {
         type: "array",
-        description: "Conversation flow definition",
+        description: "Conversation flow definition. Each step MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "bot"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             bot: { type: "string" },
             quickReplies: { type: "array" }
           }
@@ -1384,9 +1421,9 @@ export const UI_TOOLS_SCHEMA = {
       },
       botAvatar: {
         type: "string",
-        description: "Emoji avatar for bot",
+        description: "Lucide React icon name for bot avatar in kebab-case (e.g., 'bot', 'message-circle'). Do NOT use emojis.",
         required: false,
-        default: "🤖"
+        default: "bot"
       }
     },
     useCases: [
@@ -1414,12 +1451,13 @@ export const UI_TOOLS_SCHEMA = {
       },
       points: {
         type: "array",
-        description: "Array of timeline point definitions",
+        description: "Array of timeline point definitions. Each point MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" },
             sublabel: { type: "string" }
           }
@@ -1475,12 +1513,13 @@ export const UI_TOOLS_SCHEMA = {
       },
       rows: {
         type: "array",
-        description: "Array of row definitions",
+        description: "Array of row definitions. Each row MUST have a UNIQUE id.",
         required: true,
         items: {
           type: "object",
+          required: ["id", "label"],
           properties: {
-            id: { type: "string" },
+            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
             label: { type: "string" }
           }
         }
