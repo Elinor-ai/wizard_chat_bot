@@ -2192,9 +2192,22 @@ useEffect(() => {
     [wizardState.hoveredCapsules]
   );
 
+  // Track which jobId we've already loaded copilot conversation for
+  // This prevents re-fetching when authToken changes (e.g., on login in another tab)
+  const copilotLoadedForJobIdRef = useRef(null);
+
   useEffect(() => {
+    // Only load if we have a jobId and haven't already loaded for this jobId
+    if (!wizardState.jobId) {
+      copilotLoadedForJobIdRef.current = null;
+      return;
+    }
+    if (copilotLoadedForJobIdRef.current === wizardState.jobId) {
+      return;
+    }
+    copilotLoadedForJobIdRef.current = wizardState.jobId;
     loadCopilotConversation();
-  }, [loadCopilotConversation]);
+  }, [wizardState.jobId, loadCopilotConversation]);
 
   return {
     user,

@@ -1467,14 +1467,19 @@ export const GoldenInterviewApi = {
 
 // =============================================================================
 // AUTH API (Login, Signup, OAuth)
+//
+// ARCHITECTURE NOTE:
+// These endpoints are called by NextAuth internally (from authorize() and signIn callbacks).
+// They return user data only - NO tokens. NextAuth issues all JWTs.
+// Frontend code should use NextAuth's signIn() function, NOT these methods directly.
 // =============================================================================
 
 export const AuthApi = {
   /**
-   * Login with email and password
+   * Login with email and password (called by NextAuth CredentialsProvider)
    * POST /auth/login
    * @param {Object} payload - { email, password }
-   * @returns {Promise<{ user: User, token: string }>}
+   * @returns {Promise<{ user: User, isNew: boolean }>}
    */
   async login(payload) {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -1494,10 +1499,10 @@ export const AuthApi = {
   },
 
   /**
-   * Register a new user
+   * Register a new user (called by NextAuth CredentialsProvider)
    * POST /auth/signup
    * @param {Object} payload - { email, password, name, companyName }
-   * @returns {Promise<{ user: User, token: string }>}
+   * @returns {Promise<{ user: User, isNew: boolean }>}
    */
   async signup(payload) {
     const response = await fetch(`${API_BASE_URL}/auth/signup`, {
@@ -1517,10 +1522,10 @@ export const AuthApi = {
   },
 
   /**
-   * Sync OAuth user with backend (for NextAuth callbacks)
+   * Sync OAuth user with backend (called by NextAuth signIn callback)
    * POST /auth/oauth/google
    * @param {Object} payload - { email, name, googleId }
-   * @returns {Promise<{ user: User, token: string }>}
+   * @returns {Promise<{ user: User, isNew: boolean }>}
    */
   async oauthGoogle(payload) {
     const response = await fetch(`${API_BASE_URL}/auth/oauth/google`, {

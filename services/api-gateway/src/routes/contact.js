@@ -1,3 +1,13 @@
+/**
+ * @file contact.js
+ * Contact Form API Router - handles contact form submissions.
+ *
+ * ARCHITECTURE:
+ * - PUBLIC: This router is NOT behind requireAuth middleware.
+ *   Contact forms must be accessible without authentication.
+ * - Uses nodemailer for email delivery.
+ */
+
 import { Router } from "express";
 import { z } from "zod";
 import nodemailer from "nodemailer";

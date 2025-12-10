@@ -42,9 +42,13 @@ export function createTestToken({
 }
 
 /**
- * Set up test environment variables
+ * Set up test environment variables.
+ * Sets NEXTAUTH_SECRET as the canonical secret (with AUTH_JWT_SECRET as fallback).
  */
 export function setupTestEnv() {
+  // NEXTAUTH_SECRET is the canonical secret name
+  process.env.NEXTAUTH_SECRET = TEST_JWT_SECRET;
+  // AUTH_JWT_SECRET kept for backward compatibility
   process.env.AUTH_JWT_SECRET = TEST_JWT_SECRET;
   process.env.PORT = "4000";
   process.env.NODE_ENV = "test";

@@ -3,8 +3,12 @@
  * Authentication API Router - handles login, signup, and OAuth.
  *
  * ARCHITECTURE:
+ * - PUBLIC: This router is NOT behind requireAuth middleware.
+ *   These endpoints must be accessible without authentication.
  * - All Firestore access goes through user-repository.js
  * - This router does NOT access firestore directly
+ * - Backend NEVER issues JWTs - NextAuth is the single source of truth
+ * - These endpoints return { user } only, frontend uses NextAuth for tokens
  */
 
 import { Router } from "express";
@@ -13,7 +17,6 @@ import { v4 as uuid } from "uuid";
 import bcrypt from "bcryptjs";
 import { wrapAsync, httpError } from "@wizard/utils";
 import { UserSchema } from "@wizard/core";
-import { issueAuthToken } from "../utils/auth-tokens.js";
 import { ensureCompanyForEmail } from "../services/company-intel.js";
 import {
   getUserByEmail,
@@ -223,11 +226,9 @@ export function authRouter({ firestore, logger }) {
       };
       sanitizedUser = await linkUserToCompany({ firestore, logger, user: sanitizedUser });
 
-      const token = issueAuthToken(sanitizedUser);
-
+      // No token issued here - NextAuth is the single source of truth for JWTs
       res.json({
         user: sanitizedUser,
-        token,
         isNew: false
       });
     })
@@ -252,11 +253,10 @@ export function authRouter({ firestore, logger }) {
 
       let sanitizedUser = sanitizeUserForResponse(storedUser);
       sanitizedUser = await linkUserToCompany({ firestore, logger, user: sanitizedUser });
-      const token = issueAuthToken(sanitizedUser);
 
+      // No token issued here - NextAuth is the single source of truth for JWTs
       res.json({
         user: sanitizedUser,
-        token,
         isNew: true
       });
     })
@@ -309,11 +309,10 @@ export function authRouter({ firestore, logger }) {
 
       let sanitizedUser = sanitizeUserForResponse(user);
       sanitizedUser = await linkUserToCompany({ firestore, logger, user: sanitizedUser });
-      const token = issueAuthToken(sanitizedUser);
 
+      // No token issued here - NextAuth is the single source of truth for JWTs
       res.json({
         user: sanitizedUser,
-        token,
         isNew
       });
     })

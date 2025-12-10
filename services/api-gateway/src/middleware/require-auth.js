@@ -1,3 +1,19 @@
+/**
+ * Authentication Middleware
+ *
+ * ARCHITECTURE:
+ * - NextAuth is the SINGLE SOURCE OF TRUTH for token issuance
+ * - This middleware verifies tokens issued by NextAuth
+ * - Backend uses NEXTAUTH_SECRET for verification (canonical secret name)
+ * - AUTH_JWT_SECRET is supported as a backward-compat fallback
+ *
+ * Expected token payload (set by NextAuth jwt callback):
+ * - sub: user ID
+ * - email: user email
+ * - roles: array of roles
+ * - orgId: organization ID (nullable)
+ */
+
 import { httpError } from "@wizard/utils";
 import { verifyAuthToken } from "../utils/auth-tokens.js";
 

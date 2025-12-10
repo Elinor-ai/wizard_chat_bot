@@ -3,6 +3,8 @@
  * Dashboard API Router - handles dashboard data aggregation.
  *
  * ARCHITECTURE:
+ * - PROTECTED: This router is mounted behind requireAuth middleware in server.js.
+ *   The router assumes req.user is already set and does NOT verify JWTs directly.
  * - All Firestore access goes through dashboard-repository.js
  * - This router does NOT access firestore directly
  */

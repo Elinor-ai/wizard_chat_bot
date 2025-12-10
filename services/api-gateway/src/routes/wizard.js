@@ -1,7 +1,11 @@
 /**
  * @file wizard.js
  * Thin HTTP router for wizard endpoints.
- * All business logic is delegated to services/wizard/*.
+ *
+ * ARCHITECTURE:
+ * - PROTECTED: This router is mounted behind requireAuth middleware in server.js.
+ *   The router assumes req.user is already set and does NOT verify JWTs directly.
+ * - All business logic is delegated to services/wizard/*.
  */
 
 import { Router } from "express";

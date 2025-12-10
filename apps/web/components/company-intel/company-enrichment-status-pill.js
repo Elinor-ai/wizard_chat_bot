@@ -22,6 +22,7 @@ export function CompanyEnrichmentStatusPill() {
 
   // 1. Unified Polling using React Query
   // This replaces the manual setInterval and prevents duplicate requests
+  // Uses default staleTime (30s) from QueryClient to avoid duplicate fetches on mount
   const { data: overviewData } = useQuery({
     queryKey: ["company-intel", "me"],
     queryFn: () => WizardApi.fetchCompanyOverview({ authToken }),
@@ -41,7 +42,6 @@ export function CompanyEnrichmentStatusPill() {
       // Poll if PENDING or READY (waiting for user action)
       return REFETCH_INTERVAL_MS;
     },
-    staleTime: 2000, // Cache data for 2s
   });
 
   const company = overviewData?.company ?? null;

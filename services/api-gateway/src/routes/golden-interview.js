@@ -1,12 +1,14 @@
 /**
- * Golden Interview API Router
+ * @file golden-interview.js
+ * Golden Interview API Router - handles HTTP endpoints for the Golden Interviewer service.
  *
- * Handles HTTP endpoints for the Golden Interviewer service.
- *
- * ARCHITECTURE: All LLM calls go through HTTP POST /api/llm.
- * The Golden Interviewer service does NOT import or call llmClient
- * or recordLlmUsageFromResult directly.
- * It uses fetch() to call the /api/llm endpoint.
+ * ARCHITECTURE:
+ * - PROTECTED: This router is mounted behind requireAuth middleware in server.js.
+ *   The router assumes req.user is already set and does NOT verify JWTs directly.
+ * - All LLM calls go through HTTP POST /api/llm.
+ * - The Golden Interviewer service does NOT import or call llmClient
+ *   or recordLlmUsageFromResult directly.
+ * - It uses fetch() to call the /api/llm endpoint.
  */
 
 import { Router } from "express";

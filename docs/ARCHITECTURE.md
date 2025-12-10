@@ -685,21 +685,43 @@ throw httpError(404, 'Not found', { id: '123' })
 
 ## 8. Authentication & Authorization
 
+### Authentication Architecture
+
+**NextAuth is the SINGLE SOURCE OF TRUTH for JWT token issuance.**
+
+The backend NEVER issues JWTs - it only verifies tokens issued by NextAuth.
+
+**JWT Secret Policy:**
+- **Canonical secret:** `NEXTAUTH_SECRET` - used by both NextAuth (signing) and backend (verification)
+- **Legacy fallback:** `AUTH_JWT_SECRET` - supported for backward compatibility only
+- **New deployments:** Set only `NEXTAUTH_SECRET` in both frontend and backend environments
+
 ### Authentication Flow
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                  Authentication                      │
 ├─────────────────────────────────────────────────────┤
+│  OAuth Flow (Google):                                │
 │  1. User clicks "Sign in with Google"               │
 │  2. NextAuth redirects to Google OAuth              │
 │  3. Google returns with OAuth tokens                │
 │  4. NextAuth signIn callback:                       │
-│     - Calls AuthApi.oauthGoogle()                   │
-│     - Backend creates/updates user                  │
-│     - Backend returns JWT token                     │
-│  5. JWT token stored in NextAuth session            │
-│  6. Frontend includes token in API requests         │
+│     - Calls backend /auth/oauth/google              │
+│     - Backend creates/updates user in Firestore     │
+│     - Backend returns { user } (NO token)           │
+│  5. NextAuth jwt callback builds token payload      │
+│  6. NextAuth session callback encodes JWT           │
+│  7. session.accessToken available to frontend       │
+│  8. Frontend sends Authorization: Bearer <token>    │
+│  9. Backend verifies token with same secret         │
+├─────────────────────────────────────────────────────┤
+│  Credentials Flow (Email/Password):                  │
+│  1. User enters email/password                      │
+│  2. NextAuth CredentialsProvider calls authorize()  │
+│  3. authorize() calls backend /auth/login           │
+│  4. Backend validates credentials, returns { user } │
+│  5. Steps 5-9 same as OAuth flow                    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -712,7 +734,7 @@ throw httpError(404, 'Not found', { id: '123' })
   roles: string[],    // ["owner", "admin", "member"]
   orgId: string | null,
   iat: number,        // Issued at
-  exp: number         // Expiration
+  exp: number         // Expiration (7 days)
 }
 ```
 
@@ -720,12 +742,23 @@ throw httpError(404, 'Not found', { id: '123' })
 
 ```javascript
 // services/api-gateway/src/middleware/require-auth.js
+// Verifies tokens issued by NextAuth using NEXTAUTH_SECRET
 export function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '')
-  const decoded = verifyAuthToken(token)
+  const decoded = verifyAuthToken(token) // Uses NEXTAUTH_SECRET (or AUTH_JWT_SECRET fallback)
   req.user = decoded
   next()
 }
+```
+
+### Environment Variables
+
+```bash
+# Canonical JWT secret (set this in BOTH frontend and backend)
+NEXTAUTH_SECRET=your-secret-key
+
+# Legacy fallback (for existing deployments only - not recommended for new setups)
+# AUTH_JWT_SECRET=your-secret-key
 ```
 
 ### Protected Routes
@@ -1225,9 +1258,9 @@ User account management:
 NODE_ENV=development
 PORT=4000
 
-# Authentication
-AUTH_JWT_SECRET=your-secret-key
-AUTH_JWT_EXPIRES_IN=7d
+# Authentication (NEXTAUTH_SECRET is the canonical secret - set it in BOTH frontend and backend)
+NEXTAUTH_SECRET=your-secret-key
+# AUTH_JWT_SECRET=your-secret-key  # Legacy fallback only - not needed for new deployments
 
 # Google Cloud
 FIRESTORE_PROJECT_ID=botson-playground

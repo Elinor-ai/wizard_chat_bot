@@ -3,6 +3,8 @@
  * Video Library API Router - thin dispatcher for video operations.
  *
  * ARCHITECTURE:
+ * - PROTECTED: This router is mounted behind requireAuth middleware in server.js.
+ *   The router assumes req.user is already set and does NOT verify JWTs directly.
  * - This router does NOT access Firestore directly.
  * - All Firestore access goes through services/repositories/* or video/service.js.
  * - LLM operations (create, regenerate, render, caption) go through HTTP POST /api/llm

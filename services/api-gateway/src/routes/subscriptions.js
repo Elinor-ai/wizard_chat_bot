@@ -3,6 +3,9 @@
  * Subscription API Router - handles credit purchases and plans.
  *
  * ARCHITECTURE:
+ * - PROTECTED: This router is mounted behind requireAuth middleware in server.js.
+ *   The router assumes req.user is already set and does NOT verify JWTs directly.
+ * - EXCEPTION: GET /plans is PUBLIC (mounted separately in server.js before auth middleware)
  * - All Firestore access goes through repositories
  * - This router does NOT access firestore directly
  */

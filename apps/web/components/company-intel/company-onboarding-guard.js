@@ -23,11 +23,11 @@ export function CompanyOnboardingGuard() {
   const [errorMessage, setErrorMessage] = useState(null);
 
   // Shared query with the Pill component - dedupes requests!
+  // Uses default staleTime (30s) from QueryClient to avoid duplicate fetches
   const { data: overviewData } = useQuery({
     queryKey: ["company-intel", "me"],
     queryFn: () => WizardApi.fetchCompanyOverview({ authToken }),
     enabled: Boolean(authToken && isHydrated),
-    staleTime: 2000,
   });
 
   const company = overviewData?.company ?? null;

@@ -3,6 +3,8 @@
  * LLM API Router - thin dispatcher for LLM tasks.
  *
  * ARCHITECTURE:
+ * - PROTECTED: This router is mounted behind requireAuth middleware in server.js.
+ *   The router assumes req.user is already set and does NOT verify JWTs directly.
  * - This router does NOT access Firestore directly for data queries.
  * - All Firestore access goes through services/repositories/*.
  * - Router handles: Zod validation, auth, taskType validation, service delegation, usage logging, response building

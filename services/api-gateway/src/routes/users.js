@@ -3,6 +3,8 @@
  * User API Router - handles user profile and settings.
  *
  * ARCHITECTURE:
+ * - PROTECTED: This router is mounted behind requireAuth middleware in server.js.
+ *   The router assumes req.user is already set and does NOT verify JWTs directly.
  * - All Firestore access goes through user-repository.js
  * - This router does NOT access firestore directly
  */

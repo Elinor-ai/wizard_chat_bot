@@ -3,6 +3,8 @@
  * Company API Router
  *
  * ARCHITECTURE:
+ * - PROTECTED: This router is mounted behind requireAuth middleware in server.js.
+ *   The router assumes req.user is already set and does NOT verify JWTs directly.
  * - All LLM calls go through HTTP POST /api/llm.
  * - All Firestore access goes through company-repository.js and user-repository.js.
  * - This router does NOT import or call llmClient directly.
