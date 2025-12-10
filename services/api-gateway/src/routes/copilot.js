@@ -3,6 +3,8 @@
  * Copilot API Router - handles chat history retrieval
  *
  * ARCHITECTURE:
+ * - This router does NOT access Firestore directly.
+ * - All Firestore access goes through services/repositories/*.
  * - This router ONLY handles GET /chat for chat history
  * - All LLM operations (POST copilot_agent) go through POST /api/llm
  * - This router does NOT import or call llmClient directly
@@ -11,16 +13,19 @@
 import { Router } from "express";
 import { z } from "zod";
 import { wrapAsync, httpError } from "@wizard/utils";
-import { JobSchema } from "@wizard/core";
-import { loadCopilotHistory } from "../copilot/chat-store.js";
-import { serializeMessages } from "../wizard/job-helpers.js";
-
-const JOB_COLLECTION = "jobs";
+import { loadJobForUser } from "../services/repositories/index.js";
+import { loadCopilotHistory, serializeMessages } from "../services/repositories/index.js";
 
 const getRequestSchema = z.object({
   jobId: z.string()
 });
 
+/**
+ * Preview content string with truncation
+ * @param {string} content - Content to preview
+ * @param {number} limit - Maximum length
+ * @returns {string} Truncated content
+ */
 function previewContent(content, limit = 120) {
   if (typeof content !== "string") {
     return "";
@@ -32,6 +37,11 @@ function previewContent(content, limit = 120) {
   return `${trimmed.slice(0, limit - 3)}...`;
 }
 
+/**
+ * Summarize messages for logging
+ * @param {Array} messages - Messages to summarize
+ * @returns {Array} Summarized messages
+ */
 function summarizeMessages(messages = []) {
   return messages.map((message) => ({
     id: message?.id,
@@ -44,27 +54,18 @@ function summarizeMessages(messages = []) {
   }));
 }
 
+/**
+ * Extract authenticated user ID from request
+ * @param {Object} req - Express request
+ * @returns {string} User ID
+ * @throws {HttpError} If not authenticated
+ */
 function getAuthenticatedUserId(req) {
   const userId = req.user?.id;
   if (!userId) {
     throw httpError(401, "Unauthorized");
   }
   return userId;
-}
-
-async function loadJobForUser({ firestore, jobId, userId }) {
-  const doc = await firestore.getDocument(JOB_COLLECTION, jobId);
-  if (!doc) {
-    throw httpError(404, "Job not found");
-  }
-  if (doc.ownerUserId && doc.ownerUserId !== userId) {
-    throw httpError(403, "You do not have access to this job");
-  }
-  const parsed = JobSchema.safeParse(doc);
-  if (!parsed.success) {
-    throw httpError(500, "Job document is invalid");
-  }
-  return parsed.data;
 }
 
 export function copilotRouter({ firestore, logger }) {
@@ -75,14 +76,22 @@ export function copilotRouter({ firestore, logger }) {
   router.get(
     "/chat",
     wrapAsync(async (req, res) => {
+      // 1. Extract authenticated user
       const userId = getAuthenticatedUserId(req);
+
+      // 2. Validate query params
       const query = getRequestSchema.parse(req.query ?? {});
+
+      // 3. Verify job access via repository
       await loadJobForUser({ firestore, jobId: query.jobId, userId });
+
+      // 4. Load chat history via repository
       const history = await loadCopilotHistory({
         firestore,
         jobId: query.jobId,
         limit: 20
       });
+
       logger.info(
         {
           jobId: query.jobId,
@@ -91,11 +100,14 @@ export function copilotRouter({ firestore, logger }) {
         },
         "copilot.history.loaded"
       );
+
+      // 5. Serialize and respond
       const payload = {
         jobId: query.jobId,
         messages: serializeMessages(history)
       };
       res.json(payload);
+
       logger.info(
         {
           jobId: query.jobId,

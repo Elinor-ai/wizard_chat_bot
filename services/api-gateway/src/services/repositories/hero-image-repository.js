@@ -111,6 +111,22 @@ export async function saveHeroImageFailure({
 }
 
 /**
+ * Load all hero images for a user, optionally filtered by job ID.
+ * @param {Object} firestore - Firestore instance
+ * @param {string} userId - Owner user ID
+ * @param {string|null} [jobId] - Optional job ID filter
+ * @returns {Promise<Object[]>} Array of raw hero image documents
+ */
+export async function loadHeroImagesForUser(firestore, userId, jobId = null) {
+  const filters = [{ field: "ownerUserId", operator: "==", value: userId }];
+  if (jobId) {
+    filters.push({ field: "jobId", operator: "==", value: jobId });
+  }
+  const docs = await firestore.listCollection(HERO_IMAGE_COLLECTION, filters);
+  return docs ?? [];
+}
+
+/**
  * Serialize a hero image document for API response.
  * @param {Object|null} document - Hero image document
  * @returns {Object|null} Serialized hero image

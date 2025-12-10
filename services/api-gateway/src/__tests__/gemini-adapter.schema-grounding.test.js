@@ -3,8 +3,12 @@
  * Unit tests for Gemini adapter schema + grounding behavior.
  *
  * Verifies:
- * - Most JSON tasks get responseJsonSchema even with grounding enabled
- * - Company intel tasks skip responseJsonSchema when grounding is enabled
+ * - Tasks with grounding enabled skip controlled generation (responseMimeType + responseJsonSchema)
+ * - Tasks without grounding use controlled generation normally
+ *
+ * Note: Gemini API does not support "controlled generation" (responseMimeType, responseJsonSchema)
+ * when Google Search or Maps grounding tools are enabled. See:
+ * https://ai.google.dev/gemini-api/docs/grounding
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -78,141 +82,53 @@ describe("GeminiAdapter schema + grounding behavior", () => {
 
   const testSchema = z.object({ test: z.string() });
 
-  describe("non-company-intel tasks with grounding", () => {
-    it("should use responseJsonSchema for suggest task (has grounding)", async () => {
-      const adapter = new GeminiAdapter({ location: "global" });
+  describe("tasks with grounding enabled", () => {
+    // These tasks have grounding tools enabled and should skip controlled generation
+    const groundedTasks = [
+      { taskType: LLM_CORE_TASK.SUGGEST, schemaName: "suggest_response" },
+      { taskType: LLM_CORE_TASK.REFINE, schemaName: "refine_response" },
+      { taskType: LLM_CORE_TASK.COPILOT_AGENT, schemaName: "copilot_agent_response" },
+      { taskType: LLM_CORE_TASK.VIDEO_STORYBOARD, schemaName: "video_storyboard_response" },
+      { taskType: LLM_CORE_TASK.COMPANY_INTEL, schemaName: "company_intel_response" },
+    ];
 
-      await adapter.invoke({
-        model: "gemini-3-pro-preview",
-        system: "You are a helpful assistant.",
-        user: "Test prompt",
-        mode: "json",
-        taskType: LLM_CORE_TASK.SUGGEST,
-        outputSchema: testSchema,
-        outputSchemaName: "suggest_response",
+    for (const { taskType, schemaName } of groundedTasks) {
+      it(`should skip controlled generation for ${taskType} task (has grounding)`, async () => {
+        const adapter = new GeminiAdapter({ location: "global" });
+
+        await adapter.invoke({
+          model: "gemini-3-pro-preview",
+          system: "You are a helpful assistant.",
+          user: "Test prompt",
+          mode: "json",
+          taskType,
+          outputSchema: testSchema,
+          outputSchemaName: schemaName,
+        });
+
+        // formatForGemini should NOT be called when grounding is enabled
+        expect(formatForGemini).not.toHaveBeenCalled();
+
+        // Verify the log shows controlled generation was skipped due to grounding
+        expect(llmLogger.info).toHaveBeenCalledWith(
+          expect.objectContaining({
+            taskType,
+            schemaName,
+            hasGroundingTools: true,
+            hasResponseMimeType: false,
+            hasResponseSchema: false,
+            reason: "grounding_blocks_controlled_generation",
+          }),
+          "GeminiAdapter skipping JSON mode (incompatible with Search/Maps tools)"
+        );
+
+        // Should NOT have logged "using native responseJsonSchema"
+        const schemaLogCalls = llmLogger.info.mock.calls.filter(
+          (call) => call[1] === "GeminiAdapter using native responseJsonSchema"
+        );
+        expect(schemaLogCalls).toHaveLength(0);
       });
-
-      // Verify formatForGemini was called (schema conversion attempted)
-      expect(formatForGemini).toHaveBeenCalledWith(testSchema);
-
-      // Verify the log shows schema was used with grounding
-      expect(llmLogger.info).toHaveBeenCalledWith(
-        expect.objectContaining({
-          taskType: LLM_CORE_TASK.SUGGEST,
-          hasGroundingTools: true,
-          hasResponseSchema: true,
-        }),
-        "GeminiAdapter using native responseJsonSchema"
-      );
-    });
-
-    it("should use responseJsonSchema for refine task (has grounding)", async () => {
-      const adapter = new GeminiAdapter({ location: "global" });
-
-      await adapter.invoke({
-        model: "gemini-3-pro-preview",
-        system: "You are a helpful assistant.",
-        user: "Test prompt",
-        mode: "json",
-        taskType: LLM_CORE_TASK.REFINE,
-        outputSchema: testSchema,
-        outputSchemaName: "refine_response",
-      });
-
-      expect(formatForGemini).toHaveBeenCalledWith(testSchema);
-
-      expect(llmLogger.info).toHaveBeenCalledWith(
-        expect.objectContaining({
-          taskType: LLM_CORE_TASK.REFINE,
-          hasGroundingTools: true,
-          hasResponseSchema: true,
-        }),
-        "GeminiAdapter using native responseJsonSchema"
-      );
-    });
-
-    it("should use responseJsonSchema for copilot_agent task (has grounding)", async () => {
-      const adapter = new GeminiAdapter({ location: "global" });
-
-      await adapter.invoke({
-        model: "gemini-3-pro-preview",
-        system: "You are a helpful assistant.",
-        user: "Test prompt",
-        mode: "json",
-        taskType: LLM_CORE_TASK.COPILOT_AGENT,
-        outputSchema: testSchema,
-        outputSchemaName: "copilot_agent_response",
-      });
-
-      expect(formatForGemini).toHaveBeenCalledWith(testSchema);
-
-      expect(llmLogger.info).toHaveBeenCalledWith(
-        expect.objectContaining({
-          taskType: LLM_CORE_TASK.COPILOT_AGENT,
-          hasGroundingTools: true,
-          hasResponseSchema: true,
-        }),
-        "GeminiAdapter using native responseJsonSchema"
-      );
-    });
-
-    it("should use responseJsonSchema for video_storyboard task (has grounding)", async () => {
-      const adapter = new GeminiAdapter({ location: "global" });
-
-      await adapter.invoke({
-        model: "gemini-3-pro-preview",
-        system: "You are a helpful assistant.",
-        user: "Test prompt",
-        mode: "json",
-        taskType: LLM_CORE_TASK.VIDEO_STORYBOARD,
-        outputSchema: testSchema,
-        outputSchemaName: "video_storyboard_response",
-      });
-
-      expect(formatForGemini).toHaveBeenCalledWith(testSchema);
-
-      expect(llmLogger.info).toHaveBeenCalledWith(
-        expect.objectContaining({
-          taskType: LLM_CORE_TASK.VIDEO_STORYBOARD,
-          hasGroundingTools: true,
-          hasResponseSchema: true,
-        }),
-        "GeminiAdapter using native responseJsonSchema"
-      );
-    });
-  });
-
-  describe("company intel tasks with grounding", () => {
-    it("should NOT use responseJsonSchema for company_intel task (preserves old behavior)", async () => {
-      const adapter = new GeminiAdapter({ location: "global" });
-
-      await adapter.invoke({
-        model: "gemini-3-pro-preview",
-        system: "You are a helpful assistant.",
-        user: "Test prompt",
-        mode: "json",
-        taskType: LLM_CORE_TASK.COMPANY_INTEL,
-        outputSchema: testSchema,
-        outputSchemaName: "company_intel_response",
-      });
-
-      // Verify the log shows schema was skipped due to company intel + grounding
-      expect(llmLogger.info).toHaveBeenCalledWith(
-        expect.objectContaining({
-          taskType: LLM_CORE_TASK.COMPANY_INTEL,
-          hasGroundingTools: true,
-          hasResponseSchema: false,
-          reason: "company_intel_grounding_priority",
-        }),
-        "GeminiAdapter skipping responseJsonSchema for company intel task with grounding"
-      );
-
-      // Should NOT have logged "using native responseJsonSchema"
-      const schemaLogCalls = llmLogger.info.mock.calls.filter(
-        (call) => call[1] === "GeminiAdapter using native responseJsonSchema"
-      );
-      expect(schemaLogCalls).toHaveLength(0);
-    });
+    }
   });
 
   describe("tasks without grounding", () => {
@@ -259,6 +175,31 @@ describe("GeminiAdapter schema + grounding behavior", () => {
       expect(llmLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
           taskType: LLM_CORE_TASK.ASSET_MASTER,
+          hasGroundingTools: false,
+          hasResponseSchema: true,
+        }),
+        "GeminiAdapter using native responseJsonSchema"
+      );
+    });
+
+    it("should use responseJsonSchema for video_caption task (no grounding)", async () => {
+      const adapter = new GeminiAdapter({ location: "global" });
+
+      await adapter.invoke({
+        model: "gemini-3-pro-preview",
+        system: "You are a helpful assistant.",
+        user: "Test prompt",
+        mode: "json",
+        taskType: LLM_CORE_TASK.VIDEO_CAPTION,
+        outputSchema: testSchema,
+        outputSchemaName: "video_caption_response",
+      });
+
+      expect(formatForGemini).toHaveBeenCalledWith(testSchema);
+
+      expect(llmLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskType: LLM_CORE_TASK.VIDEO_CAPTION,
           hasGroundingTools: false,
           hasResponseSchema: true,
         }),

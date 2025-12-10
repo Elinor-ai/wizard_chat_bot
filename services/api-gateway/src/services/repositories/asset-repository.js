@@ -135,3 +135,19 @@ export function serializeAssetRun(run) {
     error: run.error ?? null,
   };
 }
+
+/**
+ * Load all assets for a user, optionally filtered by job ID.
+ * @param {Object} firestore - Firestore instance
+ * @param {string} userId - Owner user ID
+ * @param {string|null} [jobId] - Optional job ID filter
+ * @returns {Promise<Object[]>} Array of normalized asset records
+ */
+export async function loadAssetsForUser(firestore, userId, jobId = null) {
+  const filters = [{ field: "ownerUserId", operator: "==", value: userId }];
+  if (jobId) {
+    filters.push({ field: "jobId", operator: "==", value: jobId });
+  }
+  const docs = await firestore.listCollection(JOB_ASSET_COLLECTION, filters);
+  return docs.map(normalizeJobAsset).filter(Boolean);
+}

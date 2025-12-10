@@ -2,12 +2,12 @@
  * @file llm.js
  * LLM API Router - thin dispatcher for LLM tasks.
  *
- * This router handles HTTP requests for LLM tasks and delegates to internal services.
- * Usage logging (recordLlmUsageFromResult) is called exactly once per LLM invocation here.
- *
- * Architecture:
+ * ARCHITECTURE:
+ * - This router does NOT access Firestore directly for data queries.
+ * - All Firestore access goes through services/repositories/*.
  * - Router handles: Zod validation, auth, taskType validation, service delegation, usage logging, response building
- * - Services handle: Firestore operations, context enrichment, llmClient calls
+ * - Services handle: context enrichment, llmClient calls
+ * - Usage logging (recordLlmUsageFromResult) is called exactly once per LLM invocation here.
  */
 
 import { Router } from "express";
@@ -22,7 +22,11 @@ import {
   LLM_LOGGING_TASK,
 } from "../config/task-types.js";
 import { createAssetGenerationService } from "../services/wizard/wizard-asset-generation-service.js";
-import { listCompaniesForUser } from "../services/repositories/index.js";
+import {
+  listCompaniesForUser,
+  getJobRaw,
+  getCompanyByIdParsed,
+} from "../services/repositories/index.js";
 import {
   renderVideo,
   updateVideoCaption,
@@ -32,7 +36,6 @@ import {
 import { VideoRendererError } from "../video/renderers/contracts.js";
 import { generateHeroImage } from "../services/hero-image.js";
 import { runCompanyEnrichmentOnce } from "../services/company-intel.js";
-import { CompanySchema } from "@wizard/core";
 
 // Import task services
 import {
@@ -190,7 +193,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         if (!jobId) {
           throw httpError(400, "jobId is required");
         }
-        const job = await firestore.getDocument("jobs", jobId);
+        const job = await getJobRaw(firestore, jobId);
         if (!job || job.ownerUserId !== userId) {
           throw httpError(404, "Job not found");
         }
@@ -215,7 +218,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         if (!jobId) {
           throw httpError(400, "jobId is required");
         }
-        const job = await firestore.getDocument("jobs", jobId);
+        const job = await getJobRaw(firestore, jobId);
         if (!job || job.ownerUserId !== userId) {
           throw httpError(404, "Job not found");
         }
@@ -309,10 +312,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
           );
         }
 
-        const refreshedRaw = await firestore.getDocument("companies", companyId);
-        const refreshedCompany = refreshedRaw
-          ? CompanySchema.parse(refreshedRaw)
-          : null;
+        const refreshedCompany = await getCompanyByIdParsed(firestore, companyId);
 
         return res.json({
           taskType,

@@ -3,20 +3,21 @@
  * Video Library API Router - thin dispatcher for video operations.
  *
  * ARCHITECTURE:
+ * - This router does NOT access Firestore directly.
+ * - All Firestore access goes through services/repositories/* or video/service.js.
  * - LLM operations (create, regenerate, render, caption) go through HTTP POST /api/llm
  * - This router does NOT import or call llmClient directly
- * - Only Firestore-only operations (list, get, approve, publish, bulk) are handled directly
+ * - Only Firestore-only operations (list, get, approve, publish, bulk) are handled by the video service
  */
 
 import { Router } from "express";
 import { z } from "zod";
 import { wrapAsync, httpError, loadEnv } from "@wizard/utils";
-import { JobSchema, ChannelIdEnum, VideoLibraryItemSchema, VideoLibraryStatusEnum } from "@wizard/core";
+import { ChannelIdEnum } from "@wizard/core";
 import { createVideoLibraryService } from "../video/service.js";
 import { createRenderer } from "../video/renderer.js";
 import { createPublisherRegistry } from "../video/publishers.js";
-
-const JOB_COLLECTION = "jobs";
+import { getJobForUser, listJobsForUser } from "../services/repositories/index.js";
 
 const createRequestSchema = z.object({
   jobId: z.string(),
@@ -86,15 +87,6 @@ async function triggerVideoOperationViaHttp({ apiBaseUrl, authToken, taskType, c
   const data = await response.json();
   logger?.info?.({ taskType, hasResult: Boolean(data?.result) }, "videos.http_dispatch.complete");
   return data.result;
-}
-
-async function loadJob(firestore, jobId, ownerUserId) {
-  const rawJob = await firestore.getDocument(JOB_COLLECTION, jobId);
-  if (!rawJob || rawJob.ownerUserId !== ownerUserId) {
-    return null;
-  }
-  const parsed = JobSchema.safeParse(rawJob);
-  return parsed.success ? parsed.data : null;
 }
 
 function mapListItem(item) {
@@ -217,7 +209,7 @@ export function videosRouter({ firestore, bigQuery, logger }) {
       const payload = createRequestSchema.parse(req.body ?? {});
 
       // Verify job exists and belongs to user (auth check before HTTP call)
-      const job = await loadJob(firestore, payload.jobId, userId);
+      const job = await getJobForUser(firestore, payload.jobId, userId);
       if (!job) {
         throw httpError(404, "Job not found");
       }
@@ -259,25 +251,15 @@ export function videosRouter({ firestore, bigQuery, logger }) {
     "/jobs",
     wrapAsync(async (req, res) => {
       const userId = getAuthenticatedUserId(req);
-      const jobs = await firestore.listCollection(JOB_COLLECTION, [
-        { field: "ownerUserId", operator: "==", value: userId }
-      ]);
-      const normalized = jobs
-        .map((job) => {
-          const parsed = JobSchema.safeParse(job);
-          if (!parsed.success) {
-            return null;
-          }
-          return {
-            id: job.id,
-            title: parsed.data.roleTitle ?? "Untitled role",
-            company: parsed.data.companyName ?? null,
-            location: parsed.data.location ?? "",
-            payRange: parsed.data.salary ?? null,
-            benefits: parsed.data.benefits ?? []
-          };
-        })
-        .filter(Boolean);
+      const jobs = await listJobsForUser(firestore, userId);
+      const normalized = jobs.map((job) => ({
+        id: job.id,
+        title: job.roleTitle ?? "Untitled role",
+        company: job.companyName ?? null,
+        location: job.location ?? "",
+        payRange: job.salary ?? null,
+        benefits: job.benefits ?? []
+      }));
       res.json({ jobs: normalized });
     })
   );
@@ -307,7 +289,7 @@ export function videosRouter({ firestore, bigQuery, logger }) {
       const payload = createRequestSchema.pick({ jobId: true, recommendedMedium: true }).parse(req.body ?? {});
 
       // Verify job exists and belongs to user (auth check before HTTP call)
-      const job = await loadJob(firestore, payload.jobId, userId);
+      const job = await getJobForUser(firestore, payload.jobId, userId);
       if (!job) {
         throw httpError(404, "Job not found for regeneration");
       }

@@ -41,196 +41,23 @@ import {
   sendCopilotAgentMessage,
 } from "./wizard-services";
 import { loadDraft, saveDraft, clearDraft } from "./draft-storage";
+// Extracted utility functions - see lib/ for implementations
+import {
+  loadConversationFromCache,
+  saveConversationToCache,
+  applyClientMessageIds,
+  deriveConversationVersion,
+  summarizeConversationMessages,
+  mergeStateSnapshots,
+  hasMeaningfulWizardState,
+  ALL_WIZARD_FIELDS,
+} from "./lib";
 
 const TOAST_TIMEOUT_MS = 4000;
-const CONVERSATION_CACHE_PREFIX = "wizard/copilotConversation/";
 
-function getMessageTimestamp(message) {
-  if (!message) {
-    return null;
-  }
-  const { createdAt } = message;
-  if (createdAt instanceof Date) {
-    return createdAt.getTime();
-  }
-  if (typeof createdAt === "number") {
-    return createdAt;
-  }
-  if (typeof createdAt === "string") {
-    const parsed = Date.parse(createdAt);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function deriveConversationVersion(messages) {
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return 0;
-  }
-  let latest = 0;
-  for (const message of messages) {
-    const timestamp = getMessageTimestamp(message);
-    if (Number.isFinite(timestamp)) {
-      latest = Math.max(latest, timestamp);
-    }
-  }
-  return latest || Date.now();
-}
-
-function applyClientMessageIds(messages = []) {
-  if (!Array.isArray(messages)) {
-    return [];
-  }
-  return messages.map((message) => {
-    const clientId = message?.metadata?.clientMessageId;
-    if (
-      message?.role === "user" &&
-      typeof clientId === "string" &&
-      clientId.length > 0
-    ) {
-      return {
-        ...message,
-        id: clientId,
-      };
-    }
-    return message;
-  });
-}
-
-function getConversationCacheKey(jobId) {
-  if (!jobId) return null;
-  return `${CONVERSATION_CACHE_PREFIX}${jobId}`;
-}
-
-function serializeConversationPayload(messages = [], version = 0) {
-  return {
-    version,
-    messages: messages.map((message) => ({
-      ...message,
-      createdAt:
-        message?.createdAt instanceof Date
-          ? message.createdAt.toISOString()
-          : message?.createdAt ?? null,
-    })),
-  };
-}
-
-function deserializeConversationPayload(payload) {
-  if (!payload || !Array.isArray(payload.messages)) {
-    return null;
-  }
-  const messages = payload.messages.map((message) => ({
-    ...message,
-    createdAt:
-      typeof message.createdAt === "string"
-        ? new Date(message.createdAt)
-        : message.createdAt,
-  }));
-  const version = Number(payload.version) || deriveConversationVersion(messages);
-  return { messages, version };
-}
-
-function loadConversationFromCache(jobId) {
-  if (typeof window === "undefined" || !jobId) {
-    return null;
-  }
-  try {
-    const cacheKey = getConversationCacheKey(jobId);
-    if (!cacheKey) return null;
-    const stored = window.sessionStorage.getItem(cacheKey);
-    if (!stored) return null;
-    const parsed = JSON.parse(stored);
-    return deserializeConversationPayload(parsed);
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.warn("Failed to parse cached conversation", error);
-    return null;
-  }
-}
-
-function saveConversationToCache(jobId, messages, version) {
-  if (typeof window === "undefined" || !jobId) {
-    return;
-  }
-  try {
-    const cacheKey = getConversationCacheKey(jobId);
-    if (!cacheKey) return;
-    const payload = serializeConversationPayload(messages, version);
-    window.sessionStorage.setItem(cacheKey, JSON.stringify(payload));
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.warn("Failed to cache conversation", error);
-  }
-}
-
-function previewContent(content, limit = 80) {
-  if (typeof content !== "string") {
-    return "";
-  }
-  const trimmed = content.trim();
-  if (trimmed.length <= limit) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, limit - 3)}...`;
-}
-
-function summarizeConversationMessages(messages = []) {
-  return messages.map((message) => ({
-    id: message?.id,
-    role: message?.role,
-    createdAt:
-      message?.createdAt instanceof Date
-        ? message.createdAt.toISOString()
-        : message?.createdAt ?? null,
-    preview: previewContent(message?.content ?? "", 60),
-  }));
-}
-
-function mergeStateSnapshots(base = {}, override = {}) {
-  if (!override || typeof override !== "object") {
-    return deepClone(base ?? {});
-  }
-  const result = deepClone(base ?? {});
-  const stack = [{ target: result, source: override }];
-
-  while (stack.length > 0) {
-    const { target, source } = stack.pop();
-    if (!source || typeof source !== "object") {
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-    Object.keys(source).forEach((key) => {
-      const value = source[key];
-      if (value && typeof value === "object" && !Array.isArray(value)) {
-        if (
-          !target[key] ||
-          typeof target[key] !== "object" ||
-          Array.isArray(target[key])
-        ) {
-          target[key] = {};
-        }
-        stack.push({ target: target[key], source: value });
-      } else {
-        target[key] = Array.isArray(value) ? value.slice() : value;
-      }
-    });
-  }
-
-  return result;
-}
-
-const ALL_WIZARD_FIELDS = [...REQUIRED_STEPS, ...OPTIONAL_STEPS].flatMap(
-  (step) => step.fields
-);
-
-function hasMeaningfulWizardState(state) {
-  if (!state || typeof state !== "object") {
-    return false;
-  }
-  return ALL_WIZARD_FIELDS.some((field) =>
-    isFieldValueProvided(getDeep(state, field.id), field)
-  );
-}
+// =============================================================================
+// MAIN WIZARD CONTROLLER HOOK
+// =============================================================================
 
 export function useWizardController({
   user,

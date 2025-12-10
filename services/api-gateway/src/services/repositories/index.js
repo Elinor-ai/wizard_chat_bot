@@ -8,6 +8,8 @@ export {
   getJob,
   getJobRaw,
   loadJobForUser,
+  listJobsForUser,
+  getJobForUser,
 } from "./job-repository.js";
 
 // Suggestion repository
@@ -78,6 +80,7 @@ export {
   saveHeroImage,
   saveHeroImageFailure,
   serializeHeroImage,
+  loadHeroImagesForUser,
 } from "./hero-image-repository.js";
 
 // Asset repository
@@ -90,7 +93,14 @@ export {
   serializeAssetRun,
   normalizeJobAsset,
   normalizeJobAssetRun,
+  loadAssetsForUser,
 } from "./asset-repository.js";
+
+// Video repository
+export {
+  normalizeVideoItem,
+  loadVideoItemsForUser,
+} from "./video-repository.js";
 
 // =============================================================================
 // NON-LLM DOMAIN REPOSITORIES (users, subscriptions, dashboard, companies)

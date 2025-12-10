@@ -61,3 +61,38 @@ export async function loadJobForUser({ firestore, jobId, userId }) {
 export async function getJobRaw(firestore, jobId) {
   return firestore.getDocument(JOB_COLLECTION, jobId);
 }
+
+/**
+ * List all jobs for a user
+ * @param {Object} firestore - Firestore instance
+ * @param {string} userId - User ID for ownership filter
+ * @returns {Promise<Object[]>} Array of parsed job documents
+ */
+export async function listJobsForUser(firestore, userId) {
+  const docs = await firestore.listCollection(JOB_COLLECTION, [
+    { field: "ownerUserId", operator: "==", value: userId }
+  ]);
+  return docs
+    .map((doc) => {
+      const parsed = JobSchema.safeParse(doc);
+      return parsed.success ? parsed.data : null;
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Load job with ownership check - returns null if not found or not owned
+ * Suitable for validation before HTTP operations
+ * @param {Object} firestore - Firestore instance
+ * @param {string} jobId - Job ID
+ * @param {string} userId - User ID for ownership check
+ * @returns {Promise<Object|null>} Parsed job document or null
+ */
+export async function getJobForUser(firestore, jobId, userId) {
+  const doc = await firestore.getDocument(JOB_COLLECTION, jobId);
+  if (!doc || doc.ownerUserId !== userId) {
+    return null;
+  }
+  const parsed = JobSchema.safeParse(doc);
+  return parsed.success ? parsed.data : null;
+}
