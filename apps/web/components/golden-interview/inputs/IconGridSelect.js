@@ -1,9 +1,11 @@
 "use client";
 
+import DynamicIcon from "./DynamicIcon";
+
 /**
  * IconGridSelect - Grid of square cards with icons, supports single/multi-select
  * @param {Object} props
- * @param {Array<{id: string, label: string, icon: React.ReactNode, description?: string}>} props.options
+ * @param {Array<{id: string, label: string, icon: string, description?: string}>} props.options - icon is a Lucide icon name in kebab-case
  * @param {string|Array<string>} props.value - Selected id(s)
  * @param {function} props.onChange - Callback with selected value(s)
  * @param {boolean} [props.multiple=false] - Allow multiple selections
@@ -105,11 +107,20 @@ export default function IconGridSelect({
 
               {/* Icon */}
               <div
-                className={`text-3xl transition-transform duration-200 ${
+                className={`transition-transform duration-200 ${
                   isSelected ? "scale-110" : "group-hover:scale-105"
                 }`}
               >
-                {option.icon}
+                <DynamicIcon
+                  name={option.icon}
+                  size={32}
+                  className={`transition-colors ${
+                    isSelected ? "text-white" : "text-white/70"
+                  }`}
+                  style={{
+                    color: isSelected ? selectedColor : undefined,
+                  }}
+                />
               </div>
 
               {/* Label */}
@@ -167,7 +178,7 @@ export default function IconGridSelect({
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-white"
                 style={{ backgroundColor: `${selectedColor}30` }}
               >
-                <span>{option?.icon}</span>
+                <DynamicIcon name={option?.icon} size={14} />
                 <span>{option?.label}</span>
                 <button
                   onClick={(e) => {

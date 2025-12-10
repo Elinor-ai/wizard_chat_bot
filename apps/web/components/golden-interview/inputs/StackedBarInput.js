@@ -16,7 +16,7 @@ export default function StackedBarInput({
   total = 100,
   title,
   showPercentages = true,
-  autoBalance = true
+  autoBalance = true,
 }) {
   const currentTotal = segments.reduce((sum, s) => sum + s.value, 0);
 
@@ -55,7 +55,7 @@ export default function StackedBarInput({
         const scale = total / newTotal;
         updatedSegments = updatedSegments.map((s) => ({
           ...s,
-          value: Math.round(s.value * scale)
+          value: Math.round(s.value * scale),
         }));
       }
     } else {
@@ -72,11 +72,13 @@ export default function StackedBarInput({
   return (
     <div className="w-full space-y-6">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-black text-center">
+          {title}
+        </h3>
       )}
 
       {/* Stacked Bar */}
-      <div className="relative h-12 rounded-full overflow-hidden bg-white/10 backdrop-blur-sm border border-white/20">
+      <div className="relative h-12 rounded-full overflow-hidden bg-black/10 backdrop-blur-sm border border-black/20">
         <div className="absolute inset-0 flex">
           {segments.map((segment, index) => {
             const percentage = (segment.value / total) * 100;
@@ -87,11 +89,11 @@ export default function StackedBarInput({
                 style={{
                   width: `${percentage}%`,
                   backgroundColor: segment.color,
-                  minWidth: percentage > 0 ? "2px" : "0"
+                  minWidth: percentage > 0 ? "2px" : "0",
                 }}
               >
                 {showPercentages && percentage >= 10 && (
-                  <span className="text-white text-xs font-bold drop-shadow-lg">
+                  <span className="text-black text-xs font-bold drop-shadow-lg">
                     {Math.round(percentage)}%
                   </span>
                 )}
@@ -101,7 +103,7 @@ export default function StackedBarInput({
         </div>
 
         {/* Glow effect */}
-        <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/10 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-transparent to-black/10 pointer-events-none" />
       </div>
 
       {/* Legend & Sliders */}
@@ -114,11 +116,11 @@ export default function StackedBarInput({
                   className="w-4 h-4 rounded-full shadow-lg"
                   style={{ backgroundColor: segment.color }}
                 />
-                <span className="text-white/80 text-sm font-medium">
+                <span className="text-black/80 text-sm font-medium">
                   {segment.label}
                 </span>
               </div>
-              <span className="text-white font-bold text-sm">
+              <span className="text-black font-bold text-sm">
                 {Math.round(segment.value)}%
               </span>
             </div>
@@ -133,7 +135,7 @@ export default function StackedBarInput({
               }
               className="w-full h-2 rounded-full appearance-none cursor-pointer"
               style={{
-                background: `linear-gradient(to right, ${segment.color} ${(segment.value / total) * 100}%, rgba(255,255,255,0.1) ${(segment.value / total) * 100}%)`
+                background: `linear-gradient(to right, ${segment.color} ${(segment.value / total) * 100}%, rgba(255,255,255,0.1) ${(segment.value / total) * 100}%)`,
               }}
             />
           </div>

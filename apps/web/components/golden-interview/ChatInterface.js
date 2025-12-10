@@ -25,7 +25,10 @@ import { getComponent } from "./registry";
  * - Handles both text input and rich interactive inputs from registry
  * - Auto-scroll, typing indicators, error handling
  */
-export default function ChatInterface({ companyId = null, companyName = null }) {
+export default function ChatInterface({
+  companyId = null,
+  companyName = null,
+}) {
   const { user } = useUser();
   const router = useRouter();
   const authToken = user?.authToken;
@@ -141,6 +144,9 @@ export default function ChatInterface({ companyId = null, companyName = null }) 
           { authToken }
         );
 
+        console.log("📥 [Frontend] Received from Server:", response);
+        console.log("🛠 [Frontend] Setting Tool State:", response.ui_tool);
+
         // Add agent response
         if (response.message) {
           setMessages((prev) => [
@@ -184,9 +190,14 @@ export default function ChatInterface({ companyId = null, companyName = null }) 
   // Render dynamic input component from registry
   const renderDynamicInput = () => {
     if (!currentTool) return null;
-
+    console.log("🎨 [Frontend] Rendering Tool:", currentTool.type);
+    console.log("📦 [Frontend] Tool Props:", currentTool.props);
     const Component = getComponent(currentTool.type);
     if (!Component) {
+      console.error(
+        "❌ [Frontend] Component NOT FOUND for type:",
+        currentTool.type
+      );
       console.warn(`Unknown component type: ${currentTool.type}`);
       return (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
