@@ -25,7 +25,7 @@ const StartSessionSchema = z.object({
 const ChatRequestSchema = z.object({
   sessionId: z.string().min(1),
   userMessage: z.string().optional(),
-  uiResponse: z.record(z.any()).optional(),
+  uiResponse: z.any().optional(),
 });
 
 // =============================================================================
