@@ -139,6 +139,74 @@ The "X-Factor" differentiators.
 `;
 
 // =============================================================================
+// COMPANY CONTEXT BUILDER
+// =============================================================================
+
+/**
+ * Builds the company context section for the system prompt
+ * @param {object} currentSchema - Current golden schema state
+ * @returns {string} - Company context section or empty string
+ */
+function buildCompanyContextSection(currentSchema) {
+  if (!currentSchema?.company_context) {
+    return "";
+  }
+
+  const { company_context } = currentSchema;
+  const {
+    name,
+    description,
+    longDescription,
+    tagline,
+    industry,
+    employeeCountBucket,
+    website,
+    toneOfVoice,
+  } = company_context;
+
+  // Only build context if we have at least a company name
+  if (!name) {
+    return "";
+  }
+
+  let contextSection = `## COMPANY CONTEXT
+
+You are representing **${name}**`;
+
+  if (industry) {
+    contextSection += ` in the ${industry} industry`;
+  }
+
+  contextSection += ".\n\n";
+
+  // Use longDescription first, then fall back to description
+  const companyDescription = longDescription || description;
+  if (companyDescription) {
+    contextSection += `**About the Company:** ${companyDescription}\n\n`;
+  }
+
+  if (tagline) {
+    contextSection += `**Company Tagline:** ${tagline}\n\n`;
+  }
+
+  if (employeeCountBucket && employeeCountBucket !== "unknown") {
+    contextSection += `**Company Size:** ${employeeCountBucket} employees\n\n`;
+  }
+
+  if (website) {
+    contextSection += `**Website:** ${website}\n\n`;
+  }
+
+  if (toneOfVoice) {
+    contextSection += `**Brand Voice:** ${toneOfVoice}\n\n`;
+  }
+
+  contextSection += `**IMPORTANT**: Embody this company's voice and values throughout the interview. Reference the company name naturally when appropriate (e.g., "Here at ${name}..." or "What makes working at ${name} special..."). Do NOT use generic recruiter language—you represent this specific company.\n\n`;
+
+  return contextSection;
+}
+
+// =============================================================================
 // MAIN SYSTEM PROMPT
 // =============================================================================
 
@@ -150,12 +218,16 @@ The "X-Factor" differentiators.
  * @returns {string}
  */
 export function buildSystemPrompt(options = {}) {
+  const { currentSchema } = options;
   const toolsSummary = getToolsSummaryForLLM();
   const toolsDescription = formatToolsForPrompt(toolsSummary);
 
+  // Build company context section if available
+  const companyContext = buildCompanyContextSection(currentSchema);
+
   return `# ROLE: Golden Information Extraction Agent
 
-You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract the "Golden Information" that makes this job genuinely attractive to candidates—the hidden gems they might not think to mention.
+${companyContext}You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract the "Golden Information" that makes this job genuinely attractive to candidates—the hidden gems they might not think to mention.
 
 ## YOUR CONVERSATIONAL STYLE
 

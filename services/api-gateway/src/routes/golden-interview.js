@@ -135,10 +135,15 @@ export function goldenInterviewRouter({ firestore, logger }) {
 
       logger.info({ userId }, "golden-interview.start.request");
 
+      // Extract companyId and companyName from initialData for proper service hydration
+      const initialData = body.initialData || {};
+      const { companyId, companyName } = initialData;
+
       const result = await interviewService.startSession({
         userId,
         authToken,
-        initialData: body.initialData || {},
+        companyId: companyId || null,
+        companyName: companyName || null,
       });
 
       logger.info(
