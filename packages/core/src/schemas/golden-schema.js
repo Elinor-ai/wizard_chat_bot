@@ -728,13 +728,15 @@ export const UniversalGoldenSchema = z.object({
  * This factory function ensures:
  * 1. A unique UUID is generated for the record
  * 2. Company context is injected if provided
- * 3. All sub-schemas are initialized as empty objects to prevent undefined crashes
+ * 3. User context is injected if provided (for personalization)
+ * 4. All sub-schemas are initialized as empty objects to prevent undefined crashes
  *
  * @param {string} sessionId - The interview session ID
  * @param {object|null} companyData - Optional company data to hydrate company_context
+ * @param {object|null} userData - Optional user data to hydrate user_context
  * @returns {UniversalGoldenData} A fully initialized Golden Record
  */
-export function createInitialGoldenRecord(sessionId, companyData = null) {
+export function createInitialGoldenRecord(sessionId, companyData = null, userData = null) {
   const now = new Date().toISOString();
 
   return {
@@ -745,6 +747,12 @@ export function createInitialGoldenRecord(sessionId, companyData = null) {
 
     // Hydrate company context if provided
     company_context: companyData || {},
+
+    // Hydrate user context if provided (for personalization)
+    user_context: {
+      name: userData?.name || null,
+      timezone: userData?.timezone || null,
+    },
 
     // Initialize all sub-schemas as empty objects to prevent undefined access
     financial_reality: {},

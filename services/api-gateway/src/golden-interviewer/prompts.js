@@ -207,6 +207,90 @@ You are representing **${name}**`;
 }
 
 // =============================================================================
+// USER CONTEXT BUILDER
+// =============================================================================
+
+/**
+ * Builds the user context section for the system prompt
+ * @param {object} currentSchema - Current golden schema state
+ * @returns {string} - User context section or empty string
+ */
+function buildUserContextSection(currentSchema) {
+  if (!currentSchema?.user_context) {
+    return "";
+  }
+
+  const { user_context } = currentSchema;
+  const { name, timezone } = user_context;
+
+  // Only build context if we have at least a name
+  if (!name) {
+    return "";
+  }
+
+  let contextSection = `## USER CONTEXT
+
+You are speaking with **${name}**`;
+
+  if (timezone) {
+    // Extract a friendly location hint from timezone (e.g., "America/Los_Angeles" -> "Los Angeles area")
+    const locationHint = formatTimezoneAsLocation(timezone);
+    if (locationHint) {
+      contextSection += ` who is located in the ${locationHint}`;
+    }
+  }
+
+  contextSection += ".\n\n";
+
+  contextSection += `**IMPORTANT**: Use this information to build rapport and personalize the conversation. Address them by name occasionally (e.g., "Great point, ${name}!" or "Thanks for sharing that, ${name}."). If you know their location, you can make small talk references (e.g., "Hope the weather is treating you well!" or mention local context when relevant). Keep it natural—don't overdo it.\n\n`;
+
+  return contextSection;
+}
+
+/**
+ * Convert a timezone string to a friendly location hint
+ * @param {string} timezone - IANA timezone string (e.g., "America/Los_Angeles")
+ * @returns {string|null} - Friendly location or null
+ */
+function formatTimezoneAsLocation(timezone) {
+  if (!timezone) return null;
+
+  // Common timezone to location mappings
+  const timezoneLocations = {
+    "America/New_York": "Eastern US (New York area)",
+    "America/Chicago": "Central US (Chicago area)",
+    "America/Denver": "Mountain US (Denver area)",
+    "America/Los_Angeles": "West Coast US (California)",
+    "America/Phoenix": "Arizona",
+    "America/Anchorage": "Alaska",
+    "Pacific/Honolulu": "Hawaii",
+    "Europe/London": "United Kingdom",
+    "Europe/Paris": "Western Europe",
+    "Europe/Berlin": "Central Europe",
+    "Asia/Tokyo": "Japan",
+    "Asia/Shanghai": "China",
+    "Asia/Singapore": "Singapore",
+    "Asia/Dubai": "UAE",
+    "Asia/Kolkata": "India",
+    "Australia/Sydney": "Australia (Eastern)",
+    "Australia/Perth": "Australia (Western)",
+  };
+
+  if (timezoneLocations[timezone]) {
+    return timezoneLocations[timezone];
+  }
+
+  // Fallback: extract city name from timezone (e.g., "America/Los_Angeles" -> "Los Angeles")
+  const parts = timezone.split("/");
+  if (parts.length >= 2) {
+    const city = parts[parts.length - 1].replace(/_/g, " ");
+    return `${city} area`;
+  }
+
+  return null;
+}
+
+// =============================================================================
 // MAIN SYSTEM PROMPT
 // =============================================================================
 
@@ -222,12 +306,13 @@ export function buildSystemPrompt(options = {}) {
   const toolsSummary = getToolsSummaryForLLM();
   const toolsDescription = formatToolsForPrompt(toolsSummary);
 
-  // Build company context section if available
+  // Build context sections if available
   const companyContext = buildCompanyContextSection(currentSchema);
+  const userContext = buildUserContextSection(currentSchema);
 
   return `# ROLE: Golden Information Extraction Agent
 
-${companyContext}You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract the "Golden Information" that makes this job genuinely attractive to candidates—the hidden gems they might not think to mention.
+${companyContext}${userContext}You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract the "Golden Information" that makes this job genuinely attractive to candidates—the hidden gems they might not think to mention.
 
 ## YOUR CONVERSATIONAL STYLE
 

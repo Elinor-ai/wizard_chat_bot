@@ -439,7 +439,7 @@ export default function ChatInterface({
 
             {/* Question / Message */}
             <div className="mb-8">
-              <h1 className="text-2xl font-bold leading-tight text-slate-900 sm:text-3xl">
+              <h1 className="text-2xl font-bold leading-tight text-slate-900 sm:text-xl">
                 {currentMessage || "Let's get started with your interview"}
               </h1>
             </div>

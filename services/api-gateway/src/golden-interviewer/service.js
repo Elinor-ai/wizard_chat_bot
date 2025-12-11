@@ -24,6 +24,7 @@ import {
   extractConversationHistory,
   completeSession as repoCompleteSession,
 } from "../services/repositories/golden-interviewer-repository.js";
+import { getUserById } from "../services/repositories/user-repository.js";
 
 // =============================================================================
 // GOLDEN INTERVIEWER SERVICE CLASS
@@ -165,9 +166,35 @@ export class GoldenInterviewerService {
     }
 
     // =========================================================================
+    // STEP 1.5: Fetch user data for personalization
+    // =========================================================================
+    let userData = null;
+
+    try {
+      const userDoc = await getUserById(this.firestore, userId);
+
+      if (userDoc?.profile) {
+        userData = {
+          name: userDoc.profile.name || null,
+          timezone: userDoc.profile.timezone || null,
+        };
+
+        this.logger.info(
+          { sessionId, userId, userName: userData.name },
+          "golden-interviewer.session.user_hydrated"
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        { sessionId, userId, err: error },
+        "golden-interviewer.session.user_fetch_error"
+      );
+    }
+
+    // =========================================================================
     // STEP 2: Create hydrated Golden Record using factory function
     // =========================================================================
-    const goldenSchema = createInitialGoldenRecord(sessionId, companyData);
+    const goldenSchema = createInitialGoldenRecord(sessionId, companyData, userData);
 
     // =========================================================================
     // STEP 3: Create session via repository
