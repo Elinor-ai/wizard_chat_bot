@@ -291,6 +291,81 @@ function formatTimezoneAsLocation(timezone) {
 }
 
 // =============================================================================
+// FRICTION CONTEXT BUILDER
+// =============================================================================
+
+/**
+ * Builds the friction awareness section for the system prompt
+ * @param {object} frictionState - Current friction state from service
+ * @returns {string} - Friction context section or empty string
+ */
+function buildFrictionContextSection(frictionState) {
+  if (!frictionState || frictionState.totalSkips === 0) {
+    return "";
+  }
+
+  const { consecutiveSkips, totalSkips, currentStrategy, skippedField } = frictionState;
+
+  return `## ⚠️ FRICTION AWARENESS
+
+**Current Friction State:**
+- Consecutive Skips: ${consecutiveSkips}
+- Total Skips This Session: ${totalSkips}
+- Current Strategy: **${currentStrategy.toUpperCase()}**
+${skippedField ? `- Last Skipped Field: ${skippedField}` : ""}
+
+**FRICTION PROTOCOL (You MUST follow this):**
+
+### Level 1: Single Skip (consecutiveSkips = 1)
+- Acknowledge gracefully: "No problem! Let's try something else."
+- Pivot to a DIFFERENT category entirely
+- Use an easier UI tool (text input or simple yes/no)
+
+### Level 2: Double Skip (consecutiveSkips = 2)
+- Show empathy: "I understand some details are harder to share."
+- Offer a LOW-DISCLOSURE alternative:
+  - Instead of exact salary → Use \`range_slider\` with broad ranges
+  - Instead of detailed equity → Ask "Do you offer equity? Yes/No"
+  - Instead of turnover reasons → Ask "Would you describe retention as stable?"
+
+### Level 3: Triple Skip or More (consecutiveSkips >= 3)
+- **STOP interrogating. START educating.**
+- Your message should explain WHY this data helps them:
+  - "I want to share why candidates care about [topic]..."
+  - "Companies that share [X] see 40% more qualified applicants..."
+- DO NOT ask a direct question. Offer a soft re-entry:
+  - "Whenever you're ready, we can revisit this. For now, let's move on to something easier."
+
+### Sensitive Topic Protocol
+When the skipped field involves: [compensation, equity, revenue, turnover]
+- ALWAYS offer ranges/brackets instead of exact numbers
+- Lead with validation: "Many companies prefer to share ranges rather than exact figures."
+- Use \`range_slider\` or \`multi_select\` instead of open text
+
+### Strategy-Specific Instructions:
+${currentStrategy === "education" ? `
+**CURRENT: EDUCATION MODE**
+- Your primary goal is to EXPLAIN VALUE, not extract data
+- Lead with "Here's why this matters to candidates..."
+- Share a brief insight about what job seekers care about
+- End with a soft invitation: "Would you like to share anything about this?"
+` : ""}${currentStrategy === "low_disclosure" ? `
+**CURRENT: LOW DISCLOSURE MODE**
+- Offer RANGES instead of exact values
+- Use yes/no or multiple choice instead of open text
+- Example: "Would you say compensation is below average, competitive, or above market?"
+- Make it easy to answer without revealing sensitive specifics
+` : ""}${currentStrategy === "defer" ? `
+**CURRENT: DEFER MODE**
+- This topic is causing too much friction
+- Acknowledge: "We can skip this section entirely - no problem at all."
+- Move to a completely different, easier category
+- Do NOT return to this topic unless the user brings it up
+` : ""}
+`;
+}
+
+// =============================================================================
 // MAIN SYSTEM PROMPT
 // =============================================================================
 
@@ -299,20 +374,22 @@ function formatTimezoneAsLocation(timezone) {
  * @param {object} options
  * @param {object} [options.currentSchema] - Current golden schema state
  * @param {string[]} [options.priorityFields] - Fields to prioritize
+ * @param {object} [options.frictionState] - Current friction state for skip handling
  * @returns {string}
  */
 export function buildSystemPrompt(options = {}) {
-  const { currentSchema } = options;
+  const { currentSchema, frictionState } = options;
   const toolsSummary = getToolsSummaryForLLM();
   const toolsDescription = formatToolsForPrompt(toolsSummary);
 
   // Build context sections if available
   const companyContext = buildCompanyContextSection(currentSchema);
   const userContext = buildUserContextSection(currentSchema);
+  const frictionContext = buildFrictionContextSection(frictionState);
 
   return `# ROLE: Golden Information Extraction Agent
 
-${companyContext}${userContext}You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract the "Golden Information" that makes this job genuinely attractive to candidates—the hidden gems they might not think to mention.
+${companyContext}${userContext}${frictionContext}You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract the "Golden Information" that makes this job genuinely attractive to candidates—the hidden gems they might not think to mention.
 
 ## YOUR CONVERSATIONAL STYLE
 
@@ -354,7 +431,9 @@ You MUST respond with valid JSON in this exact structure:
     "type": "tool_name",
     "props": {
       "title": "Question title",
-      "...other_props": "..."
+      "options": [
+        { "id": "example", "label": "Example", "icon": "sun" }
+      ]
     }
   },
   "next_priority_fields": ["field1", "field2"],
@@ -362,6 +441,8 @@ You MUST respond with valid JSON in this exact structure:
   "interview_phase": "compensation|time_flexibility|environment|culture|growth|stability|role_details|unique_value|closing"
 }
 \`\`\`
+
+**⚠️ ICON REMINDER**: All "icon" fields MUST be Lucide icon names like "sun", "moon", "calendar", "refresh-cw", "users", "dollar-sign". NEVER use emojis like "☀️" or "📅".
 
 ${GOLDEN_SCHEMA_REFERENCE}
 
@@ -398,7 +479,112 @@ function formatToolsForPrompt(toolsSummary) {
     byCategory[category].push(tool);
   });
 
-  let result = "";
+  // Start with critical icon format instructions
+  let result = `
+### ⚠️ CRITICAL: ICON FORMAT RULE
+
+**ALL icon values MUST be Lucide React icon names in kebab-case. NEVER use emojis.**
+
+✅ CORRECT icon examples:
+- Schedule/Time: "sun", "moon", "calendar", "clock", "refresh-cw", "timer"
+- Actions: "check", "x", "plus", "minus", "edit", "trash"
+- Objects: "home", "building", "briefcase", "folder", "file-text"
+- People: "user", "users", "person-standing", "baby"
+- Finance: "dollar-sign", "coins", "wallet", "piggy-bank", "trending-up"
+- Health: "heart", "heart-pulse", "thermometer", "dumbbell", "brain"
+- Nature: "sun", "moon", "palm-tree", "coffee", "zap"
+- Communication: "message-circle", "mail", "phone", "video"
+- Misc: "eye", "search", "settings", "shield", "target", "lightbulb", "sparkles"
+
+❌ WRONG - These will CRASH the app:
+- "☀️", "🌙", "📅", "🔄", "💰", "🙋", "✂️", "🏠", "💼"
+
+**SHIFT PATTERN ICONS**: Use "sun" for morning, "moon" for evening, "refresh-cw" for rotating, "calendar" for flexible.
+
+### ⚠️ CRITICAL: MULTI-SELECT RULE
+
+**For icon_grid, detailed_cards, and gradient_cards components:**
+
+You MUST set \`multiple: true\` when users might need to select MORE THAN ONE option.
+
+✅ USE \`multiple: true\` FOR:
+- Benefits (health, dental, vision, 401k, PTO)
+- Shift patterns / schedules (morning, evening, rotating, flexible)
+- Tech stack / programming languages / tools
+- Perks and amenities (free lunch, gym, parking)
+- Skills, requirements, or qualifications
+- Work arrangements (hybrid options)
+- Any list where a person could reasonably have multiple selections
+
+❌ USE \`multiple: false\` (single-select) ONLY FOR:
+- Mutually exclusive choices (Full-time vs Part-time)
+- Single preference questions (Preferred start date)
+- Yes/No type selections
+- "Pick your top priority" questions
+
+**DEFAULT BEHAVIOR**: When in doubt, use \`multiple: true\`. It's better to allow multi-select than to frustrate users who can't select all applicable options.
+
+### ⚠️ CRITICAL: BIPOLAR SCALE KEY NAMES
+
+**For bipolar_scale component, each item MUST use these EXACT keys:**
+
+✅ CORRECT keys:
+- \`id\` - Unique string identifier (REQUIRED)
+- \`leftLabel\` - Text for LEFT extreme (REQUIRED)
+- \`rightLabel\` - Text for RIGHT extreme (REQUIRED)
+- \`value\` - Initial value, typically 0 (REQUIRED)
+
+❌ WRONG - These will CRASH the app:
+- \`left\` instead of \`leftLabel\`
+- \`right\` instead of \`rightLabel\`
+- \`label\` instead of \`leftLabel\`/\`rightLabel\`
+- Missing \`id\` field
+
+**Correct Example:**
+\`\`\`json
+{
+  "items": [
+    { "id": "pace", "leftLabel": "Fast-paced", "rightLabel": "Steady", "value": 0 },
+    { "id": "noise", "leftLabel": "Quiet", "rightLabel": "Loud", "value": 0 }
+  ]
+}
+\`\`\`
+
+### ⚠️ CRITICAL: CHIP CLOUD KEY NAMES
+
+**For chip_cloud component, each group MUST use these EXACT keys:**
+
+✅ CORRECT keys:
+- \`groupId\` - Unique group identifier (REQUIRED)
+- \`groupLabel\` - Display header text (REQUIRED) - NOT 'category' or 'label'
+- \`items\` - Array of chip OBJECTS (REQUIRED) - NOT 'options' or 'chips'
+
+Each item in \`items\` must be an OBJECT with:
+- \`id\` - Unique chip identifier
+- \`label\` - Display text
+
+❌ WRONG - These will CRASH the app:
+- \`category\` instead of \`groupLabel\`
+- \`options\` instead of \`items\`
+- String arrays like \`["React", "Vue"]\` instead of object arrays
+
+**Correct Example:**
+\`\`\`json
+{
+  "groups": [
+    {
+      "groupId": "frontend",
+      "groupLabel": "Frontend",
+      "items": [
+        { "id": "react", "label": "React" },
+        { "id": "vue", "label": "Vue" }
+      ]
+    }
+  ]
+}
+\`\`\`
+
+`;
 
   Object.entries(byCategory).forEach(([category, tools]) => {
     const label = CATEGORY_LABELS[category] || category;
@@ -439,13 +625,29 @@ export function buildContinueTurnPrompt({
   uiResponse,
   previousToolType,
   turnNumber,
+  frictionState,
 }) {
   const schemaCompletion = estimateSchemaCompletion(currentSchema);
   const missingFields = identifyMissingFields(currentSchema);
 
+  // Build skip-specific alert if user just skipped
+  const skipAlert = frictionState?.isSkip
+    ? `### ⚠️ USER SKIPPED THIS QUESTION
+
+**Skipped Field:** ${frictionState.skippedField || "Unknown"}
+**Skip Reason:** ${frictionState.skipReason || "Not specified"}
+**Consecutive Skips:** ${frictionState.consecutiveSkips}
+**Required Strategy:** ${frictionState.currentStrategy.toUpperCase()}
+
+**YOU MUST follow the Friction Protocol for this level.**
+${frictionState.consecutiveSkips === 1 ? "→ Acknowledge gracefully and pivot to a DIFFERENT topic." : ""}${frictionState.consecutiveSkips === 2 ? "→ Offer a LOW-DISCLOSURE alternative (ranges, yes/no, multiple choice)." : ""}${frictionState.consecutiveSkips >= 3 ? "→ STOP asking. Educate about value instead. Offer soft re-entry." : ""}
+
+`
+    : "";
+
   return `## Current Turn: ${turnNumber}
 
-### User's Input
+${skipAlert}### User's Input
 ${userMessage ? `Text message: "${userMessage}"` : "(No text message)"}
 
 ${
@@ -473,10 +675,13 @@ ${missingFields
   .join("\n")}
 
 ### Your Task
-1. Extract new info & update schema.
+${frictionState?.isSkip ? `1. **HANDLE THE SKIP** according to the Friction Protocol above.
+2. Do NOT re-ask the same question in the same way.
+3. Select a different topic or offer a low-disclosure alternative.
+4. Generate a supportive 'context_explanation'.` : `1. Extract new info & update schema.
 2. Acknowledge user input conversationally.
 3. Select the next best UI tool & question.
-4. **CRITICAL**: Generate a 'context_explanation' based on the 'Why It Matters' column for the NEXT question you are asking.
+4. **CRITICAL**: Generate a 'context_explanation' based on the 'Why It Matters' column for the NEXT question you are asking.`}
 
 Respond in JSON.`;
 }

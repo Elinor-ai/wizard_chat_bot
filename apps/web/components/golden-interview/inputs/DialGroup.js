@@ -1,14 +1,9 @@
 "use client";
 
+import DynamicIcon from "./DynamicIcon";
+
 /**
  * DialGroup - Series of range inputs that calculate and display an average score
- * @param {Object} props
- * @param {Array<{id: string, label: string, value: number, icon?: string, description?: string}>} props.dials
- * @param {function} props.onChange - Callback with updated dials array
- * @param {number} [props.min=0] - Minimum value
- * @param {number} [props.max=100] - Maximum value
- * @param {string} [props.title] - Title text
- * @param {Array<{min: number, max: number, label: string, color: string}>} [props.scoreRanges] - Score interpretation ranges
  */
 export default function DialGroup({
   dials,
@@ -20,20 +15,27 @@ export default function DialGroup({
     { min: 0, max: 25, label: "Low", color: "#ef4444" },
     { min: 25, max: 50, label: "Moderate", color: "#f97316" },
     { min: 50, max: 75, label: "Good", color: "#eab308" },
-    { min: 75, max: 100, label: "Excellent", color: "#22c55e" }
-  ]
+    { min: 75, max: 100, label: "Excellent", color: "#22c55e" },
+  ],
 }) {
-  const average = Math.round(
-    dials.reduce((sum, d) => sum + d.value, 0) / dials.length
-  );
+  // 1. Safety Check: Default to empty array
+  const safeDials = dials || [];
+
+  const average =
+    safeDials.length > 0
+      ? Math.round(
+          safeDials.reduce((sum, d) => sum + d.value, 0) / safeDials.length
+        )
+      : 0;
 
   const currentScoreRange =
     scoreRanges.find((r) => average >= r.min && average < r.max) ||
     scoreRanges[scoreRanges.length - 1];
 
-  const handleDialChange = (dialId, newValue) => {
-    const updatedDials = dials.map((dial) =>
-      dial.id === dialId ? { ...dial, value: newValue } : dial
+  // 2. Interaction Fix: Update by INDEX to avoid ID collisions
+  const handleDialChange = (indexToUpdate, newValue) => {
+    const updatedDials = safeDials.map((dial, i) =>
+      i === indexToUpdate ? { ...dial, value: newValue } : dial
     );
     onChange(updatedDials);
   };
@@ -46,24 +48,23 @@ export default function DialGroup({
   return (
     <div className="w-full space-y-6">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">
+          {title}
+        </h3>
       )}
 
       {/* Average Score Display */}
       <div className="relative flex justify-center">
         <div className="relative">
-          {/* Circular background */}
           <svg width="140" height="140" className="transform -rotate-90">
-            {/* Background circle */}
             <circle
               cx="70"
               cy="70"
               r="60"
               fill="none"
-              stroke="rgba(255,255,255,0.1)"
+              stroke="#e2e8f0"
               strokeWidth="12"
             />
-            {/* Progress arc */}
             <circle
               cx="70"
               cy="70"
@@ -72,14 +73,13 @@ export default function DialGroup({
               stroke={currentScoreRange.color}
               strokeWidth="12"
               strokeLinecap="round"
-              strokeDasharray={`${(average / max) * 377} 377`}
+              strokeDasharray={`${(average / 100) * 377} 377`}
               className="transition-all duration-500"
               style={{
-                filter: `drop-shadow(0 0 10px ${currentScoreRange.color}60)`
+                filter: `drop-shadow(0 0 4px ${currentScoreRange.color}40)`,
               }}
             />
           </svg>
-          {/* Center text */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span
               className="text-4xl font-bold transition-colors duration-300"
@@ -87,7 +87,7 @@ export default function DialGroup({
             >
               {average}
             </span>
-            <span className="text-white/50 text-xs">
+            <span className="text-slate-500 text-xs">
               {currentScoreRange.label}
             </span>
           </div>
@@ -96,22 +96,34 @@ export default function DialGroup({
 
       {/* Individual Dials */}
       <div className="space-y-4">
-        {dials.map((dial) => {
+        {safeDials.map((dial, index) => {
           const dialColor = getDialColor(dial.value);
-          const percentage = ((dial.value - min) / (max - min)) * 100;
+          const effectiveMin = dial.min !== undefined ? dial.min : min;
+          const effectiveMax = dial.max !== undefined ? dial.max : max;
+          const percentage =
+            ((dial.value - effectiveMin) / (effectiveMax - effectiveMin)) * 100;
+
+          // 3. Key Fix: Use ID if present, fallback to index to prevent React key collision
+          const uniqueKey = dial.id || `dial-${index}`;
 
           return (
             <div
-              key={dial.id}
-              className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3"
+              key={uniqueKey}
+              className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm space-y-4"
             >
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  {dial.icon && <span className="text-xl">{dial.icon}</span>}
+                <div className="flex items-center gap-3">
+                  {dial.icon && (
+                    <div className="text-slate-500">
+                      <DynamicIcon name={dial.icon} size={24} />
+                    </div>
+                  )}
                   <div>
-                    <div className="text-white font-medium">{dial.label}</div>
+                    <div className="text-slate-900 font-medium">
+                      {dial.label}
+                    </div>
                     {dial.description && (
-                      <div className="text-white/40 text-xs">
+                      <div className="text-slate-500 text-xs">
                         {dial.description}
                       </div>
                     )}
@@ -125,53 +137,54 @@ export default function DialGroup({
                 </div>
               </div>
 
-              {/* Slider */}
-              <div className="relative">
-                <div className="h-3 rounded-full bg-white/10 overflow-hidden">
+              {/* Slider Container */}
+              <div className="relative h-6 flex items-center group">
+                {/* Track */}
+                <div className="absolute inset-0 h-2 my-auto rounded-full bg-slate-100 overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-200"
                     style={{
                       width: `${percentage}%`,
-                      background: `linear-gradient(to right, ${dialColor}80, ${dialColor})`
+                      background: `linear-gradient(to right, ${dialColor}80, ${dialColor})`,
                     }}
                   />
                 </div>
+
+                {/* Visual Thumb Handle */}
+                <div
+                  className="absolute h-6 w-6 rounded-full bg-white border-2 shadow-md z-10 pointer-events-none transition-all duration-100 ease-out"
+                  style={{
+                    left: `calc(${percentage}% - 12px)`,
+                    borderColor: dialColor,
+                  }}
+                />
+
+                {/* Invisible Input for Interaction */}
                 <input
                   type="range"
-                  min={min}
-                  max={max}
+                  min={effectiveMin}
+                  max={effectiveMax}
                   value={dial.value}
+                  // 2. Interaction Fix: Pass INDEX
                   onChange={(e) =>
-                    handleDialChange(dial.id, Number(e.target.value))
+                    handleDialChange(index, Number(e.target.value))
                   }
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  // 4. Hit-Box Fix: appearance-none prevents browser default thumb ghosting
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20 appearance-none m-0 p-0"
                 />
               </div>
 
               {/* Scale markers */}
-              <div className="flex justify-between text-[10px] text-white/30">
-                <span>{min}</span>
-                <span>{Math.round((max - min) / 4)}</span>
-                <span>{Math.round((max - min) / 2)}</span>
-                <span>{Math.round(((max - min) * 3) / 4)}</span>
-                <span>{max}</span>
+              <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                <span>{effectiveMin}</span>
+                <span>
+                  {Math.round(effectiveMin + (effectiveMax - effectiveMin) / 2)}
+                </span>
+                <span>{effectiveMax}</span>
               </div>
             </div>
           );
         })}
-      </div>
-
-      {/* Score Legend */}
-      <div className="flex justify-center gap-4 pt-4">
-        {scoreRanges.map((range) => (
-          <div key={range.label} className="flex items-center gap-1">
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: range.color }}
-            />
-            <span className="text-xs text-white/50">{range.label}</span>
-          </div>
-        ))}
       </div>
     </div>
   );

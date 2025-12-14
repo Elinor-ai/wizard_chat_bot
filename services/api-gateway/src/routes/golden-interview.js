@@ -24,10 +24,26 @@ const StartSessionSchema = z.object({
   initialData: z.record(z.any()).optional(),
 });
 
+// Skip reason enum for explicit skip signals
+const SkipReasonEnum = z.enum([
+  "unknown",           // Default - user just clicked skip
+  "dont_know",         // "I don't know this information"
+  "prefer_not_to_say", // Privacy concern
+  "not_applicable",    // Doesn't apply to this role
+  "come_back_later",   // Wants to answer later
+]);
+
+const SkipActionSchema = z.object({
+  isSkip: z.boolean(),
+  reason: SkipReasonEnum.optional().default("unknown"),
+});
+
 const ChatRequestSchema = z.object({
   sessionId: z.string().min(1),
   userMessage: z.string().optional(),
   uiResponse: z.any().optional(),
+  // Explicit skip signal (machine-readable, locale-agnostic)
+  skipAction: SkipActionSchema.optional(),
 });
 
 // =============================================================================
@@ -200,6 +216,8 @@ export function goldenInterviewRouter({ firestore, logger }) {
           sessionId: body.sessionId,
           hasMessage: !!body.userMessage,
           hasUiResponse: !!body.uiResponse,
+          isSkip: body.skipAction?.isSkip || false,
+          skipReason: body.skipAction?.reason,
         },
         "golden-interview.chat.request"
       );
@@ -209,6 +227,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
         authToken,
         userMessage: body.userMessage,
         uiResponse: body.uiResponse,
+        skipAction: body.skipAction || null,
       });
 
       logger.info(

@@ -2,15 +2,10 @@
 
 /**
  * BipolarScaleList - List of sliders balancing between two text extremes
- * @param {Object} props
- * @param {Array<{id: string, leftLabel: string, rightLabel: string, value: number}>} props.items
- * @param {function} props.onChange - Callback with updated items array
- * @param {number} [props.min=-50] - Minimum value (left extreme)
- * @param {number} [props.max=50] - Maximum value (right extreme)
- * @param {string} [props.title] - Title text
- * @param {string} [props.leftColor="#3b82f6"] - Left side color
- * @param {string} [props.rightColor="#ef4444"] - Right side color
- * @param {boolean} [props.showValues=false] - Show numeric values
+ *
+ * ROBUST HANDLING: This component handles items with or without IDs.
+ * - Uses index-based updates to ensure sliders work even if API sends missing IDs
+ * - Uses (item.id || index) for React keys to prevent duplicate key warnings
  */
 export default function BipolarScaleList({
   items,
@@ -20,11 +15,15 @@ export default function BipolarScaleList({
   title,
   leftColor = "#3b82f6",
   rightColor = "#ef4444",
-  showValues = false
+  showValues = false,
 }) {
-  const handleItemChange = (itemId, newValue) => {
-    const updatedItems = items.map((item) =>
-      item.id === itemId ? { ...item, value: newValue } : item
+  // 1. Safety Check: Prevent crash if items is null/undefined
+  const safeItems = items || [];
+
+  // FIX: Use index-based update to handle items without IDs
+  const handleItemChange = (index, newValue) => {
+    const updatedItems = safeItems.map((item, i) =>
+      i === index ? { ...item, value: newValue } : item
     );
     onChange(updatedItems);
   };
@@ -38,14 +37,14 @@ export default function BipolarScaleList({
       return {
         left: `${normalized}%`,
         width: `${center - normalized}%`,
-        background: `linear-gradient(to right, ${leftColor}, ${leftColor}80)`
+        background: `linear-gradient(to right, ${leftColor}, ${leftColor}80)`,
       };
     } else {
       // Right side filled
       return {
         left: "50%",
         width: `${normalized - center}%`,
-        background: `linear-gradient(to right, ${rightColor}80, ${rightColor})`
+        background: `linear-gradient(to right, ${rightColor}80, ${rightColor})`,
       };
     }
   };
@@ -55,45 +54,54 @@ export default function BipolarScaleList({
     const isLeft = normalized < 50;
     return {
       left: `${normalized}%`,
-      backgroundColor: isLeft ? leftColor : rightColor
+      backgroundColor: isLeft ? leftColor : rightColor,
     };
   };
 
   return (
     <div className="w-full space-y-6">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        // 2. Visibility Fix: text-white -> text-slate-800
+        <h3 className="text-lg font-semibold text-slate-800 text-center">
+          {title}
+        </h3>
       )}
 
       <div className="space-y-5">
-        {items.map((item) => {
-          const barStyle = getBarStyle(item.value);
-          const glowStyle = getGlowPosition(item.value);
-          const normalized = ((item.value - min) / (max - min)) * 100;
+        {safeItems.map((item, index) => {
+          // FIX: Default to 0 if value is missing to prevent NaN
+          const itemValue = item.value ?? 0;
+          const barStyle = getBarStyle(itemValue);
+          const glowStyle = getGlowPosition(itemValue);
+          const normalized = ((itemValue - min) / (max - min)) * 100;
 
           return (
-            <div key={item.id} className="space-y-2">
+            // FIX: Use item.id if available, fallback to index for unique React key
+            <div key={item.id || `bipolar-item-${index}`} className="space-y-2">
               {/* Labels */}
               <div className="flex justify-between items-center">
                 <span
+                  // 2. Visibility Fix: text-white/50 -> text-slate-400
+                  // Keep dynamic color logic for active state
                   className={`text-sm font-medium transition-all ${
-                    item.value < 0 ? "text-white" : "text-white/50"
+                    itemValue < 0 ? "" : "text-slate-400"
                   }`}
-                  style={{ color: item.value < 0 ? leftColor : undefined }}
+                  style={{ color: itemValue < 0 ? leftColor : undefined }}
                 >
                   {item.leftLabel}
                 </span>
                 {showValues && (
-                  <span className="text-xs text-white/40 font-mono">
-                    {item.value > 0 ? "+" : ""}
-                    {item.value}
+                  <span className="text-xs text-slate-400 font-mono">
+                    {itemValue > 0 ? "+" : ""}
+                    {itemValue}
                   </span>
                 )}
                 <span
+                  // 2. Visibility Fix: text-white/50 -> text-slate-400
                   className={`text-sm font-medium transition-all ${
-                    item.value > 0 ? "text-white" : "text-white/50"
+                    itemValue > 0 ? "" : "text-slate-400"
                   }`}
-                  style={{ color: item.value > 0 ? rightColor : undefined }}
+                  style={{ color: itemValue > 0 ? rightColor : undefined }}
                 >
                   {item.rightLabel}
                 </span>
@@ -101,10 +109,10 @@ export default function BipolarScaleList({
 
               {/* Slider Track */}
               <div className="relative h-8">
-                {/* Background track */}
-                <div className="absolute inset-0 rounded-full bg-white/10 backdrop-blur-sm overflow-hidden">
-                  {/* Center line */}
-                  <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/30" />
+                {/* Background track: bg-white/10 -> bg-slate-100 */}
+                <div className="absolute inset-0 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+                  {/* Center line: bg-white/30 -> bg-slate-300 */}
+                  <div className="absolute top-0 bottom-0 left-1/2 w-px bg-slate-300" />
 
                   {/* Filled portion */}
                   <div
@@ -120,7 +128,7 @@ export default function BipolarScaleList({
                     ...glowStyle,
                     filter: "blur(8px)",
                     opacity: 0.6,
-                    transform: "translate(-50%, -50%)"
+                    transform: "translate(-50%, -50%)",
                   }}
                 />
 
@@ -129,21 +137,25 @@ export default function BipolarScaleList({
                   type="range"
                   min={min}
                   max={max}
-                  value={item.value}
+                  value={itemValue}
                   onChange={(e) =>
-                    handleItemChange(item.id, Number(e.target.value))
+                    // FIX: Use index instead of item.id for reliable updates
+                    handleItemChange(index, Number(e.target.value))
                   }
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />
 
                 {/* Thumb indicator */}
                 <div
-                  className="absolute top-1/2 w-6 h-6 rounded-full bg-white shadow-lg border-2 transition-all duration-150 pointer-events-none"
+                  className="absolute top-1/2 w-6 h-6 rounded-full bg-white shadow-md border-2 transition-all duration-150 pointer-events-none"
                   style={{
                     left: `${normalized}%`,
                     transform: "translate(-50%, -50%)",
                     borderColor: normalized < 50 ? leftColor : rightColor,
-                    boxShadow: `0 0 12px ${normalized < 50 ? leftColor : rightColor}60`
+                    // Keep shadow but make it subtler for light mode
+                    boxShadow: `0 2px 8px ${
+                      normalized < 50 ? leftColor : rightColor
+                    }40`,
                   }}
                 />
               </div>
@@ -153,30 +165,27 @@ export default function BipolarScaleList({
       </div>
 
       {/* Summary */}
-      <div className="flex justify-center gap-8 pt-4 border-t border-white/10">
+      <div className="flex justify-center gap-8 pt-4 border-t border-slate-100">
         <div className="text-center">
-          <div
-            className="text-2xl font-bold"
-            style={{ color: leftColor }}
-          >
-            {items.filter((i) => i.value < -10).length}
+          <div className="text-2xl font-bold" style={{ color: leftColor }}>
+            {safeItems.filter((i) => (i.value ?? 0) < -10).length}
           </div>
-          <div className="text-xs text-white/50">Lean Left</div>
+          <div className="text-xs text-slate-400">Lean Left</div>
         </div>
         <div className="text-center">
-          <div className="text-2xl font-bold text-white/60">
-            {items.filter((i) => i.value >= -10 && i.value <= 10).length}
+          <div className="text-2xl font-bold text-slate-600">
+            {safeItems.filter((i) => {
+              const v = i.value ?? 0;
+              return v >= -10 && v <= 10;
+            }).length}
           </div>
-          <div className="text-xs text-white/50">Balanced</div>
+          <div className="text-xs text-slate-400">Balanced</div>
         </div>
         <div className="text-center">
-          <div
-            className="text-2xl font-bold"
-            style={{ color: rightColor }}
-          >
-            {items.filter((i) => i.value > 10).length}
+          <div className="text-2xl font-bold" style={{ color: rightColor }}>
+            {safeItems.filter((i) => (i.value ?? 0) > 10).length}
           </div>
-          <div className="text-xs text-white/50">Lean Right</div>
+          <div className="text-xs text-slate-400">Lean Right</div>
         </div>
       </div>
     </div>

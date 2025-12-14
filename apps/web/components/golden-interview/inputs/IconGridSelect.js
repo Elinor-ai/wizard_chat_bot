@@ -3,16 +3,17 @@
 import DynamicIcon from "./DynamicIcon";
 
 /**
+ * Helper to detect if a string is likely an emoji or direct text character
+ * (Checks if it contains non-ASCII characters)
+ */
+const isLikelyEmoji = (str) => {
+  if (!str) return false;
+  // Matches typical emoji ranges and non-standard text
+  return /[^\u0000-\u007F]+/.test(str);
+};
+
+/**
  * IconGridSelect - Grid of square cards with icons, supports single/multi-select
- * @param {Object} props
- * @param {Array<{id: string, label: string, icon: string, description?: string}>} props.options - icon is a Lucide icon name in kebab-case
- * @param {string|Array<string>} props.value - Selected id(s)
- * @param {function} props.onChange - Callback with selected value(s)
- * @param {boolean} [props.multiple=false] - Allow multiple selections
- * @param {number} [props.columns=3] - Number of grid columns
- * @param {string} [props.title] - Title text
- * @param {number} [props.maxSelections] - Max selections (for multiple mode)
- * @param {string} [props.selectedColor="#8b5cf6"] - Selection highlight color
  */
 export default function IconGridSelect({
   options,
@@ -22,7 +23,7 @@ export default function IconGridSelect({
   columns = 3,
   title,
   maxSelections,
-  selectedColor = "#8b5cf6"
+  selectedColor = "#8b5cf6",
 }) {
   const selectedIds = multiple
     ? Array.isArray(value)
@@ -58,16 +59,16 @@ export default function IconGridSelect({
     3: "grid-cols-3",
     4: "grid-cols-4",
     5: "grid-cols-5",
-    6: "grid-cols-6"
+    6: "grid-cols-6",
   };
 
   return (
     <div className="w-full space-y-4">
       {title && (
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
+          <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
           {multiple && maxSelections && (
-            <span className="text-white/50 text-sm">
+            <span className="text-slate-400 text-sm">
               {selectedIds.length} / {maxSelections}
             </span>
           )}
@@ -77,6 +78,7 @@ export default function IconGridSelect({
       <div className={`grid ${gridCols[columns] || "grid-cols-3"} gap-3`}>
         {options.map((option) => {
           const isSelected = selectedIds.includes(option.id);
+          const isEmoji = isLikelyEmoji(option.icon);
 
           return (
             <button
@@ -84,49 +86,50 @@ export default function IconGridSelect({
               onClick={() => handleSelect(option.id)}
               className={`relative aspect-square p-4 rounded-xl border transition-all duration-200 flex flex-col items-center justify-center gap-2 group ${
                 isSelected
-                  ? "border-transparent shadow-lg"
-                  : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                  ? "border-transparent shadow-lg bg-white"
+                  : "bg-white border-slate-200 hover:border-primary-300 hover:bg-slate-50"
               }`}
               style={{
-                backgroundColor: isSelected ? `${selectedColor}20` : undefined,
                 borderColor: isSelected ? selectedColor : undefined,
                 boxShadow: isSelected
-                  ? `0 0 20px ${selectedColor}30, inset 0 0 20px ${selectedColor}10`
-                  : undefined
+                  ? `0 4px 12px ${selectedColor}25`
+                  : undefined,
               }}
             >
-              {/* Glow effect on selection */}
-              {isSelected && (
-                <div
-                  className="absolute inset-0 rounded-xl opacity-20 pointer-events-none"
-                  style={{
-                    background: `radial-gradient(circle at center, ${selectedColor}, transparent 70%)`
-                  }}
-                />
-              )}
-
-              {/* Icon */}
+              {/* Icon Container */}
               <div
                 className={`transition-transform duration-200 ${
                   isSelected ? "scale-110" : "group-hover:scale-105"
                 }`}
               >
-                <DynamicIcon
-                  name={option.icon}
-                  size={32}
-                  className={`transition-colors ${
-                    isSelected ? "text-white" : "text-white/70"
-                  }`}
-                  style={{
-                    color: isSelected ? selectedColor : undefined,
-                  }}
-                />
+                {isEmoji ? (
+                  // RENDER EMOJI DIRECTLY
+                  <span
+                    className="text-3xl"
+                    role="img"
+                    aria-label={option.label}
+                  >
+                    {option.icon}
+                  </span>
+                ) : (
+                  // RENDER LUCIDE ICON
+                  <DynamicIcon
+                    name={option.icon}
+                    size={32}
+                    className={`transition-colors ${
+                      isSelected ? "text-primary-600" : "text-slate-400"
+                    }`}
+                    style={{
+                      color: isSelected ? selectedColor : undefined,
+                    }}
+                  />
+                )}
               </div>
 
               {/* Label */}
               <span
                 className={`text-xs font-medium text-center leading-tight transition-colors ${
-                  isSelected ? "text-white" : "text-white/70"
+                  isSelected ? "text-slate-900" : "text-slate-500"
                 }`}
               >
                 {option.label}
@@ -135,11 +138,11 @@ export default function IconGridSelect({
               {/* Checkmark for multi-select */}
               {multiple && isSelected && (
                 <div
-                  className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                  className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-white"
                   style={{ backgroundColor: selectedColor }}
                 >
                   <svg
-                    className="w-3 h-3 text-white"
+                    className="w-3 h-3"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -172,20 +175,33 @@ export default function IconGridSelect({
         <div className="flex flex-wrap gap-2 pt-2">
           {selectedIds.map((id) => {
             const option = options.find((o) => o.id === id);
+            const isEmoji = isLikelyEmoji(option?.icon);
+
             return (
               <span
                 key={id}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-white"
-                style={{ backgroundColor: `${selectedColor}30` }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-slate-700 border border-slate-200"
+                style={{
+                  backgroundColor: `${selectedColor}10`,
+                  borderColor: `${selectedColor}30`,
+                }}
               >
-                <DynamicIcon name={option?.icon} size={14} />
+                {isEmoji ? (
+                  <span>{option?.icon}</span>
+                ) : (
+                  <DynamicIcon
+                    name={option?.icon}
+                    size={14}
+                    className="text-slate-500"
+                  />
+                )}
                 <span>{option?.label}</span>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleSelect(id);
                   }}
-                  className="ml-1 hover:text-red-400 transition-colors"
+                  className="ml-1 hover:text-red-500 transition-colors"
                 >
                   ×
                 </button>

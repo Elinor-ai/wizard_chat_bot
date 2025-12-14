@@ -136,7 +136,7 @@ export default function ChatInterface({
   // ==========================================================================
 
   const sendMessage = useCallback(
-    async (messageContent, value = null) => {
+    async (messageContent, value = null, skipAction = null) => {
       if (!sessionId || !authToken) return;
 
       setInputValue("");
@@ -151,6 +151,7 @@ export default function ChatInterface({
             sessionId,
             userMessage: messageContent || undefined,
             uiResponse: value !== null ? value : undefined,
+            skipAction: skipAction || undefined,
           },
           { authToken }
         );
@@ -182,7 +183,8 @@ export default function ChatInterface({
   );
 
   const handleSkip = useCallback(() => {
-    sendMessage("Skip", null);
+    // Send explicit machine-readable skip signal (not locale-dependent text)
+    sendMessage(null, null, { isSkip: true, reason: "unknown" });
   }, [sendMessage]);
 
   const handleTextSubmit = (e) => {
@@ -207,6 +209,21 @@ export default function ChatInterface({
   // RENDER HELPERS
   // ==========================================================================
 
+  // Map of component types to their primary data prop name
+  // These components use array/object props instead of `value`
+  const DATA_PROP_MAP = {
+    dial_group: "dials",
+    bipolar_scale: "items",
+    radar_chart: "dimensions",
+    brand_meter: "metrics",
+    toggle_list: "items",
+    segmented_rows: "rows",
+    expandable_list: "items",
+    perk_revealer: "categories",
+    counter_stack: "items",
+    stacked_bar: "segments",
+  };
+
   const renderDynamicInput = () => {
     if (!currentTool) return null;
 
@@ -221,12 +238,21 @@ export default function ChatInterface({
     }
 
     const props = currentTool.props || {};
+    const dataPropName = DATA_PROP_MAP[currentTool.type];
+
+    // Build final props, overriding the data prop if dynamicValue exists
+    const finalProps = { ...props };
+
+    if (dataPropName && dynamicValue !== null) {
+      // For array-based components, override their data prop with dynamicValue
+      finalProps[dataPropName] = dynamicValue;
+    }
 
     return (
       <Component
-        {...props}
+        {...finalProps}
         variant="minimal"
-        value={dynamicValue}
+        value={dataPropName ? undefined : dynamicValue} // Only pass value for non-array components
         onChange={setDynamicValue}
       />
     );
@@ -420,7 +446,7 @@ export default function ChatInterface({
           {/* ============================================================ */}
           <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-200/50 sm:p-8">
             {/* Step Badge */}
-            <div className="mb-6 flex items-center gap-2">
+            {/* <div className="mb-6 flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-600">
                 {(() => {
                   const StepIcon = getStepIcon(
@@ -435,7 +461,7 @@ export default function ChatInterface({
                   {completionPercentage}% complete
                 </span>
               )}
-            </div>
+            </div> */}
 
             {/* Question / Message */}
             <div className="mb-8">

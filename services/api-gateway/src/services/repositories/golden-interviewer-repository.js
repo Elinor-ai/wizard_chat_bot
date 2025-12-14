@@ -95,6 +95,22 @@ export async function createSession({
       completionPercentage: 0,
       currentPhase: "opening",
       lastToolUsed: null,
+
+      // Last question context (for skip attribution)
+      lastAskedField: null,      // Primary field from next_priority_fields[0]
+      lastAskedCategory: null,   // Top-level category (e.g., "financial_reality")
+
+      // Friction tracking
+      friction: {
+        totalSkips: 0,           // Lifetime skips in this session
+        consecutiveSkips: 0,     // Resets when user engages
+        skippedFields: [],       // Array of { field, reason, turnNumber, timestamp }
+        recoveryAttempts: 0,     // Times we tried adaptive strategy
+        recoverySuccesses: 0,    // Times user engaged after adaptation
+        lastRecoveryTurn: null,  // Turn number of last recovery attempt
+        currentStrategy: "standard", // "standard" | "education" | "low_disclosure" | "defer"
+        strategyChangedAt: null, // Turn number when strategy last changed
+      },
     },
   };
 

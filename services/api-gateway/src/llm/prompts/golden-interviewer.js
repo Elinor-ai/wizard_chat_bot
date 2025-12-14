@@ -29,6 +29,7 @@ import {
  * @param {boolean} [context.isFirstTurn] - Whether this is the first turn
  * @param {number} [context.attempt] - Retry attempt number
  * @param {boolean} [context.strictMode] - Whether to use strict mode for retries
+ * @param {object} [context.frictionState] - Friction state for skip handling
  * @returns {string} - The complete prompt for the LLM
  */
 export function buildGoldenInterviewerTurnPrompt(context = {}) {
@@ -42,6 +43,7 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
     isFirstTurn = false,
     attempt = 0,
     strictMode = false,
+    frictionState = null,
   } = context;
 
   // Build the appropriate turn prompt
@@ -56,6 +58,7 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
       uiResponse,
       previousToolType,
       turnNumber,
+      frictionState,
     });
   }
 
@@ -88,6 +91,11 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
       historyLength: recentHistory.length,
       attempt,
       strictMode,
+      friction: frictionState ? {
+        isSkip: frictionState.isSkip,
+        consecutiveSkips: frictionState.consecutiveSkips,
+        strategy: frictionState.currentStrategy,
+      } : null,
     },
     "Golden Interviewer prompt built"
   );
@@ -101,11 +109,12 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
  * This is exported separately for use in TASK_REGISTRY as a getter,
  * since the system prompt includes dynamic schema context.
  *
- * @param {object} context - The context containing current schema
+ * @param {object} context - The context containing current schema and friction state
  * @returns {string} - The system prompt
  */
 export function buildGoldenInterviewerSystemPrompt(context = {}) {
   return buildGoldenSystemPrompt({
     currentSchema: context.currentSchema || {},
+    frictionState: context.frictionState || null,
   });
 }

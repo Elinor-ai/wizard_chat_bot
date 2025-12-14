@@ -1,32 +1,30 @@
 "use client";
 
 import { useState } from "react";
+import DynamicIcon from "./DynamicIcon"; // Make sure to import this if you want Lucide icons
 
 /**
  * SuperpowerGrid - Grid of traits with custom text input area
- * @param {Object} props
- * @param {Array<{id: string, label: string, icon?: React.ReactNode}>} props.traits
- * @param {Object} props.value - { selected: string[], custom: string }
- * @param {function} props.onChange - Callback with updated value
- * @param {number} [props.maxSelections=5] - Maximum trait selections
- * @param {string} [props.title] - Title text
- * @param {string} [props.customPlaceholder="Add your own..."] - Custom input placeholder
- * @param {string} [props.selectedColor="#8b5cf6"] - Selection highlight color
  */
 export default function SuperpowerGrid({
   traits,
-  value = { selected: [], custom: "" },
+  value,
   onChange,
   maxSelections = 5,
   title,
   customPlaceholder = "Add your own superpowers...",
-  selectedColor = "#8b5cf6"
+  selectedColor = "#8b5cf6",
 }) {
   const [customInput, setCustomInput] = useState("");
 
-  const selectedTraits = value.selected || [];
-  const customTraits = value.custom
-    ? value.custom.split(",").map((t) => t.trim()).filter(Boolean)
+  // Defensive: normalize null/undefined value to safe default
+  const safeValue = value ?? { selected: [], custom: "" };
+  const selectedTraits = safeValue.selected || [];
+  const customTraits = safeValue.custom
+    ? safeValue.custom
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
     : [];
 
   const totalSelected = selectedTraits.length + customTraits.length;
@@ -43,7 +41,7 @@ export default function SuperpowerGrid({
       return; // Max reached
     }
 
-    onChange({ ...value, selected: newSelected });
+    onChange({ ...safeValue, selected: newSelected });
   };
 
   const handleCustomChange = (text) => {
@@ -51,33 +49,36 @@ export default function SuperpowerGrid({
   };
 
   const handleCustomBlur = () => {
-    onChange({ ...value, custom: customInput });
+    onChange({ ...safeValue, custom: customInput });
   };
 
   const handleAddCustomTag = () => {
     if (customInput.trim() && totalSelected < maxSelections) {
-      const newCustom = value.custom
-        ? `${value.custom}, ${customInput.trim()}`
+      const newCustom = safeValue.custom
+        ? `${safeValue.custom}, ${customInput.trim()}`
         : customInput.trim();
-      onChange({ ...value, custom: newCustom });
+      onChange({ ...safeValue, custom: newCustom });
       setCustomInput("");
     }
   };
 
   const handleRemoveCustomTag = (tagToRemove) => {
-    const newCustom = customTraits
-      .filter((t) => t !== tagToRemove)
-      .join(", ");
-    onChange({ ...value, custom: newCustom });
+    const newCustom = customTraits.filter((t) => t !== tagToRemove).join(", ");
+    onChange({ ...safeValue, custom: newCustom });
   };
 
   return (
     <div className="w-full space-y-4">
       {title && (
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
+          {/* FIX: text-white -> text-slate-800 */}
+          <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
           <span
-            className={`text-sm ${totalSelected >= maxSelections ? "text-amber-400" : "text-white/50"}`}
+            className={`text-sm ${
+              totalSelected >= maxSelections
+                ? "text-amber-500"
+                : "text-slate-400"
+            }`}
           >
             {totalSelected} / {maxSelections}
           </span>
@@ -95,27 +96,38 @@ export default function SuperpowerGrid({
               key={trait.id}
               onClick={() => handleTraitToggle(trait.id)}
               disabled={isDisabled}
-              className={`p-3 rounded-xl border transition-all duration-200 text-center ${
+              // FIX: Updated background and border colors for light mode
+              className={`p-3 rounded-xl border transition-all duration-200 text-center flex flex-col items-center justify-center gap-2 ${
                 isSelected
-                  ? "border-transparent"
+                  ? "border-transparent bg-white shadow-md"
                   : isDisabled
-                    ? "bg-white/5 border-white/5 opacity-50 cursor-not-allowed"
-                    : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                    ? "bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed"
+                    : "bg-white border-slate-200 hover:border-primary-300 hover:bg-slate-50"
               }`}
               style={{
-                backgroundColor: isSelected ? `${selectedColor}20` : undefined,
                 borderColor: isSelected ? selectedColor : undefined,
                 boxShadow: isSelected
-                  ? `0 0 15px ${selectedColor}30`
-                  : undefined
+                  ? `0 4px 12px ${selectedColor}25`
+                  : undefined,
               }}
             >
               {trait.icon && (
-                <div className="text-xl mb-1">{trait.icon}</div>
+                <div
+                  className={`text-2xl ${isSelected ? "text-primary-600" : "text-slate-500"}`}
+                >
+                  {/* Handle both Emojis and Lucide Icons */}
+                  {typeof trait.icon === "string" &&
+                  trait.icon.match(/[a-z-]/) ? (
+                    <DynamicIcon name={trait.icon} size={24} />
+                  ) : (
+                    trait.icon
+                  )}
+                </div>
               )}
               <span
+                // FIX: text-white -> text-slate-900 / text-slate-500
                 className={`text-xs font-medium ${
-                  isSelected ? "text-white" : "text-white/70"
+                  isSelected ? "text-slate-900" : "text-slate-500"
                 }`}
               >
                 {trait.label}
@@ -126,8 +138,9 @@ export default function SuperpowerGrid({
       </div>
 
       {/* Custom Input Section */}
-      <div className="space-y-3 pt-4 border-t border-white/10">
-        <label className="text-white/60 text-sm">Or add your own:</label>
+      <div className="space-y-3 pt-4 border-t border-slate-200">
+        {/* FIX: text-white/60 -> text-slate-500 */}
+        <label className="text-slate-500 text-sm">Or add your own:</label>
 
         <div className="flex gap-2">
           <input
@@ -143,15 +156,15 @@ export default function SuperpowerGrid({
             }}
             placeholder={customPlaceholder}
             disabled={totalSelected >= maxSelections}
-            className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            // FIX: Input styling for light mode
+            className="flex-1 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 disabled:bg-slate-50 disabled:cursor-not-allowed"
           />
           <button
             onClick={handleAddCustomTag}
             disabled={!customInput.trim() || totalSelected >= maxSelections}
-            className="px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-sm hover:shadow-md"
             style={{
-              backgroundColor: `${selectedColor}30`,
-              color: selectedColor
+              backgroundColor: selectedColor,
             }}
           >
             Add
@@ -164,13 +177,12 @@ export default function SuperpowerGrid({
             {customTraits.map((tag) => (
               <span
                 key={tag}
-                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm text-white"
-                style={{ backgroundColor: `${selectedColor}25` }}
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm text-slate-700 border border-slate-200 bg-slate-50"
               >
                 ✨ {tag}
                 <button
                   onClick={() => handleRemoveCustomTag(tag)}
-                  className="ml-1 hover:text-red-400 transition-colors"
+                  className="ml-1 text-slate-400 hover:text-red-500 transition-colors"
                 >
                   ×
                 </button>
@@ -179,40 +191,6 @@ export default function SuperpowerGrid({
           </div>
         )}
       </div>
-
-      {/* Selected Summary */}
-      {(selectedTraits.length > 0 || customTraits.length > 0) && (
-        <div className="p-4 rounded-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10">
-          <div className="text-white/50 text-xs uppercase tracking-wide mb-2">
-            Your Superpowers
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {selectedTraits.map((traitId) => {
-              const trait = traits.find((t) => t.id === traitId);
-              return (
-                <span
-                  key={traitId}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium"
-                  style={{
-                    backgroundColor: `${selectedColor}20`,
-                    color: "white"
-                  }}
-                >
-                  {trait?.icon} {trait?.label}
-                </span>
-              );
-            })}
-            {customTraits.map((tag) => (
-              <span
-                key={tag}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium bg-white/10 text-white"
-              >
-                ✨ {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

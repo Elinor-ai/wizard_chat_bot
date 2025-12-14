@@ -176,7 +176,13 @@ export const UI_TOOLS_SCHEMA = {
             icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'trending-up', 'gift', 'ghost', 'coins'). Do NOT use emojis." },
             description: { type: "string" }
           }
-        }
+        },
+        example: [
+          { "id": "options", "label": "Stock Options", "icon": "trending-up", "description": "Right to purchase shares at a set price" },
+          { "id": "RSUs", "label": "RSUs", "icon": "gift", "description": "Restricted Stock Units vest over time" },
+          { "id": "phantom", "label": "Phantom Equity", "icon": "ghost", "description": "Cash bonus tied to company value" },
+          { "id": "profit_interest", "label": "Profit Interest", "icon": "coins", "description": "Share in future profit growth" }
+        ]
       },
       maxPercentage: {
         type: "number",
@@ -247,7 +253,7 @@ export const UI_TOOLS_SCHEMA = {
   bipolar_scale: {
     name: "bipolar_scale",
     description:
-      "A list of sliders where each balances between two opposing text extremes. Perfect for culture fit or personality assessments.",
+      "A list of sliders where each balances between two opposing text extremes. Perfect for culture fit or personality assessments. CRITICAL: Each item MUST use exact keys 'id', 'leftLabel', 'rightLabel', 'value' - NOT 'left'/'right' or other synonyms.",
     category: "visual_quantifiers",
     valueType: "array",
     props: {
@@ -258,22 +264,23 @@ export const UI_TOOLS_SCHEMA = {
       },
       items: {
         type: "array",
-        description: "Array of bipolar scales to display. Each item MUST have a UNIQUE id.",
+        description: "Array of bipolar scales to display. Each item MUST have ALL four keys: id, leftLabel, rightLabel, value. Do NOT use 'left'/'right' - use 'leftLabel'/'rightLabel'.",
         required: true,
         items: {
           type: "object",
           required: ["id", "leftLabel", "rightLabel", "value"],
           properties: {
-            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
-            leftLabel: { type: "string" },
-            rightLabel: { type: "string" },
-            value: { type: "number" }
+            id: { type: "string", description: "REQUIRED. Unique string identifier for this slider row (e.g., 'pace', 'noise_level'). MUST NOT duplicate any other ID in this array." },
+            leftLabel: { type: "string", description: "REQUIRED. The text label for the LEFT extreme (e.g., 'Quiet', 'Slow', 'Structured'). Key MUST be 'leftLabel', NOT 'left'." },
+            rightLabel: { type: "string", description: "REQUIRED. The text label for the RIGHT extreme (e.g., 'Loud', 'Fast', 'Flexible'). Key MUST be 'rightLabel', NOT 'right'." },
+            value: { type: "number", description: "REQUIRED. Initial slider value, typically 0 for center position. Range is usually -50 to 50." }
           }
         },
         example: [
-          { id: "pace", leftLabel: "Fast-paced", rightLabel: "Steady", value: 0 },
-          { id: "structure", leftLabel: "Structured", rightLabel: "Flexible", value: 0 },
-          { id: "collab", leftLabel: "Collaborative", rightLabel: "Independent", value: 0 }
+          { "id": "pace", "leftLabel": "Fast-paced", "rightLabel": "Steady", "value": 0 },
+          { "id": "structure", "leftLabel": "Structured", "rightLabel": "Flexible", "value": 0 },
+          { "id": "collab", "leftLabel": "Collaborative", "rightLabel": "Independent", "value": 0 },
+          { "id": "noise_level", "leftLabel": "Quiet", "rightLabel": "Loud", "value": 0 }
         ]
       }
     },
@@ -363,7 +370,12 @@ export const UI_TOOLS_SCHEMA = {
             icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'target', 'calendar', 'wrench'). Do NOT use emojis." },
             description: { type: "string" }
           }
-        }
+        },
+        example: [
+          { "id": "goal_setting", "label": "Goal Setting Freedom", "value": 50, "icon": "target", "description": "How much control over your own goals" },
+          { "id": "schedule", "label": "Schedule Control", "value": 50, "icon": "calendar", "description": "Flexibility in when you work" },
+          { "id": "methods", "label": "Method Choice", "value": 50, "icon": "wrench", "description": "Freedom to choose how to accomplish tasks" }
+        ]
       }
     },
     useCases: [
@@ -400,7 +412,13 @@ export const UI_TOOLS_SCHEMA = {
             icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'crown', 'users', 'file-text'). Do NOT use emojis." },
             weight: { type: "number" }
           }
-        }
+        },
+        example: [
+          { "id": "prestige", "label": "Brand Prestige", "value": 50, "icon": "crown", "weight": 1 },
+          { "id": "culture", "label": "Culture Reputation", "value": 50, "icon": "users", "weight": 1 },
+          { "id": "innovation", "label": "Innovation Leader", "value": 50, "icon": "lightbulb", "weight": 1 },
+          { "id": "stability", "label": "Financial Stability", "value": 50, "icon": "shield", "weight": 1 }
+        ]
       },
       maxStars: {
         type: "number",
@@ -458,7 +476,7 @@ export const UI_TOOLS_SCHEMA = {
       },
       multiple: {
         type: "boolean",
-        description: "Allow multiple selections",
+        description: "Set to TRUE if the user might need to select more than one option (e.g., benefits, shift types, tech stack, perks). Defaults to false. IMPORTANT: For questions about benefits, shift patterns, tools, or any list where multiple answers make sense, ALWAYS set multiple: true.",
         required: false,
         default: false
       },
@@ -511,14 +529,20 @@ export const UI_TOOLS_SCHEMA = {
             id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array. Use descriptive ids like 'option_1', 'fixed_schedule', etc." },
             title: { type: "string" },
             description: { type: "string" },
-            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'calendar', 'refresh-cw', 'clock'). Do NOT use emojis." },
+            icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'calendar', 'refresh-cw', 'clock', 'sun', 'moon'). Do NOT use emojis." },
             badge: { type: "string" }
           }
-        }
+        },
+        example: [
+          { "id": "fixed_morning", "title": "Fixed Morning", "description": "Consistent 9-5 schedule", "icon": "sun" },
+          { "id": "fixed_evening", "title": "Fixed Evening", "description": "Afternoon to night shift", "icon": "moon" },
+          { "id": "rotating", "title": "Rotating Shifts", "description": "Schedule changes weekly/monthly", "icon": "refresh-cw" },
+          { "id": "flexible", "title": "Flexible Hours", "description": "Choose your own schedule", "icon": "calendar" }
+        ]
       },
       multiple: {
         type: "boolean",
-        description: "Allow multiple selections",
+        description: "Set to TRUE if the user might need to select more than one option (e.g., benefits, shift types, tech stack, perks). Defaults to false. IMPORTANT: For questions about benefits, shift patterns, tools, or any list where multiple answers make sense, ALWAYS set multiple: true.",
         required: false,
         default: false
       },
@@ -567,11 +591,17 @@ export const UI_TOOLS_SCHEMA = {
             gradient: { type: "string" },
             description: { type: "string" }
           }
-        }
+        },
+        example: [
+          { "id": "energetic", "label": "High Energy", "icon": "zap", "gradient": "from-orange-500 to-red-500" },
+          { "id": "calm", "label": "Calm & Focused", "icon": "coffee", "gradient": "from-blue-500 to-cyan-500" },
+          { "id": "creative", "label": "Creative Space", "icon": "palette", "gradient": "from-purple-500 to-pink-500" },
+          { "id": "collaborative", "label": "Team-Oriented", "icon": "users", "gradient": "from-green-500 to-teal-500" }
+        ]
       },
       multiple: {
         type: "boolean",
-        description: "Allow multiple selections",
+        description: "Set to TRUE if the user might need to select more than one option (e.g., benefits, shift types, tech stack, perks). Defaults to false. IMPORTANT: For questions about benefits, shift patterns, tools, or any list where multiple answers make sense, ALWAYS set multiple: true.",
         required: false,
         default: false
       },
@@ -618,7 +648,15 @@ export const UI_TOOLS_SCHEMA = {
             label: { type: "string" },
             icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'search', 'sparkles', 'crown', 'heart'). Do NOT use emojis." }
           }
-        }
+        },
+        example: [
+          { "id": "problem_solver", "label": "Problem Solver", "icon": "search" },
+          { "id": "innovator", "label": "Innovator", "icon": "sparkles" },
+          { "id": "leader", "label": "Natural Leader", "icon": "crown" },
+          { "id": "empath", "label": "Empathetic", "icon": "heart" },
+          { "id": "communicator", "label": "Great Communicator", "icon": "message-circle" },
+          { "id": "detail_oriented", "label": "Detail-Oriented", "icon": "eye" }
+        ]
       },
       maxSelections: {
         type: "number",
@@ -714,22 +752,28 @@ export const UI_TOOLS_SCHEMA = {
       },
       items: {
         type: "array",
-        description: "Array of toggleable items. Each item MUST have a UNIQUE id.",
+        description: "Array of toggleable items. Each item MUST have BOTH 'id' AND 'label' keys. Do NOT use 'text', 'title', or 'name' instead of 'label'.",
         required: true,
         items: {
           type: "object",
           required: ["id", "label"],
           properties: {
-            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
-            label: { type: "string" },
+            id: { type: "string", description: "REQUIRED. Unique string identifier (e.g., 'unclear_role', 'high_turnover'). MUST NOT duplicate any other ID." },
+            label: { type: "string", description: "REQUIRED. Display text for this item. Key MUST be 'label', NOT 'text', 'title', or 'name'." },
             icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'help-circle', 'door-open', 'trending-down'). Do NOT use emojis." },
-            description: { type: "string" }
+            description: { type: "string", description: "Optional helper text shown below the label." }
           }
-        }
+        },
+        example: [
+          { "id": "unclear_role", "label": "Unclear role expectations", "icon": "help-circle" },
+          { "id": "high_turnover", "label": "High turnover rate", "icon": "door-open" },
+          { "id": "declining_revenue", "label": "Declining revenue", "icon": "trending-down" },
+          { "id": "poor_reviews", "label": "Poor employee reviews", "icon": "thumbs-down" }
+        ]
       },
       singleSelect: {
         type: "boolean",
-        description: "Only allow one selection at a time",
+        description: "Set to TRUE only for mutually exclusive choices (e.g., 'yes/no', 'full-time vs part-time'). Defaults to FALSE, which allows multiple selections. IMPORTANT: For questions about concerns, red flags, worries, or any list where users might have MULTIPLE selections, keep this FALSE (default).",
         required: false,
         default: false
       },
@@ -755,7 +799,7 @@ export const UI_TOOLS_SCHEMA = {
   chip_cloud: {
     name: "chip_cloud",
     description:
-      "Grouped cloud of selectable text chips/tags. Ideal for tech stack, skills, or categorized tag selection.",
+      "Grouped cloud of selectable text chips/tags. Ideal for tech stack, skills, or categorized tag selection. CRITICAL: Use 'groupLabel' NOT 'category', and 'items' NOT 'options'. Each item must be an OBJECT with id and label.",
     category: "lists_toggles",
     valueType: "array",
     props: {
@@ -766,17 +810,48 @@ export const UI_TOOLS_SCHEMA = {
       },
       groups: {
         type: "array",
-        description: "Array of chip groups with their items. Each group MUST have a UNIQUE groupId, and each item within MUST have a UNIQUE id.",
+        description: "Array of chip groups. CRITICAL: Each group MUST have 'groupId', 'groupLabel' (NOT 'category'), and 'items' (NOT 'options'). Items must be OBJECTS, not strings.",
         required: true,
         items: {
           type: "object",
           required: ["groupId", "groupLabel", "items"],
           properties: {
-            groupId: { type: "string", description: "STRICTLY UNIQUE group identifier. MUST NOT duplicate any other groupId." },
-            groupLabel: { type: "string" },
-            items: { type: "array", items: { type: "object", required: ["id", "label"], properties: { id: { type: "string", description: "STRICTLY UNIQUE item identifier across ALL groups." }, label: { type: "string" } } } }
+            groupId: { type: "string", description: "REQUIRED. Unique group identifier (e.g., 'frontend', 'backend'). MUST NOT duplicate any other groupId." },
+            groupLabel: { type: "string", description: "REQUIRED. Display header for the group (e.g., 'Frontend', 'Backend'). Key MUST be 'groupLabel', NOT 'category' or 'label'." },
+            items: {
+              type: "array",
+              description: "REQUIRED. Array of chip OBJECTS (NOT strings). Key MUST be 'items', NOT 'options' or 'chips'.",
+              items: {
+                type: "object",
+                required: ["id", "label"],
+                properties: {
+                  id: { type: "string", description: "REQUIRED. Unique item identifier across ALL groups (e.g., 'react', 'node')." },
+                  label: { type: "string", description: "REQUIRED. Display text for the chip (e.g., 'React', 'Node.js')." }
+                }
+              }
+            }
           }
-        }
+        },
+        example: [
+          {
+            "groupId": "frontend",
+            "groupLabel": "Frontend",
+            "items": [
+              { "id": "react", "label": "React" },
+              { "id": "vue", "label": "Vue" },
+              { "id": "angular", "label": "Angular" }
+            ]
+          },
+          {
+            "groupId": "backend",
+            "groupLabel": "Backend",
+            "items": [
+              { "id": "node", "label": "Node.js" },
+              { "id": "python", "label": "Python" },
+              { "id": "java", "label": "Java" }
+            ]
+          }
+        ]
       },
       maxSelections: {
         type: "number",
@@ -816,17 +891,23 @@ export const UI_TOOLS_SCHEMA = {
       },
       rows: {
         type: "array",
-        description: "Array of rows to display. Each row MUST have a UNIQUE id.",
+        description: "Array of rows to display. Each row MUST have BOTH 'id' AND 'label' keys. Do NOT use 'text', 'title', or 'name' instead of 'label'.",
         required: true,
         items: {
           type: "object",
           required: ["id", "label"],
           properties: {
-            id: { type: "string", description: "STRICTLY UNIQUE identifier. MUST NOT duplicate any other ID in this array." },
-            label: { type: "string" },
+            id: { type: "string", description: "REQUIRED. Unique string identifier (e.g., 'standing', 'lifting'). MUST NOT duplicate any other ID." },
+            label: { type: "string", description: "REQUIRED. Display text for this row. Key MUST be 'label', NOT 'text', 'title', or 'name'." },
             icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'person-standing', 'weight', 'footprints'). Do NOT use emojis." }
           }
-        }
+        },
+        example: [
+          { "id": "standing", "label": "Standing", "icon": "person-standing" },
+          { "id": "lifting", "label": "Heavy Lifting", "icon": "weight" },
+          { "id": "walking", "label": "Walking/Moving", "icon": "footprints" },
+          { "id": "sitting", "label": "Desk Work", "icon": "armchair" }
+        ]
       },
       segments: {
         type: "array",
@@ -878,7 +959,12 @@ export const UI_TOOLS_SCHEMA = {
             icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'target', 'lightbulb', 'users'). Do NOT use emojis." },
             placeholder: { type: "string" }
           }
-        }
+        },
+        example: [
+          { "id": "innovation", "label": "Innovation", "icon": "lightbulb", "placeholder": "Share a recent innovation example..." },
+          { "id": "collaboration", "label": "Collaboration", "icon": "users", "placeholder": "Describe how teams work together..." },
+          { "id": "excellence", "label": "Excellence", "icon": "target", "placeholder": "What does excellence look like here..." }
+        ]
       },
       evidenceLabel: {
         type: "string",
@@ -923,7 +1009,22 @@ export const UI_TOOLS_SCHEMA = {
             icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'pizza', 'dumbbell', 'plane'). Do NOT use emojis." },
             items: { type: "array", description: "Array of perk items. Each item MUST have a UNIQUE id and icon (Lucide name) across all categories." }
           }
-        }
+        },
+        example: [
+          { "id": "food", "label": "Food & Drink", "icon": "pizza", "items": [
+            { "id": "free_lunch", "label": "Free Lunch", "icon": "utensils" },
+            { "id": "snacks", "label": "Unlimited Snacks", "icon": "cookie" },
+            { "id": "coffee", "label": "Premium Coffee", "icon": "coffee" }
+          ]},
+          { "id": "wellness", "label": "Wellness", "icon": "dumbbell", "items": [
+            { "id": "gym", "label": "Gym Membership", "icon": "dumbbell" },
+            { "id": "mental_health", "label": "Mental Health Support", "icon": "brain" }
+          ]},
+          { "id": "travel", "label": "Travel", "icon": "plane", "items": [
+            { "id": "travel_stipend", "label": "Travel Stipend", "icon": "plane" },
+            { "id": "remote_work", "label": "Work From Anywhere", "icon": "globe" }
+          ]}
+        ]
       }
     },
     useCases: [
@@ -965,7 +1066,13 @@ export const UI_TOOLS_SCHEMA = {
             max: { type: "number" },
             step: { type: "number" }
           }
-        }
+        },
+        example: [
+          { "id": "vacation", "label": "Vacation Days", "icon": "palm-tree", "unit": "days", "min": 0, "max": 30 },
+          { "id": "sick", "label": "Sick Days", "icon": "thermometer", "unit": "days", "min": 0, "max": 15 },
+          { "id": "parental", "label": "Parental Leave", "icon": "baby", "unit": "weeks", "min": 0, "max": 26 },
+          { "id": "personal", "label": "Personal Days", "icon": "calendar", "unit": "days", "min": 0, "max": 10 }
+        ]
       },
       totalLabel: {
         type: "string",
@@ -1026,7 +1133,13 @@ export const UI_TOOLS_SCHEMA = {
             icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'briefcase', 'users', 'dollar-sign'). Do NOT use emojis." },
             description: { type: "string" }
           }
-        }
+        },
+        example: [
+          { "id": "salary", "label": "Base Salary", "icon": "dollar-sign", "description": "Fixed compensation" },
+          { "id": "growth", "label": "Career Growth", "icon": "trending-up", "description": "Advancement opportunities" },
+          { "id": "balance", "label": "Work-Life Balance", "icon": "scale", "description": "Flexibility and time off" },
+          { "id": "team", "label": "Team & Culture", "icon": "users", "description": "People and environment" }
+        ]
       },
       tokenIcon: {
         type: "string",
@@ -1161,7 +1274,8 @@ export const UI_TOOLS_SCHEMA = {
           description: { type: "string" },
           icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'building', 'rocket'). Do NOT use emojis." },
           color: { type: "string" }
-        }
+        },
+        example: { "id": "established", "title": "Established Company", "description": "Stable, proven processes, clear structure", "icon": "building", "color": "#3b82f6" }
       },
       optionB: {
         type: "object",
@@ -1173,7 +1287,8 @@ export const UI_TOOLS_SCHEMA = {
           description: { type: "string" },
           icon: { type: "string", description: "Lucide React icon name in kebab-case (e.g., 'sprout', 'crown'). Do NOT use emojis." },
           color: { type: "string" }
-        }
+        },
+        example: { "id": "startup", "title": "Fast-Growing Startup", "description": "Dynamic, high impact, rapid change", "icon": "rocket", "color": "#8b5cf6" }
       },
       vsText: {
         type: "string",

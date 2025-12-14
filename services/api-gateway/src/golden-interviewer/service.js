@@ -223,10 +223,18 @@ export class GoldenInterviewerService {
       uiTool: firstTurnResponse.ui_tool,
     });
 
+    // Track lastAskedField from first turn (for skip attribution)
+    const firstPriorityField = firstTurnResponse.next_priority_fields?.[0] || null;
+    const firstPriorityCategory = firstPriorityField
+      ? this.extractCategoryFromField(firstPriorityField)
+      : null;
+
     session.conversationHistory.push(assistantMessage);
     session.turnCount = 1;
     session.metadata.lastToolUsed = firstTurnResponse.ui_tool?.type;
     session.metadata.currentPhase = firstTurnResponse.interview_phase || "opening";
+    session.metadata.lastAskedField = firstPriorityField;
+    session.metadata.lastAskedCategory = firstPriorityCategory;
     session.updatedAt = new Date();
 
     await saveSession({
@@ -242,6 +250,7 @@ export class GoldenInterviewerService {
         ui_tool: firstTurnResponse.ui_tool,
         completion_percentage: firstTurnResponse.completion_percentage || 0,
         interview_phase: firstTurnResponse.interview_phase || "opening",
+        next_priority_fields: firstTurnResponse.next_priority_fields,
       },
     };
   }
@@ -253,9 +262,10 @@ export class GoldenInterviewerService {
    * @param {string} options.authToken - Bearer token for LLM API calls
    * @param {string} [options.userMessage] - User's text message
    * @param {object} [options.uiResponse] - Response from UI component
+   * @param {object} [options.skipAction] - Explicit skip signal { isSkip, reason }
    * @returns {Promise<object>}
    */
-  async processTurn({ sessionId, authToken, userMessage, uiResponse }) {
+  async processTurn({ sessionId, authToken, userMessage, uiResponse, skipAction }) {
     // Load session via repository
     const session = await getSession(this.firestore, sessionId);
     if (!session) {
@@ -268,17 +278,133 @@ export class GoldenInterviewerService {
 
     const previousTool = session.metadata?.lastToolUsed;
 
-    // Add user message to history
-    if (userMessage || uiResponse) {
-      session.conversationHistory.push({
+    // =========================================================================
+    // SKIP DETECTION (explicit flag OR legacy "Skip" text fallback)
+    // =========================================================================
+    const isSkip = skipAction?.isSkip === true ||
+      (userMessage && userMessage.toLowerCase().trim() === "skip");
+    const skipReason = skipAction?.reason || "unknown";
+
+    // Get the field that was being asked (from previous turn)
+    const skippedField = session.metadata?.lastAskedField || null;
+    const skippedCategory = session.metadata?.lastAskedCategory || null;
+
+    // =========================================================================
+    // FRICTION METRICS UPDATE
+    // =========================================================================
+    // Ensure friction object exists (for legacy sessions)
+    if (!session.metadata.friction) {
+      session.metadata.friction = {
+        totalSkips: 0,
+        consecutiveSkips: 0,
+        skippedFields: [],
+        recoveryAttempts: 0,
+        recoverySuccesses: 0,
+        lastRecoveryTurn: null,
+        currentStrategy: "standard",
+        strategyChangedAt: null,
+      };
+    }
+
+    const friction = session.metadata.friction;
+    const wasInRecoveryMode = friction.currentStrategy !== "standard";
+
+    if (isSkip) {
+      // User skipped - update friction metrics
+      friction.totalSkips += 1;
+      friction.consecutiveSkips += 1;
+
+      // Record which field was skipped
+      if (skippedField) {
+        friction.skippedFields.push({
+          field: skippedField,
+          category: skippedCategory,
+          reason: skipReason,
+          turnNumber: session.turnCount + 1,
+          timestamp: new Date(),
+        });
+      }
+
+      this.logger.info(
+        {
+          sessionId,
+          skippedField,
+          skipReason,
+          consecutiveSkips: friction.consecutiveSkips,
+          totalSkips: friction.totalSkips,
+        },
+        "golden-interviewer.turn.skip_detected"
+      );
+    } else {
+      // User engaged (not a skip)
+      // Check if this is a recovery success
+      if (wasInRecoveryMode && (userMessage || uiResponse)) {
+        friction.recoverySuccesses += 1;
+        this.logger.info(
+          {
+            sessionId,
+            turnsToRecover: session.turnCount - (friction.strategyChangedAt || 0),
+            previousStrategy: friction.currentStrategy,
+          },
+          "golden-interviewer.turn.recovery_success"
+        );
+      }
+
+      // Reset consecutive skips on engagement
+      friction.consecutiveSkips = 0;
+    }
+
+    // =========================================================================
+    // STRATEGY DETERMINATION
+    // =========================================================================
+    const previousStrategy = friction.currentStrategy;
+    friction.currentStrategy = this.determineFrictionStrategy(friction, skippedField);
+
+    if (friction.currentStrategy !== previousStrategy) {
+      friction.strategyChangedAt = session.turnCount + 1;
+      if (friction.currentStrategy !== "standard") {
+        friction.recoveryAttempts += 1;
+        friction.lastRecoveryTurn = session.turnCount + 1;
+      }
+
+      this.logger.info(
+        {
+          sessionId,
+          previousStrategy,
+          newStrategy: friction.currentStrategy,
+          consecutiveSkips: friction.consecutiveSkips,
+        },
+        "golden-interviewer.turn.strategy_changed"
+      );
+    }
+
+    // =========================================================================
+    // ADD USER MESSAGE TO HISTORY (with skip metadata if applicable)
+    // =========================================================================
+    if (userMessage || uiResponse || isSkip) {
+      const userHistoryEntry = {
         role: "user",
         content: userMessage || "",
         timestamp: new Date(),
         uiResponse,
-      });
+      };
+
+      // Add skip metadata when applicable
+      if (isSkip) {
+        userHistoryEntry.skipAction = {
+          isSkip: true,
+          reason: skipReason,
+          skippedField,
+          skippedCategory,
+        };
+      }
+
+      session.conversationHistory.push(userHistoryEntry);
     }
 
-    // Generate next turn via HTTP POST /api/llm
+    // =========================================================================
+    // GENERATE NEXT TURN VIA LLM (with friction context)
+    // =========================================================================
     const llmContext = {
       currentSchema: session.goldenSchema || {},
       conversationHistory: session.conversationHistory,
@@ -288,6 +414,15 @@ export class GoldenInterviewerService {
       turnNumber: session.turnCount + 1,
       isFirstTurn: false,
       sessionId,
+      // Pass friction state to LLM
+      frictionState: {
+        isSkip,
+        skipReason: isSkip ? skipReason : null,
+        skippedField: isSkip ? skippedField : null,
+        consecutiveSkips: friction.consecutiveSkips,
+        totalSkips: friction.totalSkips,
+        currentStrategy: friction.currentStrategy,
+      },
     };
 
     let llmResponse;
@@ -390,6 +525,16 @@ export class GoldenInterviewerService {
     // Update session metadata
     session.turnCount += 1;
     session.updatedAt = new Date();
+
+    // =========================================================================
+    // TRACK LAST ASKED FIELD (for skip attribution on NEXT turn)
+    // IMPORTANT: Only store the first item (index 0) for 1:1 skip attribution
+    // =========================================================================
+    const nextPriorityField = parsed.next_priority_fields?.[0] || null;
+    const nextPriorityCategory = nextPriorityField
+      ? this.extractCategoryFromField(nextPriorityField)
+      : null;
+
     session.metadata = {
       ...session.metadata,
       completionPercentage:
@@ -397,6 +542,11 @@ export class GoldenInterviewerService {
         estimateSchemaCompletion(session.goldenSchema),
       currentPhase: parsed.interview_phase || session.metadata?.currentPhase,
       lastToolUsed: parsed.ui_tool?.type,
+      // Store the primary field being asked (for skip attribution)
+      lastAskedField: nextPriorityField,
+      lastAskedCategory: nextPriorityCategory,
+      // Preserve friction state (already updated above)
+      friction: session.metadata.friction,
     };
 
     // Check if interview is complete
@@ -420,6 +570,12 @@ export class GoldenInterviewerService {
         turnCount: session.turnCount,
         completion: session.metadata.completionPercentage,
         phase: session.metadata.currentPhase,
+        friction: {
+          totalSkips: friction.totalSkips,
+          consecutiveSkips: friction.consecutiveSkips,
+          strategy: friction.currentStrategy,
+          lastAskedField: nextPriorityField,
+        },
       },
       "golden-interviewer.turn.processed"
     );
@@ -431,6 +587,12 @@ export class GoldenInterviewerService {
       interview_phase: session.metadata.currentPhase,
       extracted_fields: Object.keys(parsed.extraction?.updates || {}),
       next_priority_fields: parsed.next_priority_fields,
+      // Include friction state for frontend awareness (optional use)
+      friction_state: {
+        consecutive_skips: friction.consecutiveSkips,
+        total_skips: friction.totalSkips,
+        current_strategy: friction.currentStrategy,
+      },
     };
   }
 
@@ -603,6 +765,87 @@ export class GoldenInterviewerService {
   async getConversationHistory(sessionId) {
     const session = await getSession(this.firestore, sessionId);
     return extractConversationHistory(session);
+  }
+
+  // ===========================================================================
+  // FRICTION MANAGEMENT
+  // ===========================================================================
+
+  /**
+   * Sensitive fields that commonly trigger privacy concerns
+   * @type {string[]}
+   */
+  static SENSITIVE_FIELDS = [
+    "financial_reality.base_compensation",
+    "financial_reality.equity",
+    "financial_reality.variable_compensation",
+    "financial_reality.bonuses",
+    "stability_signals.company_health.revenue_trend",
+    "stability_signals.company_health.funding_status",
+    "humans_and_culture.turnover_context",
+  ];
+
+  /**
+   * Determine the friction handling strategy based on current metrics
+   * @param {object} friction - Current friction state
+   * @param {string|null} skippedField - The field that was just skipped
+   * @returns {string} - Strategy: "standard" | "education" | "low_disclosure" | "defer"
+   */
+  determineFrictionStrategy(friction, skippedField) {
+    const { consecutiveSkips, totalSkips } = friction;
+    const turnCount = friction.skippedFields?.length || 0;
+    const skipRate = turnCount > 0 ? totalSkips / (turnCount + totalSkips) : 0;
+
+    // Check if skipped field is sensitive
+    const isSensitiveField = skippedField
+      ? GoldenInterviewerService.SENSITIVE_FIELDS.some((sensitive) =>
+          skippedField.startsWith(sensitive)
+        )
+      : false;
+
+    // Level 3: High friction - defer and move on
+    if (consecutiveSkips >= 3 || skipRate > 0.4) {
+      return "defer";
+    }
+
+    // Level 2: Moderate friction on sensitive topic - offer low disclosure options
+    if (consecutiveSkips >= 1 && isSensitiveField) {
+      return "low_disclosure";
+    }
+
+    // Level 2: Moderate friction - educate about value
+    if (consecutiveSkips >= 2) {
+      return "education";
+    }
+
+    // Level 1: Single skip - pivot naturally (still "standard" but LLM should acknowledge)
+    // Level 0: No friction
+    return "standard";
+  }
+
+  /**
+   * Extract the top-level category from a dot-notation field path
+   * @param {string} fieldPath - e.g., "financial_reality.base_compensation.amount_or_range"
+   * @returns {string|null} - e.g., "financial_reality"
+   */
+  extractCategoryFromField(fieldPath) {
+    if (!fieldPath || typeof fieldPath !== "string") {
+      return null;
+    }
+    const parts = fieldPath.split(".");
+    return parts[0] || null;
+  }
+
+  /**
+   * Check if a field is considered sensitive for privacy purposes
+   * @param {string} fieldPath - The field path to check
+   * @returns {boolean}
+   */
+  isSensitiveField(fieldPath) {
+    if (!fieldPath) return false;
+    return GoldenInterviewerService.SENSITIVE_FIELDS.some((sensitive) =>
+      fieldPath.startsWith(sensitive)
+    );
   }
 }
 
