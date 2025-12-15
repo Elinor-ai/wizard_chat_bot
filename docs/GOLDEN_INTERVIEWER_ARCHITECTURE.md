@@ -20,6 +20,7 @@
 12. [Phase 5: LLM Provider Configuration](#phase-5-llm-provider-configuration)
 13. [Phase 6: Frontend Integration](#phase-6-frontend-integration)
 14. [Phase 7: Intelligent Context System](#phase-7-intelligent-context-system)
+15. [Phase 8: Smart Skip & Friction Management](#phase-8-smart-skip--friction-management)
 
 ---
 
@@ -363,10 +364,24 @@ The backend service orchestrates the interview process, acting as the "brain" th
 | File | Purpose |
 |------|---------|
 | `tools-definition.js` | `UI_TOOLS_SCHEMA` - All 32 component definitions for LLM |
-| `prompts.js` | System prompts, conversation builders, context-aware field filtering |
-| `service.js` | `GoldenInterviewerService` - Main orchestration logic + UI normalization |
+| `prompts.js` | System prompts, conversation builders, context-aware & friction-aware field filtering |
+| `service.js` | `GoldenInterviewerService` - Main orchestration logic, UI normalization, friction management |
 | `role-archetypes.js` | Role classification, field relevance maps, archetype detection |
 | `index.js` | Module exports |
+
+**Repository Layer:**
+
+| File | Purpose |
+|------|---------|
+| `services/repositories/golden-interviewer-repository.js` | All Firestore I/O operations (sessions, companies) |
+
+**LLM Integration Layer:**
+
+| File | Purpose |
+|------|---------|
+| `llm/prompts/golden-interviewer.js` | Dynamic prompt construction for LLM calls |
+| `llm/schemas/golden-interviewer.js` | Zod schema for LLM output validation |
+| `llm/parsers/golden-interviewer.js` | Parse & validate LLM responses |
 
 ### API Endpoints
 
@@ -464,6 +479,7 @@ Sessions are stored in Firestore (`golden_interview_sessions` collection):
 {
   sessionId: "abc123xyz",
   userId: "user_456",
+  companyId: "company_789",           // Optional - linked company
   createdAt: Timestamp,
   updatedAt: Timestamp,
   status: "active" | "completed" | "abandoned",
@@ -484,14 +500,34 @@ Sessions are stored in Firestore (`golden_interview_sessions` collection):
       role: "user",
       content: "It's a startup in fintech",
       timestamp: Timestamp,
-      uiResponse: { selected: "startup" }
+      uiResponse: { selected: "startup" },
+      skipAction: null                // null or { isSkip, reason }
     }
     // ...
   ],
   metadata: {
     completionPercentage: 35,
     currentPhase: "environment",
-    lastToolUsed: "icon_grid"
+    lastToolUsed: "icon_grid",
+    lastAskedField: "environment.physical_space.type",
+    lastAskedCategory: "environment",
+    friction: {                       // Phase 8: Friction tracking
+      totalSkips: 2,
+      consecutiveSkips: 0,
+      skippedFields: [
+        {
+          field: "financial_reality.base_compensation",
+          reason: "prefer_not_to_say",
+          turnNumber: 3,
+          timestamp: Timestamp
+        }
+      ],
+      recoveryAttempts: 1,
+      recoverySuccesses: 1,
+      lastRecoveryTurn: 5,
+      currentStrategy: "standard",    // "standard" | "education" | "low_disclosure" | "defer"
+      strategyChangedAt: Timestamp
+    }
   }
 }
 ```
@@ -615,12 +651,22 @@ wizard_chat_bot/
 ├── services/
 │   └── api-gateway/
 │       └── src/
-│           ├── golden-interviewer/           # Phase 4 & 7: Backend service
+│           ├── golden-interviewer/           # Phase 4, 7 & 8: Backend service
 │           │   ├── index.js                  # Module exports
 │           │   ├── tools-definition.js       # UI_TOOLS_SCHEMA for LLM
-│           │   ├── prompts.js                # System prompts & builders (context-aware)
-│           │   ├── service.js                # GoldenInterviewerService (with UI normalization)
-│           │   └── role-archetypes.js        # NEW: Role classification & field relevance
+│           │   ├── prompts.js                # System prompts & builders (context-aware, friction-aware)
+│           │   ├── service.js                # GoldenInterviewerService (UI normalization, friction management)
+│           │   └── role-archetypes.js        # Role classification & field relevance
+│           ├── services/
+│           │   └── repositories/
+│           │       └── golden-interviewer-repository.js  # Firestore I/O operations
+│           ├── llm/
+│           │   ├── prompts/
+│           │   │   └── golden-interviewer.js # LLM prompt builder
+│           │   ├── schemas/
+│           │   │   └── golden-interviewer.js # Zod output schema
+│           │   └── parsers/
+│           │       └── golden-interviewer.js # Response parser
 │           ├── routes/
 │           │   └── golden-interview.js       # API router endpoints
 │           └── server.js                     # Express app (imports router)
@@ -1591,6 +1637,338 @@ const reasons = getSkipReasons(skipped, archetype);
 
 ---
 
-*Document Version: 4.0*
+## Phase 8: Smart Skip & Friction Management
+
+### Overview
+
+The Golden Interviewer now includes a sophisticated friction management system that handles user resistance gracefully. Instead of treating all skips as equal, the system:
+
+1. **Detects skip signals** (explicit via UI buttons or implicit via text)
+2. **Tracks friction metrics** (consecutive skips, total skips, skip patterns)
+3. **Adapts questioning strategy** (educate, offer alternatives, or defer)
+4. **Enables recovery** (circle back to skipped fields when appropriate)
+
+### Location
+
+```
+services/api-gateway/src/golden-interviewer/
+├── service.js              # Friction detection, strategy determination, metrics updates
+└── prompts.js              # Friction-aware prompt building
+```
+
+### Skip Detection
+
+#### Explicit Skip (New)
+
+The frontend now sends a structured `skipAction` object:
+
+```javascript
+// POST /golden-interview/chat
+{
+  sessionId: "abc123",
+  userMessage: null,
+  uiResponse: null,
+  skipAction: {
+    isSkip: true,
+    reason: "prefer_not_to_say"  // or "unknown", "dont_know", "not_applicable", "come_back_later"
+  }
+}
+```
+
+**SkipAction Enum Values:**
+
+| Value | Description |
+|-------|-------------|
+| `unknown` | User skipped without explanation |
+| `dont_know` | User doesn't know the answer |
+| `prefer_not_to_say` | User knows but prefers not to share |
+| `not_applicable` | Field doesn't apply to this role |
+| `come_back_later` | User wants to answer later |
+
+#### Legacy Skip (Fallback)
+
+For backwards compatibility, text messages containing "skip" are also detected:
+
+```javascript
+const isSkip = skipAction?.isSkip === true ||
+               userMessage?.toLowerCase() === "skip";
+```
+
+### Friction State
+
+Each session tracks friction metrics in `session.metadata.friction`:
+
+```javascript
+{
+  friction: {
+    totalSkips: 0,              // Total skips across entire session
+    consecutiveSkips: 0,        // Skips in a row (resets on engagement)
+    skippedFields: [            // History of all skipped fields
+      {
+        field: "financial_reality.base_compensation",
+        reason: "prefer_not_to_say",
+        turnNumber: 5,
+        timestamp: Date
+      }
+    ],
+    recoveryAttempts: 0,        // Times agent tried to circle back
+    recoverySuccesses: 0,       // Times user engaged after recovery
+    lastRecoveryTurn: null,     // Turn number of last recovery attempt
+    currentStrategy: "standard", // Current questioning strategy
+    strategyChangedAt: null     // When strategy last changed
+  }
+}
+```
+
+### Friction Strategies
+
+The service determines the appropriate strategy based on friction level:
+
+```javascript
+// service.js - determineFrictionStrategy()
+
+function determineFrictionStrategy(friction, skippedField) {
+  const { consecutiveSkips, totalSkips, skippedFields } = friction;
+  const skipRate = totalSkips / totalQuestions;
+
+  // Level 3: High friction - defer gracefully
+  if (consecutiveSkips >= 3 || skipRate > 0.4) {
+    return "defer";
+  }
+
+  // Level 2b: Sensitive field skipped
+  if (isSensitiveField(skippedField)) {
+    return "low_disclosure";
+  }
+
+  // Level 2a: Multiple consecutive skips
+  if (consecutiveSkips >= 2) {
+    return "education";
+  }
+
+  // Level 1/0: Normal flow
+  return "standard";
+}
+```
+
+**Strategy Descriptions:**
+
+| Strategy | When Applied | LLM Behavior |
+|----------|--------------|--------------|
+| `standard` | 0-1 skips | Normal pivot to next question |
+| `education` | 2+ consecutive skips | Explain why the field matters for candidates |
+| `low_disclosure` | Skip on sensitive field | Offer alternative input methods (ranges, relative values) |
+| `defer` | 3+ consecutive OR >40% skip rate | Acknowledge gracefully, move on, mark for later |
+
+### Sensitive Fields
+
+Certain fields trigger special handling when skipped:
+
+```javascript
+// service.js - SENSITIVE_FIELDS
+const SENSITIVE_FIELDS = [
+  // Financial
+  "financial_reality.base_compensation",
+  "financial_reality.equity",
+  "financial_reality.variable_compensation",
+  "financial_reality.bonuses",
+
+  // Stability
+  "stability_signals.company_health",
+  "stability_signals.funding_status",
+
+  // Culture
+  "humans_and_culture.turnover_context"
+];
+```
+
+### Friction-Aware Prompts
+
+The system prompt includes friction context when relevant:
+
+```javascript
+// prompts.js - buildSystemPrompt()
+
+if (frictionState.currentStrategy !== "standard") {
+  prompt += `
+## CURRENT FRICTION STATE
+
+**Strategy**: ${frictionState.currentStrategy}
+**Consecutive Skips**: ${frictionState.consecutiveSkips}
+**Last Skipped Field**: ${frictionState.lastSkippedField}
+
+### Strategy-Specific Instructions
+
+${getStrategyInstructions(frictionState.currentStrategy)}
+`;
+}
+```
+
+**Strategy Instructions:**
+
+```markdown
+## EDUCATION Strategy
+The user has skipped multiple questions. For the next question:
+1. Briefly explain WHY this information helps candidates
+2. Give a concrete example of how it's used
+3. Offer to skip if they still prefer
+
+Example: "Knowing the typical work hours helps candidates plan their commute
+and childcare. For example, 'core hours 10am-4pm with flexibility' is really
+helpful. Would you like to share this, or should we move on?"
+
+## LOW_DISCLOSURE Strategy
+The user skipped a sensitive field. Offer easier alternatives:
+1. Provide range options instead of exact values
+2. Offer relative comparisons ("above/below market")
+3. Ask about public information only
+
+Example: Instead of "What's the salary?", try "Would you say the compensation
+is below market, at market, or above market for this role?"
+
+## DEFER Strategy
+The user is showing significant resistance. For now:
+1. Acknowledge their preference positively
+2. Move to a completely different topic
+3. Mark this field for potential follow-up at the end
+
+Example: "No problem at all! Let's talk about something different -
+what's the team like?"
+```
+
+### Recovery Mechanism
+
+When friction decreases (user starts engaging again):
+
+```javascript
+// service.js - processTurn()
+
+// Check for recovery
+if (!isSkip && friction.consecutiveSkips > 0) {
+  // User engaged after skipping - potential recovery
+  friction.consecutiveSkips = 0;  // Reset consecutive
+
+  if (friction.currentStrategy !== "standard") {
+    friction.recoverySuccesses++;
+    friction.currentStrategy = "standard";
+    friction.strategyChangedAt = new Date();
+    logger.info("Friction recovery successful", { sessionId });
+  }
+}
+```
+
+### API Changes
+
+#### Chat Endpoint Update
+
+```javascript
+// POST /golden-interview/chat - Updated Request Schema
+{
+  sessionId: string,        // Required
+  userMessage: string?,     // Optional (null if skipping)
+  uiResponse: object?,      // Optional (null if skipping)
+  skipAction: {             // NEW - Optional skip signal
+    isSkip: boolean,
+    reason: "unknown" | "dont_know" | "prefer_not_to_say" | "not_applicable" | "come_back_later"
+  }
+}
+```
+
+#### Response Includes Friction State
+
+```javascript
+// Response includes friction info for frontend UI
+{
+  message: "...",
+  ui_tool: {...},
+  completion_percentage: 25,
+  friction_state: {
+    consecutive_skips: 2,
+    total_skips: 3,
+    current_strategy: "education"
+  }
+}
+```
+
+### Frontend Integration
+
+The ChatInterface now includes skip buttons:
+
+```javascript
+// ChatInterface.js - Skip options
+const SKIP_OPTIONS = [
+  { id: "dont_know", label: "I don't know", icon: "help-circle" },
+  { id: "prefer_not_to_say", label: "Prefer not to say", icon: "eye-off" },
+  { id: "not_applicable", label: "Not applicable", icon: "x-circle" },
+  { id: "come_back_later", label: "Come back later", icon: "clock" }
+];
+
+const handleSkip = async (reason) => {
+  await GoldenInterviewApi.sendMessage({
+    sessionId,
+    userMessage: null,
+    uiResponse: null,
+    skipAction: { isSkip: true, reason }
+  });
+};
+```
+
+### Usage Example
+
+```javascript
+// Complete flow with friction management
+
+// Turn 1: Normal question
+// Response: { message: "What's the salary range?", ui_tool: circular_gauge, friction_state: { consecutive_skips: 0 } }
+
+// Turn 2: User skips (sensitive field)
+POST /golden-interview/chat
+{
+  sessionId: "abc123",
+  skipAction: { isSkip: true, reason: "prefer_not_to_say" }
+}
+// Response: {
+//   message: "No problem! Would you be comfortable sharing if it's below, at, or above market rate?",
+//   ui_tool: { type: "gradient_cards", props: { options: ["Below Market", "At Market", "Above Market"] }},
+//   friction_state: { consecutive_skips: 1, current_strategy: "low_disclosure" }
+// }
+
+// Turn 3: User skips again
+POST /golden-interview/chat
+{
+  sessionId: "abc123",
+  skipAction: { isSkip: true, reason: "prefer_not_to_say" }
+}
+// Response: {
+//   message: "Totally understood. Let's talk about something different - what's the team culture like?",
+//   ui_tool: { type: "detailed_cards", props: {...} },
+//   friction_state: { consecutive_skips: 2, current_strategy: "education" }
+// }
+
+// Turn 4: User engages (recovery!)
+POST /golden-interview/chat
+{
+  sessionId: "abc123",
+  userMessage: "The team is really collaborative",
+  uiResponse: { selected: "collaborative" }
+}
+// Response: {
+//   message: "That's great to hear! Collaborative teams are a big draw...",
+//   friction_state: { consecutive_skips: 0, current_strategy: "standard" }  // Reset!
+// }
+```
+
+### Benefits
+
+1. **Respectful of user boundaries** - Never forces sensitive disclosures
+2. **Adaptive questioning** - Strategy changes based on behavior patterns
+3. **Recovery-focused** - Designed to re-engage, not punish skipping
+4. **Transparent metrics** - Frontend can show friction state for debugging
+5. **Preserves completion** - Skipped fields don't block interview progress
+6. **Audit trail** - Complete history of skips with reasons and timestamps
+
+---
+
+*Document Version: 5.0*
 *Last Updated: December 2024*
-*Phases Completed: 1, 2, 3, 4, 5, 6, 7*
+*Phases Completed: 1, 2, 3, 4, 5, 6, 7, 8*
