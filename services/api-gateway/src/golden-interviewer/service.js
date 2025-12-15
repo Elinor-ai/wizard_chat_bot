@@ -497,6 +497,11 @@ export class GoldenInterviewerService {
       );
     }
 
+    // Normalize UI tool props (fix common LLM format errors)
+    if (parsed.ui_tool) {
+      parsed.ui_tool = this.normalizeUIToolProps(parsed.ui_tool, sessionId);
+    }
+
     // Validate UI tool props
     if (parsed.ui_tool) {
       const validation = validateUIToolProps(
@@ -846,6 +851,155 @@ export class GoldenInterviewerService {
     return GoldenInterviewerService.SENSITIVE_FIELDS.some((sensitive) =>
       fieldPath.startsWith(sensitive)
     );
+  }
+
+  // ===========================================================================
+  // UI TOOL NORMALIZATION
+  // ===========================================================================
+
+  /**
+   * Normalize UI tool props to fix common LLM format errors
+   * This ensures the frontend receives correctly formatted data even if the LLM
+   * outputs slightly malformed structures.
+   *
+   * @param {object} uiTool - The ui_tool object from LLM response
+   * @param {string} sessionId - For logging
+   * @returns {object} - Normalized ui_tool object
+   */
+  normalizeUIToolProps(uiTool, sessionId) {
+    if (!uiTool || !uiTool.type || !uiTool.props) {
+      return uiTool;
+    }
+
+    const { type, props } = uiTool;
+    let normalized = { ...uiTool, props: { ...props } };
+    let wasNormalized = false;
+
+    switch (type) {
+      case "chip_cloud":
+        // Fix: items should be objects { id, label }, not strings
+        if (Array.isArray(props.groups)) {
+          normalized.props.groups = props.groups.map((group) => {
+            if (!Array.isArray(group.items)) return group;
+
+            const normalizedItems = group.items.map((item) => {
+              if (typeof item === "string") {
+                wasNormalized = true;
+                return {
+                  id: this.slugify(item),
+                  label: item,
+                };
+              }
+              // Ensure object has required properties
+              if (typeof item === "object" && item !== null) {
+                return {
+                  id: item.id || this.slugify(item.label || "item"),
+                  label: item.label || item.id || "Unknown",
+                };
+              }
+              return item;
+            });
+
+            return { ...group, items: normalizedItems };
+          });
+        }
+        break;
+
+      case "icon_grid":
+      case "detailed_cards":
+      case "gradient_cards":
+        // Fix: options should be objects { id, label, icon?, ... }, not strings
+        if (Array.isArray(props.options)) {
+          normalized.props.options = props.options.map((option) => {
+            if (typeof option === "string") {
+              wasNormalized = true;
+              return {
+                id: this.slugify(option),
+                label: option,
+                icon: "circle", // Default icon
+              };
+            }
+            // Ensure object has required properties
+            if (typeof option === "object" && option !== null) {
+              return {
+                id: option.id || this.slugify(option.label || "option"),
+                label: option.label || option.id || "Unknown",
+                icon: option.icon || "circle",
+                ...option,
+              };
+            }
+            return option;
+          });
+        }
+        break;
+
+      case "bipolar_scale":
+        // Fix: items should use leftLabel/rightLabel, not left/right
+        if (Array.isArray(props.items)) {
+          normalized.props.items = props.items.map((item, index) => {
+            if (typeof item !== "object" || item === null) return item;
+
+            const fixed = { ...item };
+
+            // Fix common key naming errors
+            if (item.left && !item.leftLabel) {
+              fixed.leftLabel = item.left;
+              delete fixed.left;
+              wasNormalized = true;
+            }
+            if (item.right && !item.rightLabel) {
+              fixed.rightLabel = item.right;
+              delete fixed.right;
+              wasNormalized = true;
+            }
+            // Ensure id exists
+            if (!fixed.id) {
+              fixed.id = `scale-${index}`;
+              wasNormalized = true;
+            }
+            // Ensure value exists
+            if (fixed.value === undefined) {
+              fixed.value = 0;
+            }
+
+            return fixed;
+          });
+        }
+        break;
+
+      default:
+        // No normalization needed for other tools
+        break;
+    }
+
+    if (wasNormalized) {
+      this.logger.info(
+        {
+          sessionId,
+          tool: type,
+          action: "normalized",
+        },
+        "golden-interviewer.ui_tool.normalized"
+      );
+    }
+
+    return normalized;
+  }
+
+  /**
+   * Convert a string to a URL-friendly slug
+   * @param {string} str - Input string
+   * @returns {string} - Slugified string
+   */
+  slugify(str) {
+    if (!str || typeof str !== "string") return "item";
+    return str
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, "")  // Remove non-word chars
+      .replace(/\s+/g, "-")       // Replace spaces with hyphens
+      .replace(/-+/g, "-")        // Replace multiple hyphens with single
+      .substring(0, 50);          // Limit length
   }
 }
 

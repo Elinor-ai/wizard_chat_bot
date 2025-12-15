@@ -17,6 +17,9 @@
 9. [Component Reference](#component-reference)
 10. [Integration Guide](#integration-guide)
 11. [Extension Guidelines](#extension-guidelines)
+12. [Phase 5: LLM Provider Configuration](#phase-5-llm-provider-configuration)
+13. [Phase 6: Frontend Integration](#phase-6-frontend-integration)
+14. [Phase 7: Intelligent Context System](#phase-7-intelligent-context-system)
 
 ---
 
@@ -360,8 +363,9 @@ The backend service orchestrates the interview process, acting as the "brain" th
 | File | Purpose |
 |------|---------|
 | `tools-definition.js` | `UI_TOOLS_SCHEMA` - All 32 component definitions for LLM |
-| `prompts.js` | System prompts and conversation builders |
-| `service.js` | `GoldenInterviewerService` - Main orchestration logic |
+| `prompts.js` | System prompts, conversation builders, context-aware field filtering |
+| `service.js` | `GoldenInterviewerService` - Main orchestration logic + UI normalization |
+| `role-archetypes.js` | Role classification, field relevance maps, archetype detection |
 | `index.js` | Module exports |
 
 ### API Endpoints
@@ -611,11 +615,12 @@ wizard_chat_bot/
 ├── services/
 │   └── api-gateway/
 │       └── src/
-│           ├── golden-interviewer/           # Phase 4: Backend service
+│           ├── golden-interviewer/           # Phase 4 & 7: Backend service
 │           │   ├── index.js                  # Module exports
 │           │   ├── tools-definition.js       # UI_TOOLS_SCHEMA for LLM
-│           │   ├── prompts.js                # System prompts & builders
-│           │   └── service.js                # GoldenInterviewerService
+│           │   ├── prompts.js                # System prompts & builders (context-aware)
+│           │   ├── service.js                # GoldenInterviewerService (with UI normalization)
+│           │   └── role-archetypes.js        # NEW: Role classification & field relevance
 │           ├── routes/
 │           │   └── golden-interview.js       # API router endpoints
 │           └── server.js                     # Express app (imports router)
@@ -1316,6 +1321,276 @@ const renderDynamicInput = () => {
 
 ---
 
-*Document Version: 3.0*
+## Phase 7: Intelligent Context System
+
+### Overview
+
+The Golden Interviewer now includes an intelligent context system that prevents "checklist interrogation" behavior. Instead of asking every schema field regardless of relevance, the agent now:
+
+1. **Detects the role archetype** (e.g., "Part-time Cashier" vs "Startup Engineer")
+2. **Filters fields by relevance** (required/optional/skip per archetype)
+3. **Normalizes UI tool outputs** (fixes common LLM format errors)
+4. **Applies smart inference** (auto-fills obvious fields without asking)
+
+### Location
+
+```
+services/api-gateway/src/golden-interviewer/
+├── role-archetypes.js      # NEW: Role classification & field relevance
+├── prompts.js              # UPDATED: Context-aware prompt building
+└── service.js              # UPDATED: UI tool normalization
+```
+
+### Role Archetypes
+
+The system defines 7 role archetypes with distinct field relevance profiles:
+
+| Archetype | Description | Key Characteristics |
+|-----------|-------------|---------------------|
+| `hourly_service` | Retail, food service, hospitality | Tips relevant, equity skip, breaks important |
+| `hourly_skilled` | Warehouse, manufacturing, trades | Safety critical, no tips, no remote |
+| `salaried_entry` | Admin, support, junior office | Growth important, basic benefits |
+| `salaried_professional` | Mid-level corporate, specialists | Full benefits, remote relevant |
+| `tech_startup` | Software, engineering, product | Equity required, async culture matters |
+| `executive` | C-suite, VP, senior leadership | Complex comp, self-directed |
+| `gig_contract` | Freelance, 1099, temporary | Contract terms critical, no benefits |
+
+### Field Relevance Map
+
+Each field is mapped to a relevance level per archetype:
+
+```javascript
+// Example from role-archetypes.js
+"financial_reality.equity": {
+  hourly_service: "skip",        // Never relevant
+  hourly_skilled: "skip",        // Never relevant
+  salaried_entry: "skip",        // Rarely relevant
+  salaried_professional: "skip", // Rarely relevant
+  tech_startup: "required",      // Core to the offer
+  executive: "required",         // Core to the offer
+  gig_contract: "skip",
+}
+```
+
+**Relevance Levels:**
+- `required` - Always ask about this for this archetype
+- `optional` - Ask if time permits or context suggests relevance
+- `skip` - Do NOT ask about this - irrelevant for this archetype
+
+### Archetype Detection
+
+The system auto-detects archetypes from multiple signals:
+
+```javascript
+detectRoleArchetype({
+  roleTitle: "Part-time Barista",      // Keyword matching
+  companyIndustry: "Food Service",      // Industry context
+  payFrequency: "hourly",               // Pay type signal
+  remoteAllowed: false,                 // Remote signal
+  hasEquity: false,                     // Equity signal
+});
+// Returns: "hourly_service"
+```
+
+**Detection Keywords** (subset):
+
+| Archetype | Keywords |
+|-----------|----------|
+| `hourly_service` | cashier, barista, server, retail, restaurant, hotel |
+| `tech_startup` | software, engineer, developer, startup, saas, remote-first |
+| `executive` | ceo, cto, vp, president, founder, c-suite |
+
+### Updated Prompt Structure
+
+The `buildContinueTurnPrompt` function now generates context-aware field lists:
+
+**Before (old approach):**
+```markdown
+### Priority Fields to Fill
+- financial_reality.equity
+- growth_trajectory.career_path.promotion_path
+```
+
+**After (new approach):**
+```markdown
+### Context-Relevant Fields for This Role
+
+**Detected Role Type:** Hourly Service Role
+
+Based on this role type, focus on these areas (in priority order):
+1. financial_reality.base_compensation.amount_or_range
+2. financial_reality.variable_compensation.tips
+3. time_and_life.schedule_pattern.type
+4. time_and_life.break_reality.paid_breaks
+
+These fields are contextually appropriate for a Hourly Service Role position.
+
+### Fields to SKIP for This Role Type
+
+**DO NOT ask about these fields** - they are not relevant for a Hourly Service Role:
+- ~~financial_reality.equity.offered~~ — Equity is not typically offered for this role type
+- ~~growth_trajectory.career_path.promotion_path~~ — Not typically relevant for Hourly Service Role positions
+
+It is BETTER to leave these fields empty than to ask awkward, irrelevant questions.
+```
+
+### Success Criteria (System Prompt)
+
+The system prompt now explicitly reframes the agent's goal:
+
+```markdown
+## SUCCESS CRITERIA (CRITICAL)
+
+**Your goal is NOT to fill every field.** Your goal is to collect the
+**most compelling, role-relevant information** that will attract candidates
+to THIS specific job.
+
+**An excellent interview leaves irrelevant fields empty.**
+
+Examples of smart skipping:
+- Part-time cashier? Skip equity, conference budgets, and promotion timelines.
+- Startup engineer? Skip tips, break policies, and shift scheduling.
+- Executive role? Skip break_reality, schedule_predictability, and payment_reliability.
+
+**Ask yourself before each question:** "Would a candidate for THIS specific role
+actually care about this information?"
+```
+
+### Inference Rules (System Prompt)
+
+The agent is instructed to auto-fill obvious fields without asking:
+
+```markdown
+## INFERENCE RULES
+
+If you can **confidently infer** a field's value from context, fill it silently WITHOUT asking:
+
+| Context Signal | Auto-Fill |
+|----------------|-----------|
+| Coffee shop / restaurant role | `environment.physical_space.type = "retail"` or `"restaurant"` |
+| "We're a 5-person startup" | `stability_signals.company_health.company_stage = "startup"` |
+| Hourly role mentioned | `financial_reality.base_compensation.pay_frequency = "hourly"` |
+| No mention of remote work for retail/service | `time_and_life.flexibility.remote_allowed = false` |
+```
+
+### UI Tool Normalization
+
+The service now includes a normalization layer that fixes common LLM format errors before sending to the frontend:
+
+```javascript
+// In service.js processTurn()
+
+// Normalize UI tool props (fix common LLM format errors)
+if (parsed.ui_tool) {
+  parsed.ui_tool = this.normalizeUIToolProps(parsed.ui_tool, sessionId);
+}
+```
+
+**Fixes Applied:**
+
+| Component | Problem | Fix |
+|-----------|---------|-----|
+| `chip_cloud` | `items: ["string"]` | → `items: [{ id, label }]` |
+| `icon_grid` | `options: ["string"]` | → `options: [{ id, label, icon }]` |
+| `detailed_cards` | `options: ["string"]` | → `options: [{ id, label, icon }]` |
+| `gradient_cards` | `options: ["string"]` | → `options: [{ id, label, icon }]` |
+| `bipolar_scale` | `left/right` keys | → `leftLabel/rightLabel` |
+| `bipolar_scale` | Missing `id` | → Auto-generate `scale-{index}` |
+
+**Example Normalization:**
+
+```javascript
+// LLM Output (malformed):
+{
+  "type": "chip_cloud",
+  "props": {
+    "groups": [{
+      "groupId": "tasks",
+      "groupLabel": "Duties",
+      "items": ["Espresso Bar", "Cashier", "Cleaning"]  // ❌ Strings
+    }]
+  }
+}
+
+// After Normalization:
+{
+  "type": "chip_cloud",
+  "props": {
+    "groups": [{
+      "groupId": "tasks",
+      "groupLabel": "Duties",
+      "items": [
+        { "id": "espresso-bar", "label": "Espresso Bar" },  // ✅ Objects
+        { "id": "cashier", "label": "Cashier" },
+        { "id": "cleaning", "label": "Cleaning" }
+      ]
+    }]
+  }
+}
+```
+
+### Helper Functions
+
+#### role-archetypes.js Exports
+
+| Function | Purpose | Returns |
+|----------|---------|---------|
+| `detectRoleArchetype(options)` | Detect archetype from signals | `string` (archetype ID) |
+| `getFieldRelevance(field, archetype)` | Get relevance for a field | `"required"` \| `"optional"` \| `"skip"` |
+| `filterFieldsByArchetype(fields, archetype)` | Split fields by relevance | `{ relevant: [], skipped: [] }` |
+| `getSkipReasons(fields, archetype)` | Get human-readable skip reasons | `[{ field, reason }]` |
+| `getArchetypeLabel(archetypeId)` | Get display label | `string` |
+| `getAllArchetypeIds()` | List all archetype IDs | `string[]` |
+
+#### prompts.js Updated Exports
+
+| Function | Change |
+|----------|--------|
+| `identifyMissingFields(schema, archetype?)` | Now returns `{ missing, skipped, archetype }` instead of flat array |
+| `detectRoleArchetypeFromSchema(schema)` | NEW: Auto-detect archetype from schema state |
+
+### Usage Example
+
+```javascript
+import {
+  detectRoleArchetype,
+  filterFieldsByArchetype,
+  getSkipReasons
+} from "./role-archetypes.js";
+
+// Detect archetype
+const archetype = detectRoleArchetype({
+  roleTitle: "Part-time Barista",
+  payFrequency: "hourly"
+});
+// → "hourly_service"
+
+// Filter fields
+const allFields = [
+  "financial_reality.equity.offered",
+  "financial_reality.variable_compensation.tips",
+  "time_and_life.break_reality.paid_breaks"
+];
+
+const { relevant, skipped } = filterFieldsByArchetype(allFields, archetype);
+// relevant → ["financial_reality.variable_compensation.tips", "time_and_life.break_reality.paid_breaks"]
+// skipped  → ["financial_reality.equity.offered"]
+
+// Get skip reasons for prompt
+const reasons = getSkipReasons(skipped, archetype);
+// → [{ field: "financial_reality.equity.offered", reason: "Equity is not typically offered for this role type" }]
+```
+
+### Benefits
+
+1. **No more awkward questions** - A cashier won't be asked about stock options
+2. **Faster interviews** - Irrelevant fields are pre-filtered, not asked and skipped
+3. **Better candidate experience** - Questions feel natural and contextually appropriate
+4. **Resilient to LLM errors** - Backend normalization catches format mistakes
+5. **Explicit permission to skip** - LLM knows it's OK to leave fields empty
+
+---
+
+*Document Version: 4.0*
 *Last Updated: December 2024*
-*Phases Completed: 1, 2, 3, 4, 5, 6*
+*Phases Completed: 1, 2, 3, 4, 5, 6, 7*

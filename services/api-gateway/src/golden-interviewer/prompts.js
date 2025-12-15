@@ -9,6 +9,12 @@
  */
 
 import { getToolsSummaryForLLM, CATEGORY_LABELS } from "./tools-definition.js";
+import {
+  detectRoleArchetype,
+  filterFieldsByArchetype,
+  getSkipReasons,
+  getArchetypeLabel,
+} from "./role-archetypes.js";
 
 // =============================================================================
 // GOLDEN SCHEMA REFERENCE (Rich Context Version)
@@ -405,6 +411,36 @@ ${companyContext}${userContext}${frictionContext}You are an expert recruiter and
 3. **Select UI Tools**: Choose the most engaging UI component (from the 32 available) for the next question.
 4. **Educate**: Explain *why* you are asking specific questions using the 'context_explanation' field.
 
+## SUCCESS CRITERIA (CRITICAL)
+
+**Your goal is NOT to fill every field.** Your goal is to collect the **most compelling, role-relevant information** that will attract candidates to THIS specific job.
+
+**An excellent interview leaves irrelevant fields empty.**
+
+Examples of smart skipping:
+- Part-time cashier? Skip equity, conference budgets, and promotion timelines.
+- Startup engineer? Skip tips, break policies, and shift scheduling.
+- Executive role? Skip break_reality, schedule_predictability, and payment_reliability.
+
+**Ask yourself before each question:** "Would a candidate for THIS specific role actually care about this information?"
+
+If the answer is "probably not" or "this would be awkward to ask," then SKIP IT and move to something more relevant.
+
+## INFERENCE RULES
+
+If you can **confidently infer** a field's value from context, fill it silently WITHOUT asking:
+
+| Context Signal | Auto-Fill |
+|----------------|-----------|
+| Coffee shop / restaurant role | \`environment.physical_space.type = "retail"\` or \`"restaurant"\` |
+| "We're a 5-person startup" | \`stability_signals.company_health.company_stage = "startup"\` |
+| Hourly role mentioned | \`financial_reality.base_compensation.pay_frequency = "hourly"\` |
+| No mention of remote work for retail/service | \`time_and_life.flexibility.remote_allowed = false\` |
+| Company is a restaurant/cafe | \`financial_reality.variable_compensation.tips\` is likely relevant |
+| Tech startup context | \`financial_reality.equity\` is likely relevant |
+
+**DO NOT ask questions whose answers are obvious from the role description.** Infer and move on.
+
 ## AVAILABLE UI TOOLS
 
 You have access to 32 interactive UI components. Use them to make the interview feel like a game or a dashboard builder, not a form.
@@ -628,7 +664,11 @@ export function buildContinueTurnPrompt({
   frictionState,
 }) {
   const schemaCompletion = estimateSchemaCompletion(currentSchema);
-  const missingFields = identifyMissingFields(currentSchema);
+
+  // Get context-aware field analysis
+  const { missing, skipped, archetype } = identifyMissingFields(currentSchema);
+  const archetypeLabel = getArchetypeLabel(archetype);
+  const skipReasons = getSkipReasons(skipped.slice(0, 5), archetype);
 
   // Build skip-specific alert if user just skipped
   const skipAlert = frictionState?.isSkip
@@ -643,6 +683,29 @@ export function buildContinueTurnPrompt({
 ${frictionState.consecutiveSkips === 1 ? "→ Acknowledge gracefully and pivot to a DIFFERENT topic." : ""}${frictionState.consecutiveSkips === 2 ? "→ Offer a LOW-DISCLOSURE alternative (ranges, yes/no, multiple choice)." : ""}${frictionState.consecutiveSkips >= 3 ? "→ STOP asking. Educate about value instead. Offer soft re-entry." : ""}
 
 `
+    : "";
+
+  // Build the context-aware fields section
+  const relevantFieldsSection = missing.length > 0
+    ? `### Context-Relevant Fields for This Role
+
+**Detected Role Type:** ${archetypeLabel}
+
+Based on this role type, focus on these areas (in priority order):
+${missing.slice(0, 10).map((f, i) => `${i + 1}. ${f}`).join("\n")}
+
+These fields are contextually appropriate for a ${archetypeLabel} position.`
+    : `### Fields Status
+Most relevant fields have been collected for this ${archetypeLabel} role.`;
+
+  // Build the skip fields section (explicit permission to ignore)
+  const skipFieldsSection = skipReasons.length > 0
+    ? `### Fields to SKIP for This Role Type
+
+**DO NOT ask about these fields** - they are not relevant for a ${archetypeLabel}:
+${skipReasons.map(({ field, reason }) => `- ~~${field}~~ — ${reason}`).join("\n")}
+
+It is BETTER to leave these fields empty than to ask awkward, irrelevant questions.`
     : "";
 
   return `## Current Turn: ${turnNumber}
@@ -668,11 +731,9 @@ Current data:
 ${JSON.stringify(currentSchema, null, 2)}
 \`\`\`
 
-### Priority Fields to Fill
-${missingFields
-  .slice(0, 10)
-  .map((f) => `- ${f}`)
-  .join("\n")}
+${relevantFieldsSection}
+
+${skipFieldsSection}
 
 ### Your Task
 ${frictionState?.isSkip ? `1. **HANDLE THE SKIP** according to the Friction Protocol above.
@@ -680,8 +741,9 @@ ${frictionState?.isSkip ? `1. **HANDLE THE SKIP** according to the Friction Prot
 3. Select a different topic or offer a low-disclosure alternative.
 4. Generate a supportive 'context_explanation'.` : `1. Extract new info & update schema.
 2. Acknowledge user input conversationally.
-3. Select the next best UI tool & question.
-4. **CRITICAL**: Generate a 'context_explanation' based on the 'Why It Matters' column for the NEXT question you are asking.`}
+3. Select the next best UI tool & question from the **Context-Relevant Fields** list.
+4. **CRITICAL**: Generate a 'context_explanation' based on the 'Why It Matters' column for the NEXT question you are asking.
+5. **REMEMBER**: Skip any fields in the "Fields to SKIP" section - do not ask about them.`}
 
 Respond in JSON.`;
 }
@@ -733,37 +795,108 @@ function countFilledFields(obj) {
   return count;
 }
 
-function identifyMissingFields(schema) {
-  const priorityFields = [
+/**
+ * Identify missing fields, filtered by role archetype relevance
+ *
+ * @param {object} schema - Current golden schema state
+ * @param {string|null} roleArchetype - Detected role archetype (or null to auto-detect)
+ * @returns {object} - { missing: string[], skipped: string[], archetype: string }
+ */
+function identifyMissingFields(schema, roleArchetype = null) {
+  // All possible priority fields
+  const allPriorityFields = [
     "financial_reality.base_compensation.amount_or_range",
     "financial_reality.base_compensation.pay_frequency",
+    "financial_reality.variable_compensation.tips",
+    "financial_reality.variable_compensation.commission",
+    "financial_reality.equity.offered",
+    "financial_reality.bonuses.signing_bonus",
+    "financial_reality.raises_and_reviews.review_frequency",
+    "financial_reality.hidden_financial_value.meals_provided",
+    "financial_reality.payment_reliability.payment_method",
+    "time_and_life.schedule_pattern.type",
+    "time_and_life.schedule_pattern.typical_hours_per_week",
+    "time_and_life.schedule_predictability.advance_notice",
     "time_and_life.flexibility.remote_allowed",
     "time_and_life.flexibility.remote_frequency",
-    "time_and_life.schedule_pattern.typical_hours_per_week",
+    "time_and_life.flexibility.async_friendly",
     "time_and_life.time_off.pto_days",
+    "time_and_life.commute_reality.parking_situation",
+    "time_and_life.break_reality.paid_breaks",
+    "time_and_life.overtime_reality.overtime_expected",
+    "environment.physical_space.type",
+    "environment.workspace_quality.noise_level",
+    "environment.amenities.kitchen",
+    "environment.safety_and_comfort.physical_demands",
     "humans_and_culture.team_composition.team_size",
     "humans_and_culture.management_style.management_approach",
-    "stability_signals.company_health.company_stage",
-    "stability_signals.benefits_security.health_insurance",
-    "growth_trajectory.career_path.promotion_path",
+    "humans_and_culture.social_dynamics.team_bonding",
+    "humans_and_culture.communication_culture.meeting_load",
+    "humans_and_culture.turnover_context.average_tenure",
     "growth_trajectory.learning_opportunities.mentorship_available",
+    "growth_trajectory.formal_development.training_provided",
+    "growth_trajectory.career_path.promotion_path",
+    "growth_trajectory.skill_building.technologies_used",
+    "stability_signals.company_health.company_stage",
+    "stability_signals.job_security.position_type",
+    "stability_signals.benefits_security.health_insurance",
     "role_reality.day_to_day.typical_day_description",
     "role_reality.autonomy.decision_authority",
     "role_reality.workload.intensity",
-    "environment.physical_space.type",
+    "role_reality.success_metrics.how_measured",
+    "role_reality.pain_points_honesty.challenges",
+    "unique_value.hidden_perks.list",
+    "unique_value.status_signals.brand_value",
+    "unique_value.personal_meaning.mission_connection",
     "unique_value.rare_offerings.what_makes_this_special",
   ];
 
-  const missing = [];
+  // Auto-detect archetype if not provided
+  const detectedArchetype = roleArchetype || detectRoleArchetypeFromSchema(schema);
 
-  priorityFields.forEach((path) => {
+  // Filter to only missing fields
+  const missingFields = allPriorityFields.filter((path) => {
     const value = getNestedValue(schema, path);
-    if (value === null || value === undefined || value === "") {
-      missing.push(path);
-    }
+    return value === null || value === undefined || value === "";
   });
 
-  return missing;
+  // Filter by archetype relevance
+  const { relevant, skipped } = filterFieldsByArchetype(missingFields, detectedArchetype);
+
+  return {
+    missing: relevant,
+    skipped: skipped,
+    archetype: detectedArchetype,
+  };
+}
+
+/**
+ * Detect role archetype from schema data
+ * Uses extraction_metadata if available, otherwise infers from context
+ *
+ * @param {object} schema - Current golden schema state
+ * @returns {string} - Archetype ID
+ */
+function detectRoleArchetypeFromSchema(schema) {
+  // Check if already detected and stored
+  if (schema?.extraction_metadata?.role_archetype) {
+    return schema.extraction_metadata.role_archetype;
+  }
+
+  // Extract signals from schema for detection
+  const roleTitle = schema?.extraction_metadata?.role_category_detected || "";
+  const industry = schema?.extraction_metadata?.industry_detected || "";
+  const payFrequency = schema?.financial_reality?.base_compensation?.pay_frequency || null;
+  const remoteAllowed = schema?.time_and_life?.flexibility?.remote_allowed;
+  const hasEquity = schema?.financial_reality?.equity?.offered;
+
+  return detectRoleArchetype({
+    roleTitle,
+    companyIndustry: industry,
+    payFrequency,
+    remoteAllowed,
+    hasEquity,
+  });
 }
 
 function getNestedValue(obj, path) {
@@ -790,4 +923,5 @@ export {
   identifyMissingFields,
   countFilledFields,
   getNestedValue,
+  detectRoleArchetypeFromSchema,
 };
