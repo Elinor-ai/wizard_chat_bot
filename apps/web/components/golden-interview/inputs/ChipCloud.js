@@ -12,7 +12,7 @@
  * @param {string} [props.selectedColor="#8b5cf6"] - Selection color
  */
 export default function ChipCloud({
-  groups,
+  groups = [],
   value = [],
   onChange,
   title,
@@ -57,7 +57,7 @@ export default function ChipCloud({
             )}
 
             <div className="flex flex-wrap gap-2">
-              {group.items.map((item) => {
+              {(group.items || []).map((item) => {
                 const isSelected = value.includes(item.id);
                 const isDisabled = !isSelected && !canSelectMore;
 
@@ -103,7 +103,7 @@ export default function ChipCloud({
               // Find the item across all groups
               let itemLabel = itemId;
               for (const group of groups) {
-                const item = group.items.find((i) => i.id === itemId);
+                const item = (group.items || []).find((i) => i.id === itemId);
                 if (item) {
                   itemLabel = item.label;
                   break;

@@ -4,7 +4,7 @@
  * Extracted from company-intel.js for better modularity.
  */
 
-import { CompanyEnrichmentStatusEnum, CompanyJobDiscoveryStatusEnum, CompanyTypeEnum } from "@wizard/core";
+import { CompanyEnrichmentStatusEnum, CompanyTypeEnum } from "@wizard/core";
 import { recordLlmUsageFromResult } from "../llm-usage-ledger.js";
 import { LLM_CORE_TASK } from "../../config/task-types.js";
 
@@ -19,13 +19,8 @@ import {
 import { fetchBrandfetchData, applyBrandfetchToCompany, ensureBrandShape } from "./brandfetch-service.js";
 import { searchCompanyOnWeb, extractSocialLinksFromResults } from "./web-search-service.js";
 import { fetchWebsiteHtml, extractMetaTags, discoverCareerPage, loadHtml } from "./website-scraper.js";
-import {
-  discoverJobsFromCareerPage,
-  discoverJobsFromLinkedInFeed,
-  normalizeIntelJob,
-} from "./job-extraction.js";
-import { dedupeJobs } from "./job-deduplication.js";
-import { markEnrichmentFailed, saveDiscoveredJobs } from "./company-repository-helpers.js";
+import { markEnrichmentFailed } from "./company-repository-helpers.js";
+import { runJobDiscoveryForCompany } from "../job-intel/job-discovery-service.js";
 
 /**
  * Compute gaps in company data.
@@ -180,55 +175,6 @@ function updateFieldEvidence({ company, evidence, field, value, sources = [] }) 
     value,
     sources: mergedSources
   };
-}
-
-/**
- * Discover jobs for a company.
- * @param {Object} params
- * @param {Object} params.company - Company object
- * @param {Object} params.logger - Logger instance
- * @param {Array} params.searchResults - Search results
- * @param {string} params.careerPageUrl - Career page URL
- * @param {Array} params.intelJobs - Jobs from LLM
- * @returns {Promise<Array>} Discovered jobs
- */
-export async function discoverJobsForCompany({
-  company,
-  logger,
-  searchResults = [],
-  careerPageUrl,
-  intelJobs = []
-} = {}) {
-  if (!company) {
-    return [];
-  }
-
-  const verifiedIntelJobs = Array.isArray(intelJobs)
-    ? intelJobs.map((job) => normalizeIntelJob(job, company)).filter(Boolean)
-    : [];
-
-  const scrapedCareerJobs = await discoverJobsFromCareerPage({
-    careerPageUrl: careerPageUrl ?? company.careerPageUrl ?? null,
-    company,
-    logger
-  });
-
-  const linkedinFeedJobs = await discoverJobsFromLinkedInFeed({
-    company,
-    linkedinUrl: company.socials?.linkedin ?? null,
-    logger
-  });
-
-  const aggregated = dedupeJobs([...scrapedCareerJobs, ...linkedinFeedJobs, ...verifiedIntelJobs]);
-
-  if (aggregated.length === 0 && searchResults.length > 0) {
-    logger?.debug?.(
-      { companyId: company.id },
-      "No verifiable jobs discovered from search results yet"
-    );
-  }
-
-  return aggregated;
 }
 
 /**
@@ -489,14 +435,28 @@ async function runCompanyEnrichmentCore({
     }
   }
 
-  const careerPageUrl =
-    (await discoverCareerPage({
-      domain: company.primaryDomain,
-      websiteUrl: normalizedWebsite,
-      searchResults,
-      websiteHtml,
-      websiteCheerio
-    })) ?? company.careerPageUrl ?? null;
+  // Discover career page URL with intel jobs from LLM
+  const intelJobs = intelResult?.jobs ?? [];
+  const careerPageDiscovery = await discoverCareerPage({
+    domain: company.primaryDomain,
+    websiteUrl: normalizedWebsite,
+    searchResults,
+    websiteHtml,
+    websiteCheerio,
+    intelJobs
+  });
+  const careerPageUrl = careerPageDiscovery?.url ?? company.careerPageUrl ?? null;
+  const careerPageSource = careerPageDiscovery?.source ?? null;
+
+  logger?.debug?.(
+    {
+      companyId: company.id,
+      careerPageUrl,
+      careerPageSource,
+      intelJobsCount: intelJobs.length
+    },
+    "company.intel.career_page_discovery"
+  );
 
   const websiteFromProfile = normalizeUrl(profile.website);
   if (normalizedWebsite && hasGap("core", "website")) {
@@ -511,11 +471,22 @@ async function runCompanyEnrichmentCore({
     });
   }
   if (careerPageUrl && careerPageUrl !== company.careerPageUrl) {
+    // Map source to readable evidence name
+    const sourceMap = {
+      intel_jobs: "llm_intel_jobs",
+      web_search: "web_search",
+      website_nav: "website_navigation",
+      common_path: "common_career_path"
+    };
+    const careerSources = careerPageSource
+      ? [sourceMap[careerPageSource] ?? careerPageSource]
+      : ["career-page-discovery"];
+
     applyField("careerPageUrl", careerPageUrl, {
       section: null,
       evidenceSection: null,
       requireGap: false,
-      sources: ["career-page-discovery"]
+      sources: careerSources
     });
   }
   if (profile.summary && !hasValue(company.intelSummary)) {
@@ -669,28 +640,15 @@ async function runCompanyEnrichmentCore({
     ...refreshed
   };
 
-  // Discover and save jobs
-  const jobs = await discoverJobsForCompany({
-    company: updatedCompany,
+  // Discover and save jobs using the reusable job discovery service
+  const { jobs } = await runJobDiscoveryForCompany({
+    firestore,
     logger,
+    company: updatedCompany,
+    now,
     searchResults,
     careerPageUrl,
     intelJobs: intelResult?.jobs ?? []
-  });
-  await saveDiscoveredJobs({ firestore, logger, company: updatedCompany, jobs });
-
-  const jobDiscoveryStatus =
-    jobs.length > 0
-      ? CompanyJobDiscoveryStatusEnum.enum.FOUND_JOBS
-      : CompanyJobDiscoveryStatusEnum.enum.NOT_FOUND;
-
-  const jobDiscoveryAttempts = (company.jobDiscoveryAttempts ?? 0) + 1;
-  await firestore.saveCompanyDocument(company.id, {
-    jobDiscoveryStatus,
-    lastJobDiscoveryAt: now,
-    jobDiscoveryQueuedAt: now,
-    jobDiscoveryAttempts,
-    updatedAt: new Date()
   });
 
   return { jobs };

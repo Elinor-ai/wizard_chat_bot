@@ -310,6 +310,86 @@ export const CompanyIntelOutputSchema = z.object({
 });
 
 // =============================================================================
+// JOB PAGE INTERPRETER TASK
+// =============================================================================
+
+const FieldConfidenceSchema = z.object({
+  title: z.number().min(0).max(1).optional(),
+  location: z.number().min(0).max(1).optional(),
+  description: z.number().min(0).max(1).optional(),
+  employmentType: z.number().min(0).max(1).optional(),
+  workModel: z.number().min(0).max(1).optional(),
+  seniorityLevel: z.number().min(0).max(1).optional(),
+  salary: z.number().min(0).max(1).optional(),
+}).passthrough();
+
+const NormalizedJobSchema = z.object({
+  title: z.string().describe("Job title exactly as found on page"),
+  url: z.string().nullable().optional().describe("Direct URL to job posting"),
+  location: z.string().nullable().optional().describe("Location string if found"),
+  city: z.string().nullable().optional().describe("City extracted from location"),
+  country: z.string().nullable().optional().describe("Country extracted from location"),
+  isPrimaryMarket: z.boolean().nullable().optional().describe("True if matches preferredJobCountry"),
+  description: z.string().nullable().optional().describe("Plain-text description from page"),
+  source: z.string().optional().describe("Source hint (careers-site, ats-api, etc.)"),
+  postedAt: z.string().nullable().optional().describe("ISO date when job was posted"),
+  isActive: z.boolean().optional().describe("Whether job appears active"),
+  employmentType: z.string().nullable().optional().describe("full_time, part_time, contract, etc."),
+  workModel: z.string().nullable().optional().describe("remote, on_site, hybrid"),
+  seniorityLevel: z.string().nullable().optional().describe("entry, mid, senior, lead, etc."),
+  industry: z.string().nullable().optional().describe("Industry if detectable"),
+  salary: z.string().nullable().optional().describe("Salary only if explicitly stated"),
+  salaryPeriod: z.string().nullable().optional().describe("hourly, monthly, yearly"),
+  currency: z.string().nullable().optional().describe("Currency code if salary present"),
+  coreDuties: z.array(z.string()).optional().describe("Key duties from posting"),
+  mustHaves: z.array(z.string()).optional().describe("Required qualifications"),
+  benefits: z.array(z.string()).optional().describe("Benefits if clearly stated"),
+  overallConfidence: z.number().min(0).max(1).optional().describe("Overall extraction confidence"),
+  fieldConfidence: FieldConfidenceSchema.optional().describe("Per-field confidence scores"),
+});
+
+export const JobPageInterpreterOutputSchema = z.object({
+  isJobListingPage: z.boolean().describe("True if this is a job listing page"),
+  normalizedJobs: z.array(NormalizedJobSchema).describe("Jobs extracted from page"),
+  estimatedJobCount: z.number().describe("Estimated total jobs visible on page"),
+  wereWeMissingJobs: z.boolean().describe("True if parser likely missed some jobs"),
+  reasonsIfNotJobPage: z.string().nullable().optional().describe("Explanation if not a job page"),
+  suggestedDomHints: z.array(z.string()).optional().describe("CSS/DOM hints for retry parsing"),
+});
+
+// =============================================================================
+// JOB SNIPPET CLASSIFIER TASK
+// =============================================================================
+
+export const JobSnippetClassifierOutputSchema = z.object({
+  isLikelyJob: z.boolean().describe("True if the snippet/post is likely a job posting"),
+  confidence: z.number().min(0).max(1).describe("Confidence score 0-1"),
+  employerMatchesCompany: z.boolean().describe("True if the employer appears to be the target company"),
+  inferredTitle: z.string().nullable().optional().describe("Inferred job title if detected"),
+  inferredLocation: z.string().nullable().optional().describe("Inferred location if detected"),
+  inferredEmploymentType: z.string().nullable().optional().describe("Inferred employment type if detected"),
+});
+
+// =============================================================================
+// JOB COVERAGE CRITIC TASK
+// =============================================================================
+
+const EstimatedJobCountRangeSchema = z.object({
+  min: z.number().describe("Minimum estimated jobs"),
+  max: z.number().describe("Maximum estimated jobs"),
+});
+
+export const JobCoverageCriticOutputSchema = z.object({
+  isCoverageLikelyComplete: z.boolean().describe("True if discovered jobs likely cover most/all positions"),
+  suspiciousLowCoverage: z.boolean().describe("True if coverage seems suspiciously low"),
+  estimatedJobCountRange: EstimatedJobCountRangeSchema.describe("Rough estimate based on hints"),
+  shouldRetryParsing: z.boolean().describe("True if re-parsing with better selectors is recommended"),
+  explanation: z.string().describe("Short plain-text justification (1-2 sentences)"),
+  suggestedNextActions: z.array(z.string()).optional().describe("Action hints like retry_careers_page_parsing"),
+  suggestedDomHints: z.array(z.string()).optional().describe("CSS/structural hints for retry"),
+});
+
+// =============================================================================
 // GOLDEN INTERVIEWER TASK (re-exported from separate file)
 // =============================================================================
 

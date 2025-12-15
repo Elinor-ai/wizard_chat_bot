@@ -21,6 +21,8 @@ import {
   isLikelyRealJobUrl,
   coerceDate,
   inferTitleFromUrl,
+  parseJobLocation,
+  isPrimaryMarketMatch,
 } from "./utils.js";
 import { extractJsonLd } from "./website-scraper.js";
 
@@ -68,6 +70,29 @@ function deriveLocationFromLd(jobLocation) {
 /**
  * Build a candidate job payload.
  * @param {Object} params - Job parameters
+ * @param {Object} params.company - Company object
+ * @param {string} params.title - Job title
+ * @param {string} params.url - Job URL
+ * @param {string} [params.source] - Job source
+ * @param {string} [params.location] - Location string (e.g., "Tel Aviv, Israel")
+ * @param {string} [params.description] - Job description
+ * @param {Date|string} [params.postedAt] - Posted date
+ * @param {Date} [params.discoveredAt] - Discovered date
+ * @param {string} [params.externalId] - External ID
+ * @param {Array} [params.evidenceSources] - Evidence sources
+ * @param {string} [params.industry] - Industry
+ * @param {string} [params.seniorityLevel] - Seniority level
+ * @param {string} [params.employmentType] - Employment type
+ * @param {string} [params.workModel] - Work model
+ * @param {string} [params.salary] - Salary
+ * @param {string} [params.salaryPeriod] - Salary period
+ * @param {string} [params.currency] - Currency
+ * @param {Array} [params.coreDuties] - Core duties
+ * @param {Array} [params.mustHaves] - Must haves
+ * @param {Array} [params.benefits] - Benefits
+ * @param {number} [params.overallConfidence] - Overall confidence
+ * @param {Object} [params.fieldConfidence] - Field confidence
+ * @param {string} [params.preferredJobCountry] - Preferred country for primary market matching
  * @returns {Object|null} Job payload or null
  */
 export function buildCandidateJobPayload({
@@ -92,7 +117,8 @@ export function buildCandidateJobPayload({
   mustHaves = [],
   benefits = [],
   overallConfidence = null,
-  fieldConfidence = null
+  fieldConfidence = null,
+  preferredJobCountry = null
 }) {
   const normalizedTitle = sanitizeJobTitle(title);
   const normalizedUrl = url ? url.trim() : null;
@@ -102,10 +128,22 @@ export function buildCandidateJobPayload({
   if (!isLikelyRealJobUrl(normalizedUrl, company)) {
     return null;
   }
+
+  // Parse location into city and country
+  const locationStr = location?.trim() ?? "";
+  const parsedLocation = parseJobLocation(locationStr);
+
+  // Determine if job is in primary market
+  const effectivePreferredCountry = preferredJobCountry ?? company?.hqCountry ?? null;
+  const isPrimaryMarket = isPrimaryMarketMatch(parsedLocation.country, effectivePreferredCountry);
+
   return {
     title: normalizedTitle,
     url: normalizedUrl,
-    location: location?.trim() ?? "",
+    location: locationStr,
+    city: parsedLocation.city ?? null,
+    country: parsedLocation.country ?? null,
+    isPrimaryMarket,
     description: description?.trim() ?? "",
     source,
     externalId: typeof externalId === "string" && externalId.trim().length > 0 ? externalId.trim() : undefined,
@@ -630,7 +668,17 @@ export async function discoverJobsFromLinkedInFeed({ company, linkedinUrl, logge
 }
 
 /**
+ * Default confidence for intel-agent jobs.
+ * Lower than first-party sources (0.9+) to deprioritize LLM-derived jobs.
+ */
+const INTEL_AGENT_DEFAULT_CONFIDENCE = 0.5;
+
+/**
  * Normalize intel job from LLM response.
+ * IMPORTANT: Intel jobs are always tagged with source: "intel-agent"
+ * and given lower default confidence (0.5) compared to first-party sources (0.9+).
+ * This ensures they don't dominate when real career page jobs are available.
+ *
  * @param {Object} job - Job from LLM
  * @param {Object} company - Company object
  * @returns {Object|null} Normalized job or null
@@ -639,17 +687,29 @@ export function normalizeIntelJob(job, company) {
   if (!job || typeof job !== "object") {
     return null;
   }
+
+  // Determine confidence: use provided confidence or default to lower value for intel
+  const providedConfidence = typeof job.confidence === "number" ? job.confidence : null;
+  // Cap intel job confidence at 0.7 to always be below first-party sources
+  const effectiveConfidence = providedConfidence !== null
+    ? Math.min(providedConfidence, 0.7)
+    : INTEL_AGENT_DEFAULT_CONFIDENCE;
+
   const candidate = buildCandidateJobPayload({
     company,
     title: job.title,
     url: job.url,
-    source: job.source ?? "intel-agent",
+    // ALWAYS use "intel-agent" as source for LLM-derived jobs
+    // Do NOT use determineJobSource which could misattribute to "careers-site"
+    source: "intel-agent",
     location: job.location?.trim?.() ?? "",
     description: job.description?.trim?.() ?? "",
     postedAt: job.postedAt ?? null,
     discoveredAt: job.discoveredAt ?? new Date(),
     externalId: job.externalId?.trim?.() || undefined,
-    evidenceSources: Array.isArray(job.sourceEvidence) ? job.sourceEvidence : [],
+    evidenceSources: Array.isArray(job.sourceEvidence)
+      ? [...job.sourceEvidence, "llm-intel"]
+      : ["llm-intel"],
     industry: job.industry?.trim?.() ?? null,
     seniorityLevel: job.seniorityLevel?.trim?.() ?? null,
     employmentType: job.employmentType?.trim?.() ?? null,
@@ -660,7 +720,7 @@ export function normalizeIntelJob(job, company) {
     coreDuties: Array.isArray(job.coreDuties) ? job.coreDuties : [],
     mustHaves: Array.isArray(job.mustHaves) ? job.mustHaves : [],
     benefits: Array.isArray(job.benefits) ? job.benefits : [],
-    overallConfidence: typeof job.confidence === "number" ? job.confidence : null,
+    overallConfidence: effectiveConfidence,
     fieldConfidence:
       job.fieldConfidence && typeof job.fieldConfidence === "object"
         ? job.fieldConfidence
@@ -669,6 +729,7 @@ export function normalizeIntelJob(job, company) {
   if (!candidate) {
     return null;
   }
-  candidate.source = job.source ?? determineJobSource(candidate.url, company);
+  // Ensure source is always "intel-agent" - never override with determineJobSource
+  candidate.source = "intel-agent";
   return candidate;
 }

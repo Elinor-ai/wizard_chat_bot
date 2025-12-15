@@ -1,4 +1,4 @@
-import { safePreview } from "../utils/parsing.js";
+import { parseJsonContent, safePreview } from "../utils/parsing.js";
 
 function coerceString(value) {
   if (value === null || value === undefined) {
@@ -130,11 +130,11 @@ export function parseCompanyIntelResult(response) {
   if (!raw) {
     throw new Error("Company intel response was empty");
   }
-  let payload;
-  try {
-    payload = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`Company intel JSON parse failed: ${error?.message ?? error}`);
+
+  // Use parseJsonContent to handle markdown-wrapped JSON from grounded responses
+  const payload = parseJsonContent(raw);
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Company intel JSON parse failed: could not extract valid JSON from response");
   }
 
   const profile = payload.profile ?? {};

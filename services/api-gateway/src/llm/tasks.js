@@ -31,9 +31,21 @@ import {
 import { buildImageCaptionPrompt } from "./prompts/image-caption.js";
 import { buildCompanyIntelPrompt } from "./prompts/company-intel.js";
 import {
+  buildJobPageInterpreterPrompt,
+  JOB_PAGE_INTERPRETER_SYSTEM_PROMPT,
+} from "./prompts/job-page-interpreter.js";
+import { buildJobSnippetClassifierPrompt } from "./prompts/job-snippet-classifier.js";
+import {
+  buildJobCoverageCriticPrompt,
+  JOB_COVERAGE_CRITIC_SYSTEM_PROMPT,
+} from "./prompts/job-coverage-critic.js";
+import {
   parseImagePromptResult,
   parseImageGenerationResult
 } from "./parsers/image.js";
+import { parseJobPageInterpreterResult } from "./parsers/job-page-interpreter.js";
+import { parseJobSnippetClassifierResult } from "./parsers/job-snippet-classifier.js";
+import { parseJobCoverageCriticResult } from "./parsers/job-coverage-critic.js";
 import { parseImageCaptionResult } from "./parsers/image-caption.js";
 import { parseCompanyIntelResult } from "./parsers/company-intel.js";
 import {
@@ -65,6 +77,9 @@ import {
   ImagePromptOutputSchema,
   ImageCaptionOutputSchema,
   CompanyIntelOutputSchema,
+  JobPageInterpreterOutputSchema,
+  JobSnippetClassifierOutputSchema,
+  JobCoverageCriticOutputSchema,
   GoldenInterviewerOutputSchema,
 } from "./schemas/index.js";
 
@@ -239,6 +254,43 @@ export const TASK_REGISTRY = {
     strictOnRetry: true,
     outputSchema: CompanyIntelOutputSchema,
     outputSchemaName: "company_intel_response",
+  },
+  job_page_interpreter: {
+    system: JOB_PAGE_INTERPRETER_SYSTEM_PROMPT,
+    builder: buildJobPageInterpreterPrompt,
+    parser: parseJobPageInterpreterResult,
+    mode: "json",
+    temperature: 0.1,
+    maxTokens: { default: 800, gemini: 4096 },
+    retries: 2,
+    strictOnRetry: true,
+    outputSchema: JobPageInterpreterOutputSchema,
+    outputSchemaName: "job_page_interpreter_response",
+  },
+  job_snippet_classifier: {
+    system:
+      "You classify whether text snippets are job postings. Return ONLY valid JSON matching the response contract.",
+    builder: buildJobSnippetClassifierPrompt,
+    parser: parseJobSnippetClassifierResult,
+    mode: "json",
+    temperature: 0.1,
+    maxTokens: { default: 400, gemini: 1024 },
+    retries: 2,
+    strictOnRetry: true,
+    outputSchema: JobSnippetClassifierOutputSchema,
+    outputSchemaName: "job_snippet_classifier_response",
+  },
+  job_coverage_critic: {
+    system: JOB_COVERAGE_CRITIC_SYSTEM_PROMPT,
+    builder: buildJobCoverageCriticPrompt,
+    parser: parseJobCoverageCriticResult,
+    mode: "json",
+    temperature: 0.2,
+    maxTokens: { default: 600, gemini: 2048 },
+    retries: 2,
+    strictOnRetry: true,
+    outputSchema: JobCoverageCriticOutputSchema,
+    outputSchemaName: "job_coverage_critic_response",
   },
   image_prompt_generation: {
     system:

@@ -50,5 +50,7 @@ export {
 export {
   runCompanyEnrichmentOnce,
   retryStuckEnrichments,
-  discoverJobsForCompany,
 } from "./company-enrichment-service.js";
+
+// Re-export job discovery function (now lives in job-intel module)
+export { discoverJobsForCompany } from "../job-intel/job-discovery-service.js";

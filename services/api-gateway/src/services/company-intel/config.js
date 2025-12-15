@@ -114,11 +114,29 @@ export const LINKEDIN_HIRING_REGEX = new RegExp(
 export const DISCOVERED_JOB_OWNER_FALLBACK = "system_company_intel";
 export const STUCK_ENRICHMENT_THRESHOLD_MS = 10 * 60 * 1000;
 
-// Job Source Priority for merging
+// Job Source Priority for merging (higher = more authoritative)
+// First-party sources (careers-site, ats-api) are most trusted
+// LLM-derived intel-agent is lowest priority
 export const JOB_SOURCE_PRIORITY = {
-  "careers-site": 3,
-  linkedin: 2,
-  "linkedin-post": 1,
-  other: 0,
-  "intel-agent": 0
+  "careers-site": 10, // First-party: scraped from company career page
+  "ats-api": 10, // First-party: from ATS platforms (Greenhouse, Lever, etc.)
+  linkedin: 5, // Second-party: LinkedIn jobs tab
+  "linkedin-post": 3, // Second-party: LinkedIn hiring posts
+  other: 1, // Unknown source
+  "intel-agent": 0 // Third-party: LLM-derived, lowest priority
+};
+
+// Source classifications for aggregation logic
+export const FIRST_PARTY_SOURCES = new Set(["careers-site", "ats-api"]);
+export const SECOND_PARTY_SOURCES = new Set(["linkedin", "linkedin-post"]);
+export const THIRD_PARTY_SOURCES = new Set(["intel-agent", "other"]);
+
+// Default confidence levels by source type
+export const SOURCE_CONFIDENCE = {
+  "careers-site": 0.95,
+  "ats-api": 0.95,
+  linkedin: 0.85,
+  "linkedin-post": 0.75,
+  other: 0.6,
+  "intel-agent": 0.5
 };

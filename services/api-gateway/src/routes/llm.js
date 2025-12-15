@@ -38,6 +38,7 @@ import {
 import { VideoRendererError } from "../video/renderers/contracts.js";
 import { generateHeroImage } from "../services/hero-image.js";
 import { runCompanyEnrichmentOnce } from "../services/company-intel.js";
+import { runJobIntelAgentOnce } from "../services/job-intel/index.js";
 
 // Import task services
 import {
@@ -328,6 +329,82 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
                     intelError?.message ??
                     "Company enrichment failed to produce a result",
                   rawPreview: intelError?.rawPreview ?? null
+                }
+              : null
+          }
+        });
+      }
+
+      // =======================================================================
+      // JOB INTEL AGENT - Job discovery for a company
+      // =======================================================================
+
+      if (taskType === LLM_CORE_TASK.JOB_INTEL_AGENT) {
+        if (!userId) {
+          throw httpError(401, "Unauthorized");
+        }
+        const companyId = context.companyId ?? context.company?.id ?? null;
+        if (!companyId) {
+          throw httpError(400, "companyId is required");
+        }
+
+        const accessibleCompanies = await listCompaniesForUser({
+          firestore,
+          user: req.user,
+          logger
+        });
+        const company = accessibleCompanies.find((item) => item.id === companyId);
+        if (!company) {
+          throw httpError(404, "Company not found");
+        }
+
+        let jobIntelResult = null;
+        let jobIntelError = null;
+        try {
+          jobIntelResult = await runJobIntelAgentOnce({
+            firestore,
+            bigQuery,
+            logger,
+            llmClient,
+            company,
+            usageContext: {
+              userId,
+              companyId: company.id,
+              taskType
+            }
+          });
+        } catch (err) {
+          jobIntelError = err;
+          logger?.warn?.(
+            { companyId, err },
+            "job_intel_agent.failed"
+          );
+        }
+
+        // Record usage (even for skeleton with no LLM calls)
+        if (jobIntelResult) {
+          await recordLlmUsageFromResult({
+            firestore,
+            bigQuery,
+            logger,
+            usageContext: { userId, companyId: company.id, taskType },
+            usageType: "text",
+            result: jobIntelResult
+          });
+        }
+
+        return res.json({
+          taskType,
+          result: {
+            jobs: jobIntelResult?.jobs ?? [],
+            summary: jobIntelResult?.summary ?? null,
+            metadata: jobIntelResult?.metadata ?? null,
+            failure: jobIntelError
+              ? {
+                  reason: "job_intel_agent_failed",
+                  message:
+                    jobIntelError?.message ??
+                    "Job intel agent failed to produce a result"
                 }
               : null
           }

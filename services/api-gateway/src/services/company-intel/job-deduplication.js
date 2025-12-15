@@ -4,8 +4,35 @@
  * Extracted from company-intel.js for better modularity.
  */
 
-import { JOB_SOURCE_PRIORITY } from "./config.js";
+import { JOB_SOURCE_PRIORITY, FIRST_PARTY_SOURCES, SOURCE_CONFIDENCE } from "./config.js";
 import { hasValue, coerceDate } from "./utils.js";
+
+/**
+ * Get source priority score.
+ * @param {string} source - Job source
+ * @returns {number} Priority score
+ */
+export function getSourcePriority(source) {
+  return JOB_SOURCE_PRIORITY[source] ?? 0;
+}
+
+/**
+ * Check if source is first-party (careers-site, ats-api).
+ * @param {string} source - Job source
+ * @returns {boolean} True if first-party
+ */
+export function isFirstPartySource(source) {
+  return FIRST_PARTY_SOURCES.has(source);
+}
+
+/**
+ * Get default confidence for a source.
+ * @param {string} source - Job source
+ * @returns {number} Default confidence (0-1)
+ */
+export function getDefaultConfidence(source) {
+  return SOURCE_CONFIDENCE[source] ?? 0.5;
+}
 
 /**
  * Clone a candidate job object.
@@ -113,6 +140,10 @@ export function pickPreferredSource(current, incoming) {
 
 /**
  * Merge two candidate jobs.
+ * When merging duplicates, prioritize by:
+ * 1. Source priority (first-party > second-party > intel-agent)
+ * 2. Content quality score (as a tiebreaker)
+ *
  * @param {Object} existing - Existing job
  * @param {Object} incoming - Incoming job
  * @returns {Object} Merged job
@@ -124,10 +155,28 @@ export function mergeCandidateJobs(existing, incoming) {
   if (!incoming) {
     return cloneCandidateJob(existing);
   }
+
+  // Priority 1: Compare source priority (first-party sources win)
+  const existingSourcePriority = getSourcePriority(existing.source);
+  const incomingSourcePriority = getSourcePriority(incoming.source);
+
+  // Priority 2: Compare content quality as tiebreaker
   const existingScore = scoreCandidateJob(existing);
   const incomingScore = scoreCandidateJob(incoming);
-  const primary = incomingScore > existingScore ? cloneCandidateJob(incoming) : cloneCandidateJob(existing);
-  const secondary = incomingScore > existingScore ? existing : incoming;
+
+  // Determine primary job: prefer higher source priority, then higher content score
+  let primary, secondary;
+  if (incomingSourcePriority > existingSourcePriority) {
+    primary = cloneCandidateJob(incoming);
+    secondary = existing;
+  } else if (existingSourcePriority > incomingSourcePriority) {
+    primary = cloneCandidateJob(existing);
+    secondary = incoming;
+  } else {
+    // Same source priority, use content score
+    primary = incomingScore > existingScore ? cloneCandidateJob(incoming) : cloneCandidateJob(existing);
+    secondary = incomingScore > existingScore ? existing : incoming;
+  }
 
   const preferString = (field) => {
     if (!hasValue(primary[field]) && hasValue(secondary[field])) {

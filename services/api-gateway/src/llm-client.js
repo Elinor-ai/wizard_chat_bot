@@ -245,6 +245,70 @@ async function askCompanyIntel(context) {
   }
 }
 
+async function askJobPageInterpreter(context) {
+  try {
+    const result = await orchestrator.run(LLM_CORE_TASK.JOB_PAGE_INTERPRETER, context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model
+        }
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      isJobListPage: result.isJobListPage ?? false,
+      jobs: result.jobs ?? [],
+      metadata: result.metadata ?? null
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "askJobPageInterpreter orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error)
+      }
+    };
+  }
+}
+
+async function askJobSnippetClassifier(context) {
+  try {
+    const result = await orchestrator.run(LLM_CORE_TASK.JOB_SNIPPET_CLASSIFIER, context);
+    if (result.error) {
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model
+        }
+      };
+    }
+    return {
+      provider: result.provider,
+      model: result.model,
+      isLikelyJob: result.isLikelyJob ?? false,
+      confidence: result.confidence ?? 0,
+      employerMatchesCompany: result.employerMatchesCompany ?? false,
+      inferredTitle: result.inferredTitle ?? null,
+      inferredLocation: result.inferredLocation ?? null,
+      inferredEmploymentType: result.inferredEmploymentType ?? null,
+      metadata: result.metadata ?? null
+    };
+  } catch (error) {
+    llmLogger.warn({ err: error }, "askJobSnippetClassifier orchestrator failure");
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error)
+      }
+    };
+  }
+}
+
 async function runCopilotAgent(context) {
   try {
     const result = await orchestrator.run(LLM_CORE_TASK.COPILOT_AGENT, context);
@@ -678,6 +742,8 @@ export const llmClient = {
   askChannelRecommendations,
   askRefineJob,
   askCompanyIntel,
+  askJobPageInterpreter,
+  askJobSnippetClassifier,
   askAssetMaster,
   askAssetChannelBatch,
   askAssetAdapt,

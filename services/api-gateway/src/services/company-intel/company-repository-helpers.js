@@ -248,6 +248,9 @@ export async function saveDiscoveredJobs({ firestore, logger, company, jobs }) {
       companyName,
       logoUrl: companyLogo,
       location: job.location ?? "",
+      city: job.city ?? null,
+      country: job.country ?? null,
+      isPrimaryMarket: job.isPrimaryMarket ?? false,
       zipCode: "",
       industry: job.industry ?? company.industry ?? undefined,
       seniorityLevel: job.seniorityLevel ?? undefined,
@@ -281,7 +284,14 @@ export async function saveDiscoveredJobs({ firestore, logger, company, jobs }) {
     });
     await firestore.saveDiscoveredJob(jobId, payload);
     logger?.info?.(
-      { companyId: company.id, jobId },
+      {
+        companyId: company.id,
+        jobId,
+        location: job.location,
+        country: job.country,
+        city: job.city,
+        isPrimaryMarket: job.isPrimaryMarket
+      },
       "Saved discovered company job"
     );
   }

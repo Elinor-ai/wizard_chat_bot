@@ -214,6 +214,9 @@ function mapDiscoveredJobForResponse(job) {
     roleTitle: job.roleTitle ?? "",
     companyName: job.companyName ?? "",
     location: job.location ?? "",
+    city: job.city ?? null,
+    country: job.country ?? null,
+    isPrimaryMarket: job.isPrimaryMarket ?? false,
     status: job.status ?? "draft",
     source: context.source ?? context.externalSource ?? null,
     externalUrl: context.sourceUrl ?? context.externalUrl ?? null,
@@ -379,6 +382,10 @@ export function companiesRouter({ firestore, bigQuery, logger }) {
         throw httpError(401, "Unauthorized");
       }
       const company = await resolveCompanyContext({ firestore, user, logger });
+
+      // Parse query parameters
+      const primaryOnly = req.query.primaryOnly === "true";
+
       // Load jobs via repository
       const discoveredJobs = await listDiscoveredJobs(firestore, company.id);
       let jobs;
@@ -390,13 +397,33 @@ export function companiesRouter({ firestore, bigQuery, logger }) {
         const legacy = normalizeCompanyJobs(await listCompanyJobs(firestore, company.id));
         jobs = legacy.map(mapLegacyJobForResponse).filter(Boolean);
       }
+
+      // Filter to primary market only if requested
+      if (primaryOnly) {
+        jobs = jobs.filter((job) => job.isPrimaryMarket === true);
+      }
+
+      // Sort jobs: primary market first, then by createdAt descending
+      jobs.sort((a, b) => {
+        if (a.isPrimaryMarket && !b.isPrimaryMarket) return -1;
+        if (!a.isPrimaryMarket && b.isPrimaryMarket) return 1;
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+
+      const primaryCount = jobs.filter((j) => j.isPrimaryMarket === true).length;
+      const secondaryCount = jobs.length - primaryCount;
+
       logger?.info?.(
-        { userId: user.id, companyId: company.id, jobCount: jobs.length },
+        { userId: user.id, companyId: company.id, jobCount: jobs.length, primaryCount, secondaryCount },
         "Fetched discovered company jobs"
       );
       res.json({
         companyId: company.id,
-        jobs
+        jobs,
+        primaryCount,
+        secondaryCount
       });
     })
   );
@@ -800,19 +827,50 @@ export function companiesRouter({ firestore, bigQuery, logger }) {
       if (!targetCompany) {
         throw httpError(404, "Company not found");
       }
+
+      // Parse query parameters
+      const primaryOnly = req.query.primaryOnly === "true";
+
       // Load jobs via repository
       const discoveredJobs = await listDiscoveredJobs(firestore, companyId);
-      const jobs =
+      let jobs =
         discoveredJobs.length > 0
           ? discoveredJobs.map(mapDiscoveredJobForResponse).filter(Boolean)
           : normalizeCompanyJobs(await listCompanyJobs(firestore, companyId))
               .map(mapLegacyJobForResponse)
               .filter(Boolean);
+
+      // Filter to primary market only if requested
+      if (primaryOnly) {
+        jobs = jobs.filter((job) => job.isPrimaryMarket === true);
+      }
+
+      // Sort jobs: primary market first, then by createdAt descending
+      jobs.sort((a, b) => {
+        // Primary market jobs first
+        if (a.isPrimaryMarket && !b.isPrimaryMarket) return -1;
+        if (!a.isPrimaryMarket && b.isPrimaryMarket) return 1;
+        // Within same market tier, sort by createdAt descending (newest first)
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+
+      const primaryCount = jobs.filter((j) => j.isPrimaryMarket === true).length;
+      const secondaryCount = jobs.length - primaryCount;
+
       logger?.info?.(
-        { userId: user.id, companyId, jobCount: jobs.length },
+        {
+          userId: user.id,
+          companyId,
+          jobCount: jobs.length,
+          primaryCount,
+          secondaryCount,
+          primaryOnly
+        },
         "Fetched jobs for selected company"
       );
-      res.json({ companyId, jobs });
+      res.json({ companyId, jobs, primaryCount, secondaryCount });
     })
   );
 
