@@ -503,10 +503,16 @@ export class GoldenInterviewerService {
     );
     // Apply schema extractions
     if (parsed.extraction?.updates) {
-      session.goldenSchema = this.applySchemaUpdates(
+      console.log("🔍 [Backend] EXTRACTION UPDATES:", JSON.stringify(parsed.extraction.updates, null, 2));
+      const updatedSchema = this.applySchemaUpdates(
         session.goldenSchema || {},
         parsed.extraction.updates
       );
+      console.log("🔍 [Backend] SCHEMA AFTER APPLY (technologies_used):",
+        updatedSchema?.growth_trajectory?.skill_building?.technologies_used);
+      session.goldenSchema = updatedSchema;
+    } else {
+      console.log("🔍 [Backend] NO EXTRACTION UPDATES - parsed.extraction:", JSON.stringify(parsed.extraction, null, 2));
     }
 
     // Normalize UI tool props (fix common LLM format errors)
@@ -578,6 +584,8 @@ export class GoldenInterviewerService {
     }
 
     // Save updated session via repository
+    console.log("🔍 [Backend] BEFORE SAVE - technologies_used:",
+      session.goldenSchema?.growth_trajectory?.skill_building?.technologies_used);
     await saveSession({
       firestore: this.firestore,
       sessionId,
