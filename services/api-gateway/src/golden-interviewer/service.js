@@ -487,8 +487,20 @@ export class GoldenInterviewerService {
       next_priority_fields: llmResponse.nextPriorityFields,
       completion_percentage: llmResponse.completionPercentage,
       interview_phase: llmResponse.interviewPhase,
+      tool_reasoning: llmResponse.toolReasoning, // Capture the new field
     };
     console.log("🔍 [Backend] parsed :", JSON.stringify(parsed, null, 2));
+
+    // Log tool selection reasoning for debugging
+    this.logger.info(
+      {
+        sessionId,
+        tool: parsed.ui_tool?.type,
+        reasoning: parsed.tool_reasoning,
+        phase: parsed.interview_phase,
+      },
+      "golden-interviewer.tool_selection.reasoning"
+    );
     // Apply schema extractions
     if (parsed.extraction?.updates) {
       session.goldenSchema = this.applySchemaUpdates(

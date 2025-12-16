@@ -12,6 +12,7 @@ import { safePreview } from "../utils/parsing.js";
  * Zod schema for validating LLM responses
  */
 const LLMResponseSchema = z.object({
+  tool_reasoning: z.string().optional(),
   message: z.string(),
   extraction: z
     .object({
@@ -140,6 +141,9 @@ export function parseGoldenInterviewerResult(raw, context = {}) {
  */
 function normalizeResponse(parsed, metadata) {
   return {
+    // Tool selection reasoning (for debugging)
+    toolReasoning: parsed.tool_reasoning || null,
+
     // Main message content
     message: parsed.message || FALLBACK_RESPONSE.message,
 

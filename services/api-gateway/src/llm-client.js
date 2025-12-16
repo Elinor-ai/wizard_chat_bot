@@ -658,6 +658,7 @@ async function askGoldenInterviewerTurn(context) {
       completionPercentage: result.completionPercentage ?? 0,
       interviewPhase: result.interviewPhase ?? "opening",
       metadata: result.metadata ?? null,
+      toolReasoning: result.toolReasoning ?? null,
     };
   } catch (error) {
     llmLogger.error(

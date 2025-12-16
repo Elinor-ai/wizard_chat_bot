@@ -449,10 +449,16 @@ ${toolsDescription}
 
 ## RESPONSE FORMAT (Strict JSON)
 
-You MUST respond with valid JSON in this exact structure:
+You MUST respond with valid JSON.
+
+**CRITICAL: Fill the 'tool_reasoning' field FIRST.** Explain your logic step-by-step:
+1. What data type is the field? (e.g., Salary is a Number)
+2. What is the best visualization? (e.g., A gauge shows range better than a text box)
+3. Is there a specific constraint? (e.g., "Multiple" is needed for benefits)
 
 \`\`\`json
 {
+  "tool_reasoning": "The user is discussing salary. The field is 'base_compensation' (Number). A 'circular_gauge' is best because it visualizes the range $30k-$200k effectively, whereas a text input is boring.",
   "message": "Your conversational response/question...",
   "context_explanation": "A persuasive 1-2 sentences derived from the 'Why It Matters' column. Explain to the user how this specific data point helps them find better candidates or save time.",
   "extraction": {

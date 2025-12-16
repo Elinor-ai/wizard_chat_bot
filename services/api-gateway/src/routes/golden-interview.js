@@ -26,11 +26,11 @@ const StartSessionSchema = z.object({
 
 // Skip reason enum for explicit skip signals
 const SkipReasonEnum = z.enum([
-  "unknown",           // Default - user just clicked skip
-  "dont_know",         // "I don't know this information"
+  "unknown", // Default - user just clicked skip
+  "dont_know", // "I don't know this information"
   "prefer_not_to_say", // Privacy concern
-  "not_applicable",    // Doesn't apply to this role
-  "come_back_later",   // Wants to answer later
+  "not_applicable", // Doesn't apply to this role
+  "come_back_later", // Wants to answer later
 ]);
 
 const SkipActionSchema = z.object({
@@ -245,6 +245,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
         "📤 [API] Sending to Client:",
         JSON.stringify(
           {
+            tool_reasoning: result.tool_reasoning,
             ui_tool: result.ui_tool,
             message: result.message,
           },
