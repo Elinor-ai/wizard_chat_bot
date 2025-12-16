@@ -654,6 +654,7 @@ async function askGoldenInterviewerTurn(context) {
       message: result.message,
       extraction: result.extraction ?? {},
       uiTool: result.uiTool ?? null,
+      currentlyAskingField: result.currentlyAskingField ?? null,
       nextPriorityFields: result.nextPriorityFields ?? [],
       completionPercentage: result.completionPercentage ?? 0,
       interviewPhase: result.interviewPhase ?? "opening",

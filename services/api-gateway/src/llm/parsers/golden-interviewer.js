@@ -26,6 +26,7 @@ const LLMResponseSchema = z.object({
       props: z.record(z.any()),
     })
     .optional(),
+  currently_asking_field: z.string().optional(),
   next_priority_fields: z.array(z.string()).optional(),
   completion_percentage: z.number().optional(),
   interview_phase: z.string().optional(),
@@ -152,6 +153,9 @@ function normalizeResponse(parsed, metadata) {
 
     // UI tool for next interaction (convert to camelCase)
     uiTool: parsed.ui_tool || null,
+
+    // The field being asked in THIS turn (for skip tracking)
+    currentlyAskingField: parsed.currently_asking_field || null,
 
     // Next priority fields to fill
     nextPriorityFields: parsed.next_priority_fields || [],

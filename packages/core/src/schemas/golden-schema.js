@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { CompanySchema } from "./company.js";
 import { v4 as uuidv4 } from "uuid";
 // ============================================================================
 // ENUMS
@@ -730,8 +729,8 @@ export const UniversalGoldenSchema = z.object({
   updatedAt: z.string().datetime().optional(),
 
   // Context sections
-  company_context: CompanySchema.optional().describe(
-    "Snapshot of the company data linked to this role"
+  companyId: z.string().optional().describe(
+    "Reference to the company ID (company data fetched separately when needed)"
   ),
   user_context: UserContextSchema.optional().describe(
     "User information for interview personalization"
@@ -778,17 +777,18 @@ export const UniversalGoldenSchema = z.object({
  *
  * This factory function ensures:
  * 1. A unique UUID is generated for the record
- * 2. Company context is injected if provided
+ * 2. Company ID is stored (company data fetched separately when needed for prompts)
  * 3. User context is injected if provided (for personalization)
  * 4. ALL fields are initialized with null values (not empty objects)
  *    so the LLM can see the complete schema structure
  *
  * @param {string} sessionId - The interview session ID
- * @param {object|null} companyData - Optional company data to hydrate company_context
+ * @param {string|null} companyId - Optional company ID reference
+ * @param {string|null} companyName - Optional company name for role_overview
  * @param {object|null} userData - Optional user data to hydrate user_context
  * @returns {UniversalGoldenData} A fully initialized Golden Record
  */
-export function createInitialGoldenRecord(sessionId, companyData = null, userData = null) {
+export function createInitialGoldenRecord(sessionId, companyId = null, companyName = null, userData = null) {
   const now = new Date().toISOString();
 
   return {
@@ -797,8 +797,8 @@ export function createInitialGoldenRecord(sessionId, companyData = null, userDat
     createdAt: now,
     updatedAt: now,
 
-    // Context sections (hydrated if data provided)
-    company_context: companyData || {},
+    // Context sections
+    companyId: companyId || null,
     user_context: {
       name: userData?.name || null,
       timezone: userData?.timezone || null,
@@ -810,7 +810,7 @@ export function createInitialGoldenRecord(sessionId, companyData = null, userDat
     // =========================================================================
     role_overview: {
       job_title: null,
-      company_name: companyData?.name || null,
+      company_name: companyName || null,
       department: null,
       employment_type: null,
       location_city: null,

@@ -59,10 +59,17 @@ export const GoldenInterviewerOutputSchema = z.object({
   ui_tool: UIToolSchema.optional().describe(
     "The UI component to display for the next question"
   ),
+  currently_asking_field: z
+    .string()
+    .describe(
+      "REQUIRED: The specific Golden Schema field path that THIS question is targeting. " +
+        "Example: 'role_overview.job_title' or 'financial_reality.base_compensation.amount_or_range'. " +
+        "This is used to track which field was skipped if the user skips. ALWAYS provide this field."
+    ),
   next_priority_fields: z
     .array(z.string())
     .optional()
-    .describe("Top 3 fields to fill next"),
+    .describe("Top 3 fields to fill next (AFTER the currently_asking_field)"),
   completion_percentage: z
     .number()
     .optional()

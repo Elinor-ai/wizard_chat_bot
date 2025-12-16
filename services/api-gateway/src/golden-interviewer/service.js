@@ -192,9 +192,10 @@ export class GoldenInterviewerService {
     }
 
     // =========================================================================
-    // STEP 2: Create hydrated Golden Record using factory function
+    // STEP 2: Create Golden Record with companyId reference (not full company data)
     // =========================================================================
-    const goldenSchema = createInitialGoldenRecord(sessionId, companyData, userData);
+    const resolvedCompanyName = companyData?.name || companyName || null;
+    const goldenSchema = createInitialGoldenRecord(sessionId, companyId, resolvedCompanyName, userData);
 
     // =========================================================================
     // STEP 3: Create session via repository
@@ -208,14 +209,23 @@ export class GoldenInterviewerService {
     });
 
     this.logger.info(
-      { sessionId, userId, companyId, hasCompanyContext: !!companyData },
+      { sessionId, userId, companyId, hasCompanyData: !!companyData },
       "golden-interviewer.session.created"
     );
 
     // =========================================================================
     // STEP 4: Generate first turn with hydrated context (via HTTP /api/llm)
     // =========================================================================
-    const firstTurnResponse = await this.generateFirstTurn(session, authToken);
+    // Extract only the fields needed for the prompt
+    const companyDataForPrompt = companyData ? {
+      name: companyData.name,
+      industry: companyData.industry,
+      description: companyData.longDescription || companyData.description,
+      employeeCountBucket: companyData.employeeCountBucket,
+      toneOfVoice: companyData.toneOfVoice,
+    } : null;
+
+    const firstTurnResponse = await this.generateFirstTurn(session, authToken, companyDataForPrompt);
 
     // Update session with first turn via repository
     const assistantMessage = buildAssistantMessage({
@@ -224,17 +234,18 @@ export class GoldenInterviewerService {
     });
 
     // Track lastAskedField from first turn (for skip attribution)
-    const firstPriorityField = firstTurnResponse.next_priority_fields?.[0] || null;
-    const firstPriorityCategory = firstPriorityField
-      ? this.extractCategoryFromField(firstPriorityField)
+    // Use currently_asking_field - the field THIS turn is asking about (not next_priority_fields)
+    const currentlyAskingField = firstTurnResponse.currently_asking_field || null;
+    const currentlyAskingCategory = currentlyAskingField
+      ? this.extractCategoryFromField(currentlyAskingField)
       : null;
 
     session.conversationHistory.push(assistantMessage);
     session.turnCount = 1;
     session.metadata.lastToolUsed = firstTurnResponse.ui_tool?.type;
     session.metadata.currentPhase = firstTurnResponse.interview_phase || "opening";
-    session.metadata.lastAskedField = firstPriorityField;
-    session.metadata.lastAskedCategory = firstPriorityCategory;
+    session.metadata.lastAskedField = currentlyAskingField;
+    session.metadata.lastAskedCategory = currentlyAskingCategory;
     session.updatedAt = new Date();
 
     await saveSession({
@@ -403,10 +414,38 @@ export class GoldenInterviewerService {
     }
 
     // =========================================================================
+    // FETCH COMPANY DATA FOR LLM CONTEXT (if companyId exists)
+    // =========================================================================
+    let companyData = null;
+    const companyId = session.goldenSchema?.companyId;
+
+    if (companyId) {
+      try {
+        const company = await getCompanyById(this.firestore, companyId);
+        if (company) {
+          // Extract only the fields needed for the prompt
+          companyData = {
+            name: company.name,
+            industry: company.industry,
+            description: company.longDescription || company.description,
+            employeeCountBucket: company.employeeCountBucket,
+            toneOfVoice: company.toneOfVoice,
+          };
+        }
+      } catch (error) {
+        this.logger.warn(
+          { sessionId, companyId, err: error },
+          "golden-interviewer.turn.company_fetch_error"
+        );
+      }
+    }
+
+    // =========================================================================
     // GENERATE NEXT TURN VIA LLM (with friction context)
     // =========================================================================
     const llmContext = {
       currentSchema: session.goldenSchema || {},
+      companyData,
       conversationHistory: session.conversationHistory,
       userMessage,
       uiResponse,
@@ -484,10 +523,11 @@ export class GoldenInterviewerService {
       message: llmResponse.message,
       extraction: llmResponse.extraction,
       ui_tool: llmResponse.uiTool,
+      currently_asking_field: llmResponse.currentlyAskingField,
       next_priority_fields: llmResponse.nextPriorityFields,
       completion_percentage: llmResponse.completionPercentage,
       interview_phase: llmResponse.interviewPhase,
-      tool_reasoning: llmResponse.toolReasoning, // Capture the new field
+      tool_reasoning: llmResponse.toolReasoning,
     };
     console.log("🔍 [Backend] parsed :", JSON.stringify(parsed, null, 2));
 
@@ -551,11 +591,11 @@ export class GoldenInterviewerService {
 
     // =========================================================================
     // TRACK LAST ASKED FIELD (for skip attribution on NEXT turn)
-    // IMPORTANT: Only store the first item (index 0) for 1:1 skip attribution
+    // Use currently_asking_field - the field THIS turn is asking about
     // =========================================================================
-    const nextPriorityField = parsed.next_priority_fields?.[0] || null;
-    const nextPriorityCategory = nextPriorityField
-      ? this.extractCategoryFromField(nextPriorityField)
+    const currentlyAskingField = parsed.currently_asking_field || null;
+    const currentlyAskingCategory = currentlyAskingField
+      ? this.extractCategoryFromField(currentlyAskingField)
       : null;
 
     session.metadata = {
@@ -565,9 +605,9 @@ export class GoldenInterviewerService {
         estimateSchemaCompletion(session.goldenSchema),
       currentPhase: parsed.interview_phase || session.metadata?.currentPhase,
       lastToolUsed: parsed.ui_tool?.type,
-      // Store the primary field being asked (for skip attribution)
-      lastAskedField: nextPriorityField,
-      lastAskedCategory: nextPriorityCategory,
+      // Store the field being asked NOW (for skip attribution on next turn)
+      lastAskedField: currentlyAskingField,
+      lastAskedCategory: currentlyAskingCategory,
       // Preserve friction state (already updated above)
       friction: session.metadata.friction,
     };
@@ -627,7 +667,7 @@ export class GoldenInterviewerService {
           totalSkips: friction.totalSkips,
           consecutiveSkips: friction.consecutiveSkips,
           strategy: friction.currentStrategy,
-          lastAskedField: nextPriorityField,
+          lastAskedField: currentlyAskingField,
         },
       },
       "golden-interviewer.turn.processed"
@@ -699,9 +739,10 @@ export class GoldenInterviewerService {
    * @param {string} authToken - Bearer token for LLM API calls
    * @returns {Promise<object>}
    */
-  async generateFirstTurn(session, authToken) {
+  async generateFirstTurn(session, authToken, companyData = null) {
     const llmContext = {
       currentSchema: session.goldenSchema || {},
+      companyData,
       conversationHistory: [],
       isFirstTurn: true,
       turnNumber: 1,
@@ -762,6 +803,7 @@ export class GoldenInterviewerService {
       message: llmResponse.message,
       extraction: llmResponse.extraction,
       ui_tool: llmResponse.uiTool,
+      currently_asking_field: llmResponse.currentlyAskingField,
       next_priority_fields: llmResponse.nextPriorityFields,
       completion_percentage: llmResponse.completionPercentage,
       interview_phase: llmResponse.interviewPhase,

@@ -109,12 +109,13 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
  * This is exported separately for use in TASK_REGISTRY as a getter,
  * since the system prompt includes dynamic schema context.
  *
- * @param {object} context - The context containing current schema and friction state
+ * @param {object} context - The context containing current schema, company data, and friction state
  * @returns {string} - The system prompt
  */
 export function buildGoldenInterviewerSystemPrompt(context = {}) {
   return buildGoldenSystemPrompt({
     currentSchema: context.currentSchema || {},
+    companyData: context.companyData || null,
     frictionState: context.frictionState || null,
   });
 }

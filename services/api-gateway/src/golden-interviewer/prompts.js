@@ -150,25 +150,20 @@ The "X-Factor" differentiators.
 
 /**
  * Builds the company context section for the system prompt
- * @param {object} currentSchema - Current golden schema state
+ * @param {object|null} companyData - Company data with only the needed fields
+ * @param {string} [companyData.name] - Company name
+ * @param {string} [companyData.industry] - Industry
+ * @param {string} [companyData.description] - Company description
+ * @param {string} [companyData.employeeCountBucket] - Company size bucket
+ * @param {string} [companyData.toneOfVoice] - Brand voice guidelines
  * @returns {string} - Company context section or empty string
  */
-function buildCompanyContextSection(currentSchema) {
-  if (!currentSchema?.company_context) {
+function buildCompanyContextSection(companyData) {
+  if (!companyData) {
     return "";
   }
 
-  const { company_context } = currentSchema;
-  const {
-    name,
-    description,
-    longDescription,
-    tagline,
-    industry,
-    employeeCountBucket,
-    website,
-    toneOfVoice,
-  } = company_context;
+  const { name, description, industry, employeeCountBucket, toneOfVoice } = companyData;
 
   // Only build context if we have at least a company name
   if (!name) {
@@ -185,22 +180,12 @@ You are representing **${name}**`;
 
   contextSection += ".\n\n";
 
-  // Use longDescription first, then fall back to description
-  const companyDescription = longDescription || description;
-  if (companyDescription) {
-    contextSection += `**About the Company:** ${companyDescription}\n\n`;
-  }
-
-  if (tagline) {
-    contextSection += `**Company Tagline:** ${tagline}\n\n`;
+  if (description) {
+    contextSection += `**About the Company:** ${description}\n\n`;
   }
 
   if (employeeCountBucket && employeeCountBucket !== "unknown") {
     contextSection += `**Company Size:** ${employeeCountBucket} employees\n\n`;
-  }
-
-  if (website) {
-    contextSection += `**Website:** ${website}\n\n`;
   }
 
   if (toneOfVoice) {
@@ -392,16 +377,17 @@ ${
  * Builds the main system prompt for the Golden Extraction Agent
  * @param {object} options
  * @param {object} [options.currentSchema] - Current golden schema state
+ * @param {object} [options.companyData] - Company data for context (name, industry, description, employeeCountBucket, toneOfVoice)
  * @param {string[]} [options.priorityFields] - Fields to prioritize
  * @param {object} [options.frictionState] - Current friction state for skip handling
  * @returns {string}
  */
 export function buildSystemPrompt(options = {}) {
-  const { currentSchema, frictionState } = options;
+  const { currentSchema, companyData, frictionState } = options;
   const toolsJson = JSON.stringify(UI_TOOLS_SCHEMA, null, 2);
 
   // Build context sections if available
-  const companyContext = buildCompanyContextSection(currentSchema);
+  const companyContext = buildCompanyContextSection(companyData);
   const userContext = buildUserContextSection(currentSchema);
   const frictionContext = buildFrictionContextSection(frictionState);
 
@@ -576,6 +562,12 @@ You MUST respond with valid JSON.
 2. What is the best visualization? (e.g., A gauge shows range better than a text box)
 3. Is there a specific constraint? (e.g., "Multiple" is needed for benefits)
 
+**MANDATORY FIELD - 'currently_asking_field'**: You MUST ALWAYS include this field in EVERY response. Set it to the exact Golden Schema field path that your current question is targeting. Examples:
+- Asking about job title → "role_overview.job_title"
+- Asking about salary → "financial_reality.base_compensation.amount_or_range"
+- Asking about work location → "time_and_life.flexibility.location_flexibility"
+This field is REQUIRED for skip tracking. DO NOT omit it.
+
 \`\`\`json
 {
   "tool_reasoning": "The user is discussing salary. The field is 'base_compensation' (Number). A 'circular_gauge' is best because it visualizes the range $30k-$200k effectively, whereas a text input is boring.",
@@ -598,6 +590,7 @@ You MUST respond with valid JSON.
       ]
     }
   },
+  "currently_asking_field": "financial_reality.base_compensation.amount_or_range",
   "next_priority_fields": ["field1", "field2"],
   "completion_percentage": 25,
   "interview_phase": "compensation|time_flexibility|environment|culture|growth|stability|role_details|unique_value|closing"
@@ -716,9 +709,9 @@ ${JSON.stringify(uiResponse, null, 2)}
 ### Current Schema State
 Schema completion: approximately ${schemaCompletion}%
 
-Current data:
+Current data (only filled fields):
 \`\`\`json
-${JSON.stringify(currentSchema, null, 2)}
+${JSON.stringify(filterNonNullFields(currentSchema) || {}, null, 2)}
 \`\`\`
 
 ${relevantFieldsSection}
@@ -743,6 +736,42 @@ Respond in JSON.`;
 }
 
 // ... (Rest of the helper functions: estimateSchemaCompletion, countFilledFields, identifyMissingFields, getNestedValue - REMAIN UNCHANGED)
+
+/**
+ * Recursively filter out null, undefined, and empty object values from a schema.
+ * This reduces token usage when sending the schema to the LLM.
+ *
+ * @param {object} obj - The object to filter
+ * @returns {object} - A new object with only non-null values
+ */
+function filterNonNullFields(obj) {
+  if (obj === null || obj === undefined) {
+    return undefined;
+  }
+
+  if (Array.isArray(obj)) {
+    const filtered = obj.map(filterNonNullFields).filter((item) => item !== undefined);
+    return filtered.length > 0 ? filtered : undefined;
+  }
+
+  if (typeof obj === "object") {
+    const result = {};
+    for (const [key, value] of Object.entries(obj)) {
+      // Skip metadata fields that aren't needed for LLM context
+      if (key === "createdAt" || key === "updatedAt" || key === "sessionId") {
+        continue;
+      }
+      const filtered = filterNonNullFields(value);
+      if (filtered !== undefined) {
+        result[key] = filtered;
+      }
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+  }
+
+  // Primitive values (string, number, boolean) - keep them
+  return obj;
+}
 
 function estimateSchemaCompletion(schema) {
   if (!schema || typeof schema !== "object") return 0;
