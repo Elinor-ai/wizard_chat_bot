@@ -176,6 +176,13 @@ export function WizardLaunchTrigger({ children }) {
     [authToken, beginCompanyIntelFlow, launchWizardForCompany, router]
   );
 
+  const handleSkipCompany = useCallback(() => {
+    setIsOpen(false);
+    setJobsError(null);
+    setSelectedCompany(null);
+    router.push("/wizard");
+  }, [router]);
+
   const handleUseJob = useCallback(
     async (job) => {
       if (!job?.id || !selectedCompany?.id) {
@@ -357,6 +364,7 @@ export function WizardLaunchTrigger({ children }) {
         isOpen={isOpen}
         onClose={handleClose}
         onSelectCompany={handleSelectCompany}
+        onSkipCompany={handleSkipCompany}
       />
       <ExistingJobsModal
         isOpen={existingJobsOpen}

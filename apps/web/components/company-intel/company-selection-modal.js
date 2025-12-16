@@ -66,7 +66,8 @@ function CompanyList({ companies, mainCompanyId, onSelect }) {
 export function CompanySelectionModal({
   isOpen,
   onClose,
-  onSelectCompany
+  onSelectCompany,
+  onSkipCompany
 }) {
   const { user, setUser } = useUser();
   const authToken = user?.authToken ?? null;
@@ -208,6 +209,25 @@ export function CompanySelectionModal({
                   Add new company
                 </button>
               </div>
+
+              {onSkipCompany ? (
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-4 text-center">
+                  <p className="text-sm font-semibold text-neutral-900">Not associated with a company?</p>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    For freelancers, tutors, or independent professionals.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setErrorMessage(null);
+                      onSkipCompany();
+                    }}
+                    className="mt-3 rounded-full border border-neutral-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-700 shadow-sm transition hover:bg-neutral-100"
+                  >
+                    Continue without company
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>,

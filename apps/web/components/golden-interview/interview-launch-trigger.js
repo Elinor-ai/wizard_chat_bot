@@ -64,6 +64,11 @@ export function InterviewLaunchTrigger({ children }) {
     [router]
   );
 
+  const handleSkipCompany = useCallback(() => {
+    setIsOpen(false);
+    router.push("/golden-interview");
+  }, [router]);
+
   return (
     <>
       {typeof children === "function" ? children({ onClick: handleClick }) : null}
@@ -71,6 +76,7 @@ export function InterviewLaunchTrigger({ children }) {
         isOpen={isOpen}
         onClose={handleClose}
         onSelectCompany={handleSelectCompany}
+        onSkipCompany={handleSkipCompany}
       />
     </>
   );

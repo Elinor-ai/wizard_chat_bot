@@ -53,6 +53,9 @@ export const GoldenInterviewerOutputSchema = z.object({
         "Acknowledge briefly, then ask the question. " +
         "Example: 'Got it. For the base rate, what is the competitive range in your market?'"
     ),
+  extraction: ExtractionSchema.optional().describe(
+    "Data extracted from the user's response to update the Golden Schema"
+  ),
   ui_tool: UIToolSchema.optional().describe(
     "The UI component to display for the next question"
   ),
