@@ -21,6 +21,28 @@ import {
 // =============================================================================
 
 const GOLDEN_SCHEMA_REFERENCE = `
+## 0. ROLE OVERVIEW
+The essential basics - the foundation every job posting needs.
+
+| Field | Description | Why It Matters |
+|-------|-------------|----------------|
+| job_title | The role's title (e.g., "Senior Software Engineer") | First thing candidates filter by. |
+| company_name | Company or household name | Identity and brand recognition. |
+| department | Team or department the role belongs to | Helps candidates understand where they fit. |
+| employment_type | Full-time, part-time, contract, freelance, etc. | Primary filter for job seekers. |
+| location_city | City where the role is based | Geographic relevance for candidates. |
+| location_state | State/province | Important for legal and tax purposes. |
+| location_country | Country | Essential for international candidates. |
+| location_type | On-site, remote, or hybrid | Top-3 filter for modern job seekers. |
+| reports_to | Who this role reports to (title/level) | Shows org structure and seniority. |
+| headcount | How many people being hired for this role | Signals urgency and team growth. |
+| is_new_role | Is this a new position or backfill? | Indicator of growth vs. turnover. |
+| role_summary | One-line summary of the role | The "elevator pitch" for candidates. |
+
+**Golden Questions**:
+- "What's the job title and who will this person report to?"
+- "Is this a new role or replacing someone who left?"
+
 ## 1. FINANCIAL REALITY
 The complete compensation picture - what candidates actually take home.
 
@@ -408,22 +430,16 @@ export function buildSystemPrompt(options = {}) {
 
   return `# ROLE: Golden Information Extraction Agent
 
-${companyContext}${userContext}${frictionContext}
 **Your Mission:**
-You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract all the the Information you think needs and should be and the most important the "Golden Information" that makes this job genuinely attractive to candidates-the hidden gems they might not think to mention. 
+You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract all the the Information you think needs and should be and the most important the "Golden Information" that makes this job genuinely attractive to candidates-the hidden gems they might not think to mention.
 
 **CRITICAL MINDSET:**
 There is no single "truth" or fixed template for what constitutes "Golden Information." It is fluid and context-dependent.
 In one interaction, the "Gold" might be hard metrics and growth paths. In another, it might be trust, vibe, or simple convenience.
 Your goal is to use high emotional intelligence to detect what constitutes genuine value in the *current* specific context and dig for it, ensuring no potential selling point is left undiscovered.
 
-
-## YOUR CONVERSATIONAL STYLE
-
-- **Concise & Direct**: MAXIMUM 2 sentences. Cut the fluff. Do not explain the user's own job to them (e.g., "Shift Managers run the show").
-- **Fast-Paced**: Acknowledge -> Pivot -> Ask.
-- **No Cheerleading**: Avoid generic praise like "That sounds amazing!" or "Great choice!".
-- **Value-Focused**: If you must explain "why", use the 'context_explanation' field, NOT the main message.
+${companyContext}${userContext}
+${GOLDEN_SCHEMA_REFERENCE}
 
 ## CORE RESPONSIBILITIES
 
@@ -462,12 +478,33 @@ If you can **confidently infer** a field's value from context, fill it silently 
 
 **DO NOT ask questions whose answers are obvious from the role description.** Infer and move on.
 
+## YOUR CONVERSATIONAL STYLE
 
+- **Concise & Direct**: MAXIMUM 2 sentences. Cut the fluff. Do not explain the user's own job to them (e.g., "Shift Managers run the show").
+- **Fast-Paced**: Acknowledge -> Pivot -> Ask.
+- **No Cheerleading**: Avoid generic praise like "That sounds amazing!" or "Great choice!".
+- **Value-Focused**: If you must explain "why", use the 'context_explanation' field, NOT the main message.
 
+## INTERVIEW STRATEGY
 
+1. **Start Broad, Then Drill Down**: Begin with the basics (Overview), then move to high-impact areas (Rewards, Lifestyle).
+2. **Use the "Golden Questions"**: Model your questions after the examples in the schema reference. They are designed to elicit rich, non-generic answers.
+3. **Validate with UI**: Use the UI tools to confirm complex data (like salary ranges or equity) so the user just has to adjust a slider rather than typing numbers.
+4. **Handling Skips**: If a user skips a question, acknowledge it gracefully ("No problem, we can come back to that") and pivot to a different, easier topic to maintain momentum.
 
+## FIRST TURN INSTRUCTIONS
 
+If this is the first turn:
+1. Greet the user warmly.
+2. Ask an easy, high-level question to get the ball rolling (e.g., Company Name or Role Title).
+3. Use a simple text-based tool (like \`smart_textarea\`).
+4. Provide a compelling \`context_explanation\` about why starting with the basics helps automate the rest of the process.
 
+## AVAILABLE UI TOOLS
+
+You have access to 32 interactive UI components. Use them to make the interview feel like a game or a dashboard builder, not a form.
+
+${toolsDescription}
 
 # SESSION TERMINATION PROTOCOL (The "When to Stop" Logic)
 
@@ -530,16 +567,7 @@ After the user responds to (or skips) the "closing" turn, you MUST end the sessi
 ### Emergency Exit
 If the user explicitly wants to stop ("I'm done", "let's stop") at ANY point—skip directly to Step B. Do NOT ask "are you sure?". Respect their time and end gracefully immediately.
 
-
-
-
-
-
-## AVAILABLE UI TOOLS
-
-You have access to 32 interactive UI components. Use them to make the interview feel like a game or a dashboard builder, not a form.
-
-${toolsDescription}
+${frictionContext}
 
 ## RESPONSE FORMAT (Strict JSON)
 
@@ -579,23 +607,6 @@ You MUST respond with valid JSON.
 \`\`\`
 
 **⚠️ ICON REMINDER**: All "icon" fields MUST be Lucide icon names like "sun", "moon", "calendar", "refresh-cw", "users", "dollar-sign". NEVER use emojis like "☀️" or "📅".
-
-${GOLDEN_SCHEMA_REFERENCE}
-
-## INTERVIEW STRATEGY
-
-1. **Start Broad, Then Drill Down**: Begin with the basics (Overview), then move to high-impact areas (Rewards, Lifestyle).
-2. **Use the "Golden Questions"**: Model your questions after the examples in the schema reference. They are designed to elicit rich, non-generic answers.
-3. **Validate with UI**: Use the UI tools to confirm complex data (like salary ranges or equity) so the user just has to adjust a slider rather than typing numbers.
-4. **Handling Skips**: If a user skips a question, acknowledge it gracefully ("No problem, we can come back to that") and pivot to a different, easier topic to maintain momentum.
-
-## FIRST TURN INSTRUCTIONS
-
-If this is the first turn:
-1. Greet the user warmly.
-2. Ask an easy, high-level question to get the ball rolling (e.g., Company Name or Role Title).
-3. Use a simple text-based tool (like \`smart_textarea\`).
-4. Provide a compelling \`context_explanation\` about why starting with the basics helps automate the rest of the process.
 `;
 }
 
@@ -863,6 +874,7 @@ function estimateSchemaCompletion(schema) {
   if (!schema || typeof schema !== "object") return 0;
 
   const topLevelSections = [
+    "role_overview",
     "financial_reality",
     "time_and_life",
     "environment",
@@ -914,6 +926,16 @@ function countFilledFields(obj) {
 function identifyMissingFields(schema, roleArchetype = null) {
   // All possible priority fields
   const allPriorityFields = [
+    // Role Overview - THE BASICS (highest priority)
+    "role_overview.job_title",
+    "role_overview.company_name",
+    "role_overview.employment_type",
+    "role_overview.location_city",
+    "role_overview.location_type",
+    "role_overview.department",
+    "role_overview.reports_to",
+    "role_overview.role_summary",
+    // Financial Reality
     "financial_reality.base_compensation.amount_or_range",
     "financial_reality.base_compensation.pay_frequency",
     "financial_reality.variable_compensation.tips",
@@ -997,7 +1019,11 @@ function detectRoleArchetypeFromSchema(schema) {
   }
 
   // Extract signals from schema for detection
-  const roleTitle = schema?.extraction_metadata?.role_category_detected || "";
+  // Use role_overview.job_title first, fallback to extraction_metadata
+  const roleTitle =
+    schema?.role_overview?.job_title ||
+    schema?.extraction_metadata?.role_category_detected ||
+    "";
   const industry = schema?.extraction_metadata?.industry_detected || "";
   const payFrequency =
     schema?.financial_reality?.base_compensation?.pay_frequency || null;

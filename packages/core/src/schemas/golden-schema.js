@@ -180,6 +180,17 @@ export const SeniorityDetectedEnum = z.enum([
   "executive",
 ]);
 
+// Employment Type Enum (for role_overview)
+export const EmploymentTypeEnum = z.enum([
+  "full_time",
+  "part_time",
+  "contract",
+  "freelance",
+  "internship",
+  "temporary",
+  "seasonal",
+]);
+
 // ============================================================================
 // SUB-SCHEMAS: Financial Reality
 // ============================================================================
@@ -676,6 +687,36 @@ export const ExtractionMetadataSchema = z.object({
   industry_detected: z.string().optional(),
   role_category_detected: z.string().optional(),
   seniority_detected: SeniorityDetectedEnum.optional(),
+  role_archetype: z.string().optional(),
+});
+
+// ============================================================================
+// SUB-SCHEMAS: Role Overview (Basic Job Info)
+// ============================================================================
+
+export const RoleOverviewSchema = z.object({
+  job_title: z.string().optional(),
+  company_name: z.string().optional(),
+  department: z.string().optional(),
+  employment_type: EmploymentTypeEnum.optional(),
+  location_city: z.string().optional(),
+  location_state: z.string().optional(),
+  location_country: z.string().optional(),
+  location_type: z.enum(["on_site", "remote", "hybrid"]).optional(),
+  reports_to: z.string().optional(),
+  headcount: z.number().optional(),
+  is_new_role: z.boolean().optional(),
+  role_summary: z.string().optional(),
+});
+
+// ============================================================================
+// SUB-SCHEMAS: User Context (Interview Personalization)
+// ============================================================================
+
+export const UserContextSchema = z.object({
+  name: z.string().optional(),
+  timezone: z.string().optional(),
+  preferred_language: z.string().optional(),
 });
 
 // ============================================================================
@@ -688,10 +729,20 @@ export const UniversalGoldenSchema = z.object({
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 
+  // Context sections
   company_context: CompanySchema.optional().describe(
     "Snapshot of the company data linked to this role"
   ),
+  user_context: UserContextSchema.optional().describe(
+    "User information for interview personalization"
+  ),
 
+  // Core role information (THE BASICS)
+  role_overview: RoleOverviewSchema.optional().describe(
+    "Basic job information: title, location, employment type"
+  ),
+
+  // Detailed sections
   financial_reality: FinancialRealitySchema.optional(),
   time_and_life: TimeAndLifeSchema.optional(),
   environment: EnvironmentSchema.optional(),
@@ -729,7 +780,8 @@ export const UniversalGoldenSchema = z.object({
  * 1. A unique UUID is generated for the record
  * 2. Company context is injected if provided
  * 3. User context is injected if provided (for personalization)
- * 4. All sub-schemas are initialized as empty objects to prevent undefined crashes
+ * 4. ALL fields are initialized with null values (not empty objects)
+ *    so the LLM can see the complete schema structure
  *
  * @param {string} sessionId - The interview session ID
  * @param {object|null} companyData - Optional company data to hydrate company_context
@@ -745,24 +797,418 @@ export function createInitialGoldenRecord(sessionId, companyData = null, userDat
     createdAt: now,
     updatedAt: now,
 
-    // Hydrate company context if provided
+    // Context sections (hydrated if data provided)
     company_context: companyData || {},
-
-    // Hydrate user context if provided (for personalization)
     user_context: {
       name: userData?.name || null,
       timezone: userData?.timezone || null,
+      preferred_language: null,
     },
 
-    // Initialize all sub-schemas as empty objects to prevent undefined access
-    financial_reality: {},
-    time_and_life: {},
-    environment: {},
-    humans_and_culture: {},
-    growth_trajectory: {},
-    stability_signals: {},
-    role_reality: {},
-    unique_value: {},
-    extraction_metadata: {},
+    // =========================================================================
+    // ROLE OVERVIEW - The Basics (CRITICAL: must be filled first)
+    // =========================================================================
+    role_overview: {
+      job_title: null,
+      company_name: companyData?.name || null,
+      department: null,
+      employment_type: null,
+      location_city: null,
+      location_state: null,
+      location_country: null,
+      location_type: null,
+      reports_to: null,
+      headcount: null,
+      is_new_role: null,
+      role_summary: null,
+    },
+
+    // =========================================================================
+    // FINANCIAL REALITY
+    // =========================================================================
+    financial_reality: {
+      base_compensation: {
+        amount_or_range: null,
+        pay_frequency: null,
+        currency: null,
+      },
+      variable_compensation: {
+        exists: null,
+        type: null,
+        structure: null,
+        average_realized: null,
+        frequency: null,
+        guarantee_minimum: null,
+        guarantee_details: null,
+      },
+      equity: {
+        offered: null,
+        type: null,
+        vesting_schedule: null,
+        cliff: null,
+      },
+      bonuses: {
+        signing_bonus: null,
+        retention_bonus: null,
+        performance_bonus: null,
+        referral_bonus: null,
+        holiday_bonus: null,
+      },
+      raises_and_reviews: {
+        review_frequency: null,
+        typical_raise_percentage: null,
+        promotion_raise_typical: null,
+      },
+      hidden_financial_value: {
+        meals_provided: null,
+        meals_details: null,
+        discounts: null,
+        equipment_provided: null,
+        wellness_budget: null,
+        commuter_benefits: null,
+        phone_stipend: null,
+        internet_stipend: null,
+      },
+      payment_reliability: {
+        payment_method: null,
+        payment_timing: null,
+        overtime_policy: null,
+        overtime_rate: null,
+      },
+    },
+
+    // =========================================================================
+    // TIME AND LIFE
+    // =========================================================================
+    time_and_life: {
+      schedule_pattern: {
+        type: null,
+        typical_hours_per_week: null,
+        days_per_week: null,
+        shift_types: null,
+        shift_length_typical: null,
+        weekend_frequency: null,
+        holiday_policy: null,
+      },
+      schedule_predictability: {
+        advance_notice: null,
+        shift_swapping_allowed: null,
+        self_scheduling: null,
+        schedule_stability: null,
+      },
+      flexibility: {
+        remote_allowed: null,
+        remote_frequency: null,
+        remote_details: null,
+        async_friendly: null,
+        core_hours: null,
+        location_flexibility: null,
+      },
+      time_off: {
+        pto_days: null,
+        pto_structure: null,
+        sick_days: null,
+        sick_days_separate: null,
+        parental_leave: null,
+        bereavement_policy: null,
+        mental_health_days: null,
+        sabbatical_available: null,
+        sabbatical_details: null,
+      },
+      commute_reality: {
+        address: null,
+        neighborhood_description: null,
+        public_transit_proximity: null,
+        parking_situation: null,
+        bike_friendly: null,
+        bike_storage: null,
+      },
+      break_reality: {
+        paid_breaks: null,
+        break_duration: null,
+        break_flexibility: null,
+      },
+      overtime_reality: {
+        overtime_expected: null,
+        overtime_voluntary: null,
+        overtime_notice: null,
+        crunch_periods: null,
+      },
+    },
+
+    // =========================================================================
+    // ENVIRONMENT
+    // =========================================================================
+    environment: {
+      physical_space: {
+        type: null,
+        description: null,
+        size_context: null,
+      },
+      workspace_quality: {
+        dedicated_workspace: null,
+        workspace_description: null,
+        equipment_quality: null,
+        natural_light: null,
+        noise_level: null,
+        temperature_control: null,
+      },
+      amenities: {
+        kitchen: null,
+        kitchen_quality: null,
+        bathroom_quality: null,
+        lounge_area: null,
+        outdoor_space: null,
+        gym: null,
+        showers: null,
+        nap_room: null,
+        mother_room: null,
+      },
+      safety_and_comfort: {
+        physical_demands: null,
+        safety_measures: null,
+        dress_code: null,
+        uniform_provided: null,
+        uniform_cost: null,
+      },
+      accessibility: {
+        wheelchair_accessible: null,
+        accessibility_details: null,
+        accommodation_friendly: null,
+      },
+      neighborhood: {
+        area_description: null,
+        food_options_nearby: null,
+        safety_perception: null,
+        vibe: null,
+      },
+    },
+
+    // =========================================================================
+    // HUMANS AND CULTURE
+    // =========================================================================
+    humans_and_culture: {
+      team_composition: {
+        team_size: null,
+        reporting_to: null,
+        direct_reports: null,
+        cross_functional_interaction: null,
+      },
+      team_demographics: {
+        experience_distribution: null,
+        tenure_distribution: null,
+        age_range_vibe: null,
+        diversity_description: null,
+      },
+      management_style: {
+        manager_description: null,
+        management_approach: null,
+        feedback_frequency: null,
+        one_on_ones: null,
+        one_on_one_frequency: null,
+      },
+      social_dynamics: {
+        team_bonding: null,
+        social_pressure: null,
+        after_work_culture: null,
+        remote_social: null,
+      },
+      communication_culture: {
+        primary_channels: null,
+        meeting_load: null,
+        meeting_description: null,
+        async_vs_sync: null,
+        documentation_culture: null,
+      },
+      conflict_and_feedback: {
+        feedback_culture: null,
+        conflict_resolution: null,
+        psychological_safety: null,
+      },
+      values_in_practice: {
+        stated_values: null,
+        values_evidence: null,
+        decision_making_style: null,
+      },
+      turnover_context: {
+        average_tenure: null,
+        why_people_stay: null,
+        why_people_leave: null,
+        recent_departures_context: null,
+      },
+    },
+
+    // =========================================================================
+    // GROWTH TRAJECTORY
+    // =========================================================================
+    growth_trajectory: {
+      learning_opportunities: {
+        mentorship_available: null,
+        mentorship_structure: null,
+        learning_from_whom: null,
+        skill_development: null,
+        exposure_to: null,
+      },
+      formal_development: {
+        training_provided: null,
+        training_description: null,
+        certifications_supported: null,
+        certifications_details: null,
+        conferences: null,
+        conference_budget: null,
+        education_reimbursement: null,
+        education_details: null,
+      },
+      career_path: {
+        promotion_path: null,
+        promotion_timeline_typical: null,
+        promotion_criteria: null,
+        internal_mobility: null,
+      },
+      growth_signals: {
+        company_growth_rate: null,
+        new_roles_being_created: null,
+        expansion_plans: null,
+      },
+      skill_building: {
+        technologies_used: null,
+        tools_used: null,
+        processes_learned: null,
+        transferable_skills: null,
+      },
+      leadership_opportunities: {
+        lead_projects: null,
+        manage_others: null,
+        client_facing: null,
+        decision_authority: null,
+      },
+    },
+
+    // =========================================================================
+    // STABILITY SIGNALS
+    // =========================================================================
+    stability_signals: {
+      company_health: {
+        company_age: null,
+        company_stage: null,
+        funding_status: null,
+        revenue_trend: null,
+        recent_layoffs: null,
+        layoff_context: null,
+      },
+      job_security: {
+        position_type: null,
+        contract_length: null,
+        conversion_possibility: null,
+        probation_period: null,
+      },
+      benefits_security: {
+        health_insurance: null,
+        health_insurance_details: null,
+        health_insurance_start: null,
+        dental: null,
+        vision: null,
+        life_insurance: null,
+        disability: null,
+        retirement_plan: null,
+        retirement_match: null,
+        retirement_vesting: null,
+      },
+      legal_protections: {
+        employment_type: null,
+        union: null,
+        union_details: null,
+        at_will: null,
+        contract_terms: null,
+      },
+    },
+
+    // =========================================================================
+    // ROLE REALITY
+    // =========================================================================
+    role_reality: {
+      day_to_day: {
+        typical_day_description: null,
+        variety_level: null,
+        task_breakdown: null,
+      },
+      autonomy: {
+        decision_authority: null,
+        supervision_level: null,
+        creativity_allowed: null,
+        process_flexibility: null,
+      },
+      workload: {
+        intensity: null,
+        workload_predictability: null,
+        staffing_level: null,
+        support_available: null,
+      },
+      resources_and_tools: {
+        tools_provided: null,
+        tools_quality: null,
+        budget_authority: null,
+        resource_constraints: null,
+      },
+      success_metrics: {
+        how_measured: null,
+        performance_visibility: null,
+        feedback_loop: null,
+      },
+      pain_points_honesty: {
+        challenges: null,
+        frustrations_common: null,
+        what_changed_would_help: null,
+      },
+      impact_visibility: {
+        who_benefits: null,
+        impact_tangibility: null,
+        recognition_culture: null,
+      },
+    },
+
+    // =========================================================================
+    // UNIQUE VALUE
+    // =========================================================================
+    unique_value: {
+      hidden_perks: {
+        list: null,
+      },
+      convenience_factors: {
+        list: null,
+      },
+      lifestyle_enablers: {
+        list: null,
+      },
+      status_signals: {
+        brand_value: null,
+        network_access: null,
+        credential_value: null,
+      },
+      personal_meaning: {
+        mission_connection: null,
+        impact_story: null,
+        pride_factor: null,
+      },
+      rare_offerings: {
+        what_competitors_dont_have: null,
+        what_makes_this_special: null,
+      },
+    },
+
+    // =========================================================================
+    // EXTRACTION METADATA
+    // =========================================================================
+    extraction_metadata: {
+      source_text: null,
+      extraction_confidence: null,
+      fields_inferred: null,
+      fields_missing: null,
+      clarifying_questions: null,
+      industry_detected: null,
+      role_category_detected: null,
+      seniority_detected: null,
+      role_archetype: null,
+    },
   };
 }
