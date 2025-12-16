@@ -69,6 +69,7 @@ export default function ChatInterface({
   const [currentPhase, setCurrentPhase] = useState("opening");
   const [contextExplanation, setContextExplanation] = useState("");
   const [completionPercentage, setCompletionPercentage] = useState(0);
+  const [isComplete, setIsComplete] = useState(false);
 
   const inputRef = useRef(null);
   const initRef = useRef(false);
@@ -171,6 +172,10 @@ export default function ChatInterface({
         }
         if (response.ui_tool) {
           setCurrentTool(response.ui_tool);
+        }
+        // Check if interview is complete
+        if (response.is_complete || response.interview_phase === "complete") {
+          setIsComplete(true);
         }
       } catch (err) {
         console.error("Failed to send message:", err);
@@ -329,6 +334,69 @@ export default function ChatInterface({
               className="rounded-xl border border-slate-200 px-6 py-2.5 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-50"
             >
               Go Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================================================
+  // INTERVIEW COMPLETE STATE
+  // ==========================================================================
+
+  if (isComplete) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F8F7FC] p-4">
+        <div className="w-full max-w-lg rounded-2xl border border-green-100 bg-white p-8 text-center shadow-xl shadow-slate-200/50">
+          {/* Success Icon */}
+          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-500 shadow-lg shadow-green-500/25">
+            <CheckIcon className="h-10 w-10 text-white" />
+          </div>
+
+          {/* Title & Message */}
+          <h2 className="mb-3 text-2xl font-bold text-slate-900">
+            Interview Complete!
+          </h2>
+          <p className="mb-2 text-base text-slate-600">
+            {currentMessage || "Great work! We've captured everything we need about this role."}
+          </p>
+          <p className="mb-8 text-sm text-slate-400">
+            Your Golden Schema has been saved and is ready to use.
+          </p>
+
+          {/* Progress Summary */}
+          <div className="mb-8 rounded-xl bg-slate-50 p-4">
+            <div className="flex items-center justify-center gap-4">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-green-600">
+                  {completionPercentage}%
+                </div>
+                <div className="text-xs text-slate-400">Complete</div>
+              </div>
+              <div className="h-10 w-px bg-slate-200" />
+              <div className="text-center">
+                <div className="text-3xl font-bold text-primary-600">
+                  {STEPS.length}
+                </div>
+                <div className="text-xs text-slate-400">Phases Covered</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-xl hover:shadow-primary-500/30"
+            >
+              Go to Dashboard
+            </button>
+            <button
+              onClick={() => router.push("/wizard")}
+              className="rounded-xl border border-slate-200 px-8 py-3 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300"
+            >
+              Create Job Posting
             </button>
           </div>
         </div>

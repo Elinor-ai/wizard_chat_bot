@@ -567,9 +567,12 @@ export class GoldenInterviewerService {
     };
 
     // Check if interview is complete
+    const isInterviewComplete = parsed.interview_phase === "complete";
+
     if (
       parsed.completion_percentage >= 95 ||
-      parsed.interview_phase === "closing"
+      parsed.interview_phase === "closing" ||
+      isInterviewComplete
     ) {
       session.metadata.completionPercentage = parsed.completion_percentage;
     }
@@ -580,6 +583,31 @@ export class GoldenInterviewerService {
       sessionId,
       session,
     });
+
+    // Auto-complete session if interview is done
+    if (isInterviewComplete) {
+      try {
+        await repoCompleteSession({
+          firestore: this.firestore,
+          session,
+        });
+
+        this.logger.info(
+          {
+            sessionId,
+            turnCount: session.turnCount,
+            completion: session.metadata.completionPercentage,
+          },
+          "golden-interviewer.session.auto_completed"
+        );
+      } catch (completeError) {
+        this.logger.error(
+          { sessionId, err: completeError },
+          "golden-interviewer.session.auto_complete_failed"
+        );
+        // Don't throw - return success with isComplete flag anyway
+      }
+    }
 
     this.logger.info(
       {
@@ -610,6 +638,8 @@ export class GoldenInterviewerService {
         total_skips: friction.totalSkips,
         current_strategy: friction.currentStrategy,
       },
+      // Flag for frontend to show completion UI
+      is_complete: isInterviewComplete,
     };
   }
 
