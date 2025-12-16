@@ -48,10 +48,11 @@ export const GoldenInterviewerOutputSchema = z.object({
     ),
   message: z
     .string()
-    .describe("Conversational response to the user (1-3 sentences)"),
-  extraction: ExtractionSchema.optional().describe(
-    "Data extracted from user's input"
-  ),
+    .describe(
+      "Short, punchy response (MAX 1-2 sentences). " +
+        "Acknowledge briefly, then ask the question. " +
+        "Example: 'Got it. For the base rate, what is the competitive range in your market?'"
+    ),
   ui_tool: UIToolSchema.optional().describe(
     "The UI component to display for the next question"
   ),

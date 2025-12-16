@@ -310,7 +310,8 @@ function buildFrictionContextSection(frictionState) {
     return "";
   }
 
-  const { consecutiveSkips, totalSkips, currentStrategy, skippedField } = frictionState;
+  const { consecutiveSkips, totalSkips, currentStrategy, skippedField } =
+    frictionState;
 
   return `## ⚠️ FRICTION AWARENESS
 
@@ -349,25 +350,37 @@ When the skipped field involves: [compensation, equity, revenue, turnover]
 - Use \`range_slider\` or \`multi_select\` instead of open text
 
 ### Strategy-Specific Instructions:
-${currentStrategy === "education" ? `
+${
+  currentStrategy === "education"
+    ? `
 **CURRENT: EDUCATION MODE**
 - Your primary goal is to EXPLAIN VALUE, not extract data
 - Lead with "Here's why this matters to candidates..."
 - Share a brief insight about what job seekers care about
 - End with a soft invitation: "Would you like to share anything about this?"
-` : ""}${currentStrategy === "low_disclosure" ? `
+`
+    : ""
+}${
+    currentStrategy === "low_disclosure"
+      ? `
 **CURRENT: LOW DISCLOSURE MODE**
 - Offer RANGES instead of exact values
 - Use yes/no or multiple choice instead of open text
 - Example: "Would you say compensation is below average, competitive, or above market?"
 - Make it easy to answer without revealing sensitive specifics
-` : ""}${currentStrategy === "defer" ? `
+`
+      : ""
+  }${
+    currentStrategy === "defer"
+      ? `
 **CURRENT: DEFER MODE**
 - This topic is causing too much friction
 - Acknowledge: "We can skip this section entirely - no problem at all."
 - Move to a completely different, easier category
 - Do NOT return to this topic unless the user brings it up
-` : ""}
+`
+      : ""
+  }
 `;
 }
 
@@ -399,10 +412,10 @@ ${companyContext}${userContext}${frictionContext}You are an expert recruiter and
 
 ## YOUR CONVERSATIONAL STYLE
 
-- **Natural & Flowing**: This is a chat, not an interrogation. Pivot naturally based on what they say.
-- **Curious & Probing**: When they mention something interesting, dig deeper. "You mentioned free meals - tell me more about that."
-- **Efficient**: Don't ask for information you can reasonably infer. (e.g., If they are a coffee shop, don't ask if work is on-site).
-- **Value-Focused**: Always be thinking "What would make a candidate excited about this?"
+- **Concise & Direct**: MAXIMUM 2 sentences. Cut the fluff. Do not explain the user's own job to them (e.g., "Shift Managers run the show").
+- **Fast-Paced**: Acknowledge -> Pivot -> Ask.
+- **No Cheerleading**: Avoid generic praise like "That sounds amazing!" or "Great choice!".
+- **Value-Focused**: If you must explain "why", use the 'context_explanation' field, NOT the main message.
 
 ## CORE RESPONSIBILITIES
 
@@ -692,27 +705,32 @@ ${frictionState.consecutiveSkips === 1 ? "→ Acknowledge gracefully and pivot t
     : "";
 
   // Build the context-aware fields section
-  const relevantFieldsSection = missing.length > 0
-    ? `### Context-Relevant Fields for This Role
+  const relevantFieldsSection =
+    missing.length > 0
+      ? `### Context-Relevant Fields for This Role
 
 **Detected Role Type:** ${archetypeLabel}
 
 Based on this role type, focus on these areas (in priority order):
-${missing.slice(0, 10).map((f, i) => `${i + 1}. ${f}`).join("\n")}
+${missing
+  .slice(0, 10)
+  .map((f, i) => `${i + 1}. ${f}`)
+  .join("\n")}
 
 These fields are contextually appropriate for a ${archetypeLabel} position.`
-    : `### Fields Status
+      : `### Fields Status
 Most relevant fields have been collected for this ${archetypeLabel} role.`;
 
   // Build the skip fields section (explicit permission to ignore)
-  const skipFieldsSection = skipReasons.length > 0
-    ? `### Fields to SKIP for This Role Type
+  const skipFieldsSection =
+    skipReasons.length > 0
+      ? `### Fields to SKIP for This Role Type
 
 **DO NOT ask about these fields** - they are not relevant for a ${archetypeLabel}:
 ${skipReasons.map(({ field, reason }) => `- ~~${field}~~ — ${reason}`).join("\n")}
 
 It is BETTER to leave these fields empty than to ask awkward, irrelevant questions.`
-    : "";
+      : "";
 
   return `## Current Turn: ${turnNumber}
 
@@ -742,14 +760,18 @@ ${relevantFieldsSection}
 ${skipFieldsSection}
 
 ### Your Task
-${frictionState?.isSkip ? `1. **HANDLE THE SKIP** according to the Friction Protocol above.
+${
+  frictionState?.isSkip
+    ? `1. **HANDLE THE SKIP** according to the Friction Protocol above.
 2. Do NOT re-ask the same question in the same way.
 3. Select a different topic or offer a low-disclosure alternative.
-4. Generate a supportive 'context_explanation'.` : `1. Extract new info & update schema.
+4. Generate a supportive 'context_explanation'.`
+    : `1. Extract new info & update schema.
 2. Acknowledge user input conversationally.
 3. Select the next best UI tool & question from the **Context-Relevant Fields** list.
 4. **CRITICAL**: Generate a 'context_explanation' based on the 'Why It Matters' column for the NEXT question you are asking.
-5. **REMEMBER**: Skip any fields in the "Fields to SKIP" section - do not ask about them.`}
+5. **REMEMBER**: Skip any fields in the "Fields to SKIP" section - do not ask about them.`
+}
 
 Respond in JSON.`;
 }
@@ -858,7 +880,8 @@ function identifyMissingFields(schema, roleArchetype = null) {
   ];
 
   // Auto-detect archetype if not provided
-  const detectedArchetype = roleArchetype || detectRoleArchetypeFromSchema(schema);
+  const detectedArchetype =
+    roleArchetype || detectRoleArchetypeFromSchema(schema);
 
   // Filter to only missing fields
   const missingFields = allPriorityFields.filter((path) => {
@@ -867,7 +890,10 @@ function identifyMissingFields(schema, roleArchetype = null) {
   });
 
   // Filter by archetype relevance
-  const { relevant, skipped } = filterFieldsByArchetype(missingFields, detectedArchetype);
+  const { relevant, skipped } = filterFieldsByArchetype(
+    missingFields,
+    detectedArchetype
+  );
 
   return {
     missing: relevant,
@@ -892,7 +918,8 @@ function detectRoleArchetypeFromSchema(schema) {
   // Extract signals from schema for detection
   const roleTitle = schema?.extraction_metadata?.role_category_detected || "";
   const industry = schema?.extraction_metadata?.industry_detected || "";
-  const payFrequency = schema?.financial_reality?.base_compensation?.pay_frequency || null;
+  const payFrequency =
+    schema?.financial_reality?.base_compensation?.pay_frequency || null;
   const remoteAllowed = schema?.time_and_life?.flexibility?.remote_allowed;
   const hasEquity = schema?.financial_reality?.equity?.offered;
 
