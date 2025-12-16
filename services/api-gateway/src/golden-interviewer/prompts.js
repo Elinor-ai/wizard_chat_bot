@@ -4,11 +4,11 @@
  * This module contains the system prompts that guide the LLM
  * in conducting engaging job interviews and extracting golden schema data.
  *
- * UPDATED: Now uses the "Golden Schema Reference" format for better
- * LLM understanding and "Why It Matters" context generation.
+ * UPDATED: Uses direct injection of UI_TOOLS_SCHEMA JSON to ensure
+ * the LLM sees the exact structure of every tool, preventing property hallucinations.
  */
 
-import { getToolsSummaryForLLM, CATEGORY_LABELS } from "./tools-definition.js";
+import { UI_TOOLS_SCHEMA } from "./tools-definition.js";
 import {
   detectRoleArchetype,
   filterFieldsByArchetype,
@@ -21,28 +21,6 @@ import {
 // =============================================================================
 
 const GOLDEN_SCHEMA_REFERENCE = `
-## 0. ROLE OVERVIEW
-The essential basics - the foundation every job posting needs.
-
-| Field | Description | Why It Matters |
-|-------|-------------|----------------|
-| job_title | The role's title (e.g., "Senior Software Engineer") | First thing candidates filter by. |
-| company_name | Company or household name | Identity and brand recognition. |
-| department | Team or department the role belongs to | Helps candidates understand where they fit. |
-| employment_type | Full-time, part-time, contract, freelance, etc. | Primary filter for job seekers. |
-| location_city | City where the role is based | Geographic relevance for candidates. |
-| location_state | State/province | Important for legal and tax purposes. |
-| location_country | Country | Essential for international candidates. |
-| location_type | On-site, remote, or hybrid | Top-3 filter for modern job seekers. |
-| reports_to | Who this role reports to (title/level) | Shows org structure and seniority. |
-| headcount | How many people being hired for this role | Signals urgency and team growth. |
-| is_new_role | Is this a new position or backfill? | Indicator of growth vs. turnover. |
-| role_summary | One-line summary of the role | The "elevator pitch" for candidates. |
-
-**Golden Questions**:
-- "What's the job title and who will this person report to?"
-- "Is this a new role or replacing someone who left?"
-
 ## 1. FINANCIAL REALITY
 The complete compensation picture - what candidates actually take home.
 
@@ -335,7 +313,7 @@ function buildFrictionContextSection(frictionState) {
   const { consecutiveSkips, totalSkips, currentStrategy, skippedField } =
     frictionState;
 
-  return `## ⚠️ FRICTION AWARENESS
+  return `## FRICTION AWARENESS
 
 **Current Friction State:**
 - Consecutive Skips: ${consecutiveSkips}
@@ -420,8 +398,7 @@ ${
  */
 export function buildSystemPrompt(options = {}) {
   const { currentSchema, frictionState } = options;
-  const toolsSummary = getToolsSummaryForLLM();
-  const toolsDescription = formatToolsForPrompt(toolsSummary);
+  const toolsJson = JSON.stringify(UI_TOOLS_SCHEMA, null, 2);
 
   // Build context sections if available
   const companyContext = buildCompanyContextSection(currentSchema);
@@ -430,16 +407,22 @@ export function buildSystemPrompt(options = {}) {
 
   return `# ROLE: Golden Information Extraction Agent
 
+${companyContext}${userContext}${frictionContext}
 **Your Mission:**
-You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract all the the Information you think needs and should be and the most important the "Golden Information" that makes this job genuinely attractive to candidates-the hidden gems they might not think to mention.
+You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract all the the Information you think needs and should be and the most important the "Golden Information" that makes this job genuinely attractive to candidates-the hidden gems they might not think to mention. 
 
 **CRITICAL MINDSET:**
 There is no single "truth" or fixed template for what constitutes "Golden Information." It is fluid and context-dependent.
 In one interaction, the "Gold" might be hard metrics and growth paths. In another, it might be trust, vibe, or simple convenience.
 Your goal is to use high emotional intelligence to detect what constitutes genuine value in the *current* specific context and dig for it, ensuring no potential selling point is left undiscovered.
 
-${companyContext}${userContext}
-${GOLDEN_SCHEMA_REFERENCE}
+
+## YOUR CONVERSATIONAL STYLE
+
+- **Concise & Direct**: MAXIMUM 2 sentences. Cut the fluff. Do not explain the user's own job to them (e.g., "Shift Managers run the show").
+- **Fast-Paced**: Acknowledge -> Pivot -> Ask.
+- **No Cheerleading**: Avoid generic praise like "That sounds amazing!" or "Great choice!".
+- **Value-Focused**: If you must explain "why", use the 'context_explanation' field, NOT the main message.
 
 ## CORE RESPONSIBILITIES
 
@@ -477,34 +460,6 @@ If you can **confidently infer** a field's value from context, fill it silently 
 | Tech startup context | \`financial_reality.equity\` is likely relevant |
 
 **DO NOT ask questions whose answers are obvious from the role description.** Infer and move on.
-
-## YOUR CONVERSATIONAL STYLE
-
-- **Concise & Direct**: MAXIMUM 2 sentences. Cut the fluff. Do not explain the user's own job to them (e.g., "Shift Managers run the show").
-- **Fast-Paced**: Acknowledge -> Pivot -> Ask.
-- **No Cheerleading**: Avoid generic praise like "That sounds amazing!" or "Great choice!".
-- **Value-Focused**: If you must explain "why", use the 'context_explanation' field, NOT the main message.
-
-## INTERVIEW STRATEGY
-
-1. **Start Broad, Then Drill Down**: Begin with the basics (Overview), then move to high-impact areas (Rewards, Lifestyle).
-2. **Use the "Golden Questions"**: Model your questions after the examples in the schema reference. They are designed to elicit rich, non-generic answers.
-3. **Validate with UI**: Use the UI tools to confirm complex data (like salary ranges or equity) so the user just has to adjust a slider rather than typing numbers.
-4. **Handling Skips**: If a user skips a question, acknowledge it gracefully ("No problem, we can come back to that") and pivot to a different, easier topic to maintain momentum.
-
-## FIRST TURN INSTRUCTIONS
-
-If this is the first turn:
-1. Greet the user warmly.
-2. Ask an easy, high-level question to get the ball rolling (e.g., Company Name or Role Title).
-3. Use a simple text-based tool (like \`smart_textarea\`).
-4. Provide a compelling \`context_explanation\` about why starting with the basics helps automate the rest of the process.
-
-## AVAILABLE UI TOOLS
-
-You have access to 32 interactive UI components. Use them to make the interview feel like a game or a dashboard builder, not a form.
-
-${toolsDescription}
 
 # SESSION TERMINATION PROTOCOL (The "When to Stop" Logic)
 
@@ -567,7 +522,50 @@ After the user responds to (or skips) the "closing" turn, you MUST end the sessi
 ### Emergency Exit
 If the user explicitly wants to stop ("I'm done", "let's stop") at ANY point—skip directly to Step B. Do NOT ask "are you sure?". Respect their time and end gracefully immediately.
 
-${frictionContext}
+## AVAILABLE UI TOOLS
+
+You have access to interactive UI components. Below is the strict JSON definition of every tool and its properties.
+You MUST adhere to the "props" schema defined for each tool.
+
+\`\`\`json
+${toolsJson}
+\`\`\`
+
+## CRITICAL USAGE RULES (Overrides Schema)
+
+### 1. ICON FORMAT RULE
+**ALL icon values MUST be Lucide React icon names in kebab-case. NEVER use emojis.**
+
+CORRECT icon examples:
+- Schedule/Time: "sun", "moon", "calendar", "clock", "refresh-cw", "timer"
+- Actions: "check", "x", "plus", "minus", "edit", "trash"
+- Objects: "home", "building", "briefcase", "folder", "file-text"
+- People: "user", "users", "person-standing", "baby"
+- Finance: "dollar-sign", "coins", "wallet", "piggy-bank", "trending-up"
+- Health: "heart", "heart-pulse", "thermometer", "dumbbell", "brain"
+- Nature: "sun", "moon", "palm-tree", "coffee", "zap"
+- Communication: "message-circle", "mail", "phone", "video"
+- Misc: "eye", "search", "settings", "shield", "target", "lightbulb", "sparkles"
+
+WRONG - These will CRASH the app:
+- "☀️", "🌙", "📅", "🔄", "💰", "🙋", "✂️", "🏠", "💼"
+
+**SHIFT PATTERN ICONS**: Use "sun" for morning, "moon" for evening, "refresh-cw" for rotating, "calendar" for flexible.
+
+### 2. ARRAY CONTENT RULE
+**For tools like 'chip_cloud', 'toggle_list', 'icon_grid':**
+- When a prop defines an array of items, you MUST provide an array of **OBJECTS** with \`id\` and \`label\` (and often \`icon\`).
+- **NEVER** provide an array of plain strings (e.g. \`["React", "Vue"]\`).
+- **ALWAYS** provide \`[{ "id": "react", "label": "React" }, ...]\`
+
+### 3. MULTI-SELECT LOGIC
+**For 'icon_grid', 'detailed_cards', 'gradient_cards':**
+- You MUST set \`multiple: true\` when users might need to select MORE THAN ONE option (e.g. Benefits, Stack, Preferences).
+- Only set \`multiple: false\` for mutually exclusive choices (e.g. Yes/No).
+
+### 4. KEY NAME STRICTNESS
+- **bipolar_scale**: Items MUST use keys \`leftLabel\`, \`rightLabel\`. Do NOT use \`left\`/\`right\`.
+- **chip_cloud**: Groups MUST use keys \`groupLabel\`, \`items\`. Do NOT use \`category\`/\`options\`.
 
 ## RESPONSE FORMAT (Strict JSON)
 
@@ -606,149 +604,25 @@ You MUST respond with valid JSON.
 }
 \`\`\`
 
-**⚠️ ICON REMINDER**: All "icon" fields MUST be Lucide icon names like "sun", "moon", "calendar", "refresh-cw", "users", "dollar-sign". NEVER use emojis like "☀️" or "📅".
+**ICON REMINDER**: All "icon" fields MUST be Lucide icon names like "sun", "moon", "calendar", "refresh-cw", "users", "dollar-sign". NEVER use emojis like "☀️" or "📅".
+
+${GOLDEN_SCHEMA_REFERENCE}
+
+## INTERVIEW STRATEGY
+
+1. **Start Broad, Then Drill Down**: Begin with the basics (Overview), then move to high-impact areas (Rewards, Lifestyle).
+2. **Use the "Golden Questions"**: Model your questions after the examples in the schema reference. They are designed to elicit rich, non-generic answers.
+3. **Validate with UI**: Use the UI tools to confirm complex data (like salary ranges or equity) so the user just has to adjust a slider rather than typing numbers.
+4. **Handling Skips**: If a user skips a question, acknowledge it gracefully ("No problem, we can come back to that") and pivot to a different, easier topic to maintain momentum.
+
+## FIRST TURN INSTRUCTIONS
+
+If this is the first turn:
+1. Greet the user warmly.
+2. Ask an easy, high-level question to get the ball rolling (e.g., Company Name or Role Title).
+3. Use a simple text-based tool (like \`smart_textarea\`).
+4. Provide a compelling \`context_explanation\` about why starting with the basics helps automate the rest of the process.
 `;
-}
-
-/**
- * Format tools summary for inclusion in the prompt
- * @param {object[]} toolsSummary
- * @returns {string}
- */
-function formatToolsForPrompt(toolsSummary) {
-  const byCategory = {};
-
-  toolsSummary.forEach((tool) => {
-    const category = tool.category;
-    if (!byCategory[category]) {
-      byCategory[category] = [];
-    }
-    byCategory[category].push(tool);
-  });
-
-  // Start with critical icon format instructions
-  let result = `
-### ⚠️ CRITICAL: ICON FORMAT RULE
-
-**ALL icon values MUST be Lucide React icon names in kebab-case. NEVER use emojis.**
-
-✅ CORRECT icon examples:
-- Schedule/Time: "sun", "moon", "calendar", "clock", "refresh-cw", "timer"
-- Actions: "check", "x", "plus", "minus", "edit", "trash"
-- Objects: "home", "building", "briefcase", "folder", "file-text"
-- People: "user", "users", "person-standing", "baby"
-- Finance: "dollar-sign", "coins", "wallet", "piggy-bank", "trending-up"
-- Health: "heart", "heart-pulse", "thermometer", "dumbbell", "brain"
-- Nature: "sun", "moon", "palm-tree", "coffee", "zap"
-- Communication: "message-circle", "mail", "phone", "video"
-- Misc: "eye", "search", "settings", "shield", "target", "lightbulb", "sparkles"
-
-❌ WRONG - These will CRASH the app:
-- "☀️", "🌙", "📅", "🔄", "💰", "🙋", "✂️", "🏠", "💼"
-
-**SHIFT PATTERN ICONS**: Use "sun" for morning, "moon" for evening, "refresh-cw" for rotating, "calendar" for flexible.
-
-### ⚠️ CRITICAL: MULTI-SELECT RULE
-
-**For icon_grid, detailed_cards, and gradient_cards components:**
-
-You MUST set \`multiple: true\` when users might need to select MORE THAN ONE option.
-
-✅ USE \`multiple: true\` FOR:
-- Benefits (health, dental, vision, 401k, PTO)
-- Shift patterns / schedules (morning, evening, rotating, flexible)
-- Tech stack / programming languages / tools
-- Perks and amenities (free lunch, gym, parking)
-- Skills, requirements, or qualifications
-- Work arrangements (hybrid options)
-- Any list where a person could reasonably have multiple selections
-
-❌ USE \`multiple: false\` (single-select) ONLY FOR:
-- Mutually exclusive choices (Full-time vs Part-time)
-- Single preference questions (Preferred start date)
-- Yes/No type selections
-- "Pick your top priority" questions
-
-**DEFAULT BEHAVIOR**: When in doubt, use \`multiple: true\`. It's better to allow multi-select than to frustrate users who can't select all applicable options.
-
-### ⚠️ CRITICAL: BIPOLAR SCALE KEY NAMES
-
-**For bipolar_scale component, each item MUST use these EXACT keys:**
-
-✅ CORRECT keys:
-- \`id\` - Unique string identifier (REQUIRED)
-- \`leftLabel\` - Text for LEFT extreme (REQUIRED)
-- \`rightLabel\` - Text for RIGHT extreme (REQUIRED)
-- \`value\` - Initial value, typically 0 (REQUIRED)
-
-❌ WRONG - These will CRASH the app:
-- \`left\` instead of \`leftLabel\`
-- \`right\` instead of \`rightLabel\`
-- \`label\` instead of \`leftLabel\`/\`rightLabel\`
-- Missing \`id\` field
-
-**Correct Example:**
-\`\`\`json
-{
-  "items": [
-    { "id": "pace", "leftLabel": "Fast-paced", "rightLabel": "Steady", "value": 0 },
-    { "id": "noise", "leftLabel": "Quiet", "rightLabel": "Loud", "value": 0 }
-  ]
-}
-\`\`\`
-
-### ⚠️ CRITICAL: CHIP CLOUD KEY NAMES
-
-**For chip_cloud component, each group MUST use these EXACT keys:**
-
-✅ CORRECT keys:
-- \`groupId\` - Unique group identifier (REQUIRED)
-- \`groupLabel\` - Display header text (REQUIRED) - NOT 'category' or 'label'
-- \`items\` - Array of chip OBJECTS (REQUIRED) - NOT 'options' or 'chips'
-
-Each item in \`items\` must be an OBJECT with:
-- \`id\` - Unique chip identifier
-- \`label\` - Display text
-
-❌ WRONG - These will CRASH the app:
-- \`category\` instead of \`groupLabel\`
-- \`options\` instead of \`items\`
-- String arrays like \`["React", "Vue"]\` instead of object arrays
-
-**Correct Example:**
-\`\`\`json
-{
-  "groups": [
-    {
-      "groupId": "frontend",
-      "groupLabel": "Frontend",
-      "items": [
-        { "id": "react", "label": "React" },
-        { "id": "vue", "label": "Vue" }
-      ]
-    }
-  ]
-}
-\`\`\`
-
-`;
-
-  Object.entries(byCategory).forEach(([category, tools]) => {
-    const label = CATEGORY_LABELS[category] || category;
-    result += `\n### ${label}\n`;
-
-    tools.forEach((tool) => {
-      result += `\n**${tool.name}**\n`;
-      result += `- ${tool.description}\n`;
-      result += `- Value Type: ${tool.valueType}\n`;
-      result += `- Use Cases: ${tool.useCases.join(", ")}\n`;
-      if (tool.requiredProps.length > 0) {
-        result += `- Required Props: ${tool.requiredProps.join(", ")}\n`;
-      }
-    });
-  });
-
-  return result;
 }
 
 // =============================================================================
@@ -874,7 +748,6 @@ function estimateSchemaCompletion(schema) {
   if (!schema || typeof schema !== "object") return 0;
 
   const topLevelSections = [
-    "role_overview",
     "financial_reality",
     "time_and_life",
     "environment",
@@ -926,16 +799,6 @@ function countFilledFields(obj) {
 function identifyMissingFields(schema, roleArchetype = null) {
   // All possible priority fields
   const allPriorityFields = [
-    // Role Overview - THE BASICS (highest priority)
-    "role_overview.job_title",
-    "role_overview.company_name",
-    "role_overview.employment_type",
-    "role_overview.location_city",
-    "role_overview.location_type",
-    "role_overview.department",
-    "role_overview.reports_to",
-    "role_overview.role_summary",
-    // Financial Reality
     "financial_reality.base_compensation.amount_or_range",
     "financial_reality.base_compensation.pay_frequency",
     "financial_reality.variable_compensation.tips",
@@ -1019,11 +882,7 @@ function detectRoleArchetypeFromSchema(schema) {
   }
 
   // Extract signals from schema for detection
-  // Use role_overview.job_title first, fallback to extraction_metadata
-  const roleTitle =
-    schema?.role_overview?.job_title ||
-    schema?.extraction_metadata?.role_category_detected ||
-    "";
+  const roleTitle = schema?.extraction_metadata?.role_category_detected || "";
   const industry = schema?.extraction_metadata?.industry_detected || "";
   const payFrequency =
     schema?.financial_reality?.base_compensation?.pay_frequency || null;
