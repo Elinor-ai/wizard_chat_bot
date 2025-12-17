@@ -18,7 +18,7 @@ export default function CounterStack({
   title,
   totalLabel = "Total",
   totalUnit = "days",
-  accentColor = "#8b5cf6"
+  accentColor = "#8b5cf6",
 }) {
   const handleIncrement = (itemId) => {
     const item = items.find((i) => i.id === itemId);
@@ -56,26 +56,21 @@ export default function CounterStack({
 
   return (
     <div className="w-full space-y-4">
-      {title && (
-        <h3 className="text-lg font-semibold text-white">{title}</h3>
-      )}
+      {title && <h3 className="text-lg font-semibold text-black">{title}</h3>}
 
       {/* Total display */}
       <div
         className="p-4 rounded-xl text-center"
         style={{
           background: `linear-gradient(135deg, ${accentColor}20, ${accentColor}05)`,
-          border: `1px solid ${accentColor}30`
+          border: `1px solid ${accentColor}30`,
         }}
       >
-        <div className="text-white/60 text-sm">{totalLabel}</div>
-        <div
-          className="text-4xl font-bold mt-1"
-          style={{ color: accentColor }}
-        >
+        <div className="text-black/60 text-sm">{totalLabel}</div>
+        <div className="text-4xl font-bold mt-1" style={{ color: accentColor }}>
           {total}
         </div>
-        <div className="text-white/40 text-sm">{totalUnit}</div>
+        <div className="text-black/40 text-sm">{totalUnit}</div>
       </div>
 
       {/* Item counters */}
@@ -99,11 +94,11 @@ export default function CounterStack({
 
               {/* Label */}
               <div className="flex-1 min-w-0">
-                <span className="text-white/80 text-sm font-medium">
+                <span className="text-black/80 text-sm font-medium">
                   {item.label}
                 </span>
                 {item.unit && (
-                  <span className="text-white/40 text-xs ml-1">
+                  <span className="text-black/40 text-xs ml-1">
                     ({item.unit})
                   </span>
                 )}
@@ -117,8 +112,8 @@ export default function CounterStack({
                   disabled={!canDecrement}
                   className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold transition-all ${
                     canDecrement
-                      ? "bg-white/10 text-white hover:bg-white/20"
-                      : "bg-white/5 text-white/20 cursor-not-allowed"
+                      ? "bg-white/10 text-black hover:bg-white/20"
+                      : "bg-white/5 text-black/20 cursor-not-allowed"
                   }`}
                 >
                   −
@@ -129,7 +124,8 @@ export default function CounterStack({
                   type="text"
                   value={itemValue}
                   onChange={(e) => handleDirectInput(item.id, e.target.value)}
-                  className="w-14 h-9 rounded-lg bg-white/10 text-white text-center font-bold text-lg focus:outline-none focus:ring-2 transition-all"
+                  className="w-14 h-9 rounded-lg bg-white/10 text-black
+                   text-center font-bold text-lg focus:outline-none focus:ring-2 transition-all"
                   style={{
                     focusRingColor: accentColor,
                   }}
@@ -141,11 +137,11 @@ export default function CounterStack({
                   disabled={!canIncrement}
                   className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold transition-all ${
                     canIncrement
-                      ? "text-white hover:opacity-90"
-                      : "bg-white/5 text-white/20 cursor-not-allowed"
+                      ? "text-black hover:opacity-90"
+                      : "bg-white/5 text-black/20 cursor-not-allowed"
                   }`}
                   style={{
-                    backgroundColor: canIncrement ? accentColor : undefined
+                    backgroundColor: canIncrement ? accentColor : undefined,
                   }}
                 >
                   +
@@ -166,7 +162,7 @@ export default function CounterStack({
             });
             onChange(reset);
           }}
-          className="flex-1 py-2 rounded-lg bg-white/5 text-white/50 text-sm hover:bg-white/10 hover:text-white/70 transition-all"
+          className="flex-1 py-2 rounded-lg bg-white/5 text-black/50 text-sm hover:bg-white/10 hover:text-black/70 transition-all"
         >
           Clear All
         </button>
@@ -181,7 +177,7 @@ export default function CounterStack({
             });
             onChange(defaults);
           }}
-          className="flex-1 py-2 rounded-lg text-white text-sm hover:opacity-90 transition-all"
+          className="flex-1 py-2 rounded-lg text-black text-sm hover:opacity-90 transition-all"
           style={{ backgroundColor: `${accentColor}50` }}
         >
           Set Defaults
@@ -191,7 +187,7 @@ export default function CounterStack({
       {/* Visual breakdown */}
       {total > 0 && (
         <div className="pt-4 border-t border-white/10">
-          <div className="text-white/50 text-xs uppercase tracking-wide mb-2">
+          <div className="text-black/50 text-xs uppercase tracking-wide mb-2">
             Breakdown
           </div>
           <div className="flex h-6 rounded-full overflow-hidden bg-white/10">
@@ -206,7 +202,7 @@ export default function CounterStack({
                   "#3b82f6",
                   "#06b6d4",
                   "#10b981",
-                  "#84cc16"
+                  "#84cc16",
                 ];
 
                 return (
@@ -216,7 +212,7 @@ export default function CounterStack({
                     style={{
                       width: `${percentage}%`,
                       backgroundColor: colors[index % colors.length],
-                      minWidth: percentage > 0 ? "20px" : "0"
+                      minWidth: percentage > 0 ? "20px" : "0",
                     }}
                     title={`${item.label}: ${itemValue}`}
                   >
@@ -239,7 +235,7 @@ export default function CounterStack({
                   "#3b82f6",
                   "#06b6d4",
                   "#10b981",
-                  "#84cc16"
+                  "#84cc16",
                 ];
                 return (
                   <div key={item.id} className="flex items-center gap-1">

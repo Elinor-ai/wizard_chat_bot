@@ -21,6 +21,11 @@ export const SMART_DEFAULTS = {
   icon_grid: {
     columns: 3,
     multiple: false,
+    options: [
+      { id: "option1", label: "Option 1", icon: "circle" },
+      { id: "option2", label: "Option 2", icon: "circle" },
+      { id: "option3", label: "Option 3", icon: "circle" },
+    ],
   },
   circular_gauge: {
     step: 1,
@@ -30,6 +35,11 @@ export const SMART_DEFAULTS = {
   stacked_bar: {
     total: 100,
     autoBalance: true,
+    segments: [
+      { id: "segment1", label: "Segment 1", color: "#6366f1", value: 33 },
+      { id: "segment2", label: "Segment 2", color: "#8b5cf6", value: 33 },
+      { id: "segment3", label: "Segment 3", color: "#a855f7", value: 34 },
+    ],
   },
   segmented_rows: {
     segments: [
@@ -39,16 +49,31 @@ export const SMART_DEFAULTS = {
       { value: "often", label: "Often", color: "#f97316" },
       { value: "always", label: "Always", color: "#ef4444" },
     ],
+    rows: [
+      { id: "row1", label: "Item 1" },
+      { id: "row2", label: "Item 2" },
+      { id: "row3", label: "Item 3" },
+    ],
   },
   toggle_list: {
     variant: "default",
     singleSelect: false,
+    items: [
+      { id: "item1", label: "Item 1", icon: "circle" },
+      { id: "item2", label: "Item 2", icon: "circle" },
+      { id: "item3", label: "Item 3", icon: "circle" },
+    ],
   },
   smart_textarea: {
     rows: 4,
   },
   counter_stack: {
     totalUnit: "days",
+    items: [
+      { id: "item1", label: "Item 1", unit: "days", min: 0, max: 30 },
+      { id: "item2", label: "Item 2", unit: "days", min: 0, max: 30 },
+      { id: "item3", label: "Item 3", unit: "days", min: 0, max: 30 },
+    ],
   },
   gradient_slider: {
     min: 0,
@@ -60,10 +85,22 @@ export const SMART_DEFAULTS = {
   },
   radar_chart: {
     max: 100,
+    dimensions: [
+      { id: "dim1", label: "Dimension 1", value: 50, icon: "circle" },
+      { id: "dim2", label: "Dimension 2", value: 50, icon: "circle" },
+      { id: "dim3", label: "Dimension 3", value: 50, icon: "circle" },
+      { id: "dim4", label: "Dimension 4", value: 50, icon: "circle" },
+      { id: "dim5", label: "Dimension 5", value: 50, icon: "circle" },
+    ],
   },
   detailed_cards: {
     layout: "list",
     multiple: false,
+    options: [
+      { id: "option1", title: "Option 1", description: "Description 1", icon: "circle" },
+      { id: "option2", title: "Option 2", description: "Description 2", icon: "circle" },
+      { id: "option3", title: "Option 3", description: "Description 3", icon: "circle" },
+    ],
   },
   gradient_cards: {
     columns: 2,
