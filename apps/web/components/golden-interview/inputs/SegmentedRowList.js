@@ -1,9 +1,11 @@
 "use client";
 
+import DynamicIcon from "./DynamicIcon";
+
 /**
  * SegmentedRowList - List of rows with segmented controls
  * @param {Object} props
- * @param {Array<{id: string, label: string, icon?: React.ReactNode}>} props.rows
+ * @param {Array<{id: string, label: string, icon?: string}>} props.rows - icon is a kebab-case Lucide icon name
  * @param {Object} props.value - { [rowId]: segmentValue }
  * @param {function} props.onChange - Callback with updated value object
  * @param {Array<{value: string, label: string, color?: string}>} props.segments - Segment options
@@ -19,10 +21,10 @@ export default function SegmentedRowList({
     { value: "rare", label: "Rare", color: "#84cc16" },
     { value: "sometimes", label: "Sometimes", color: "#eab308" },
     { value: "often", label: "Often", color: "#f97316" },
-    { value: "always", label: "Always", color: "#ef4444" }
+    { value: "always", label: "Always", color: "#ef4444" },
   ],
   title,
-  defaultSegment
+  defaultSegment,
 }) {
   const handleSegmentChange = (rowId, segmentValue) => {
     onChange({ ...value, [rowId]: segmentValue });
@@ -35,9 +37,7 @@ export default function SegmentedRowList({
 
   return (
     <div className="w-full space-y-4">
-      {title && (
-        <h3 className="text-lg font-semibold text-white">{title}</h3>
-      )}
+      {title && <h3 className="text-lg font-semibold text-black">{title}</h3>}
 
       {/* Header row with segment labels */}
       <div className="flex items-center gap-3 pb-2 border-b border-white/10">
@@ -46,7 +46,7 @@ export default function SegmentedRowList({
           {segments.map((segment) => (
             <div
               key={segment.value}
-              className="w-16 text-center text-[10px] text-white/50 uppercase tracking-wide"
+              className="w-16 text-center text-[10px] text-black /50 uppercase tracking-wide"
             >
               {segment.label}
             </div>
@@ -66,8 +66,14 @@ export default function SegmentedRowList({
             >
               {/* Row label */}
               <div className="flex-1 flex items-center gap-2 min-w-0">
-                {row.icon && <span className="text-lg">{row.icon}</span>}
-                <span className="text-white/80 text-sm truncate">
+                {row.icon && (
+                  <DynamicIcon
+                    name={row.icon}
+                    size={18}
+                    className="text-black/80 flex-shrink-0"
+                  />
+                )}
+                <span className="text-black/80 text-sm truncate">
                   {row.label}
                 </span>
               </div>
@@ -83,14 +89,14 @@ export default function SegmentedRowList({
                       onClick={() => handleSegmentChange(row.id, segment.value)}
                       className={`w-14 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
                         isSelected
-                          ? "text-white shadow-md"
-                          : "text-white/40 hover:text-white/60 hover:bg-white/5"
+                          ? "text-black shadow-md"
+                          : "text-black/40 hover:text-black/60 hover:bg-white/5"
                       }`}
                       style={{
                         backgroundColor: isSelected ? segment.color : undefined,
                         boxShadow: isSelected
                           ? `0 2px 10px ${segment.color}40`
-                          : undefined
+                          : undefined,
                       }}
                     >
                       {segment.label.charAt(0)}
@@ -111,17 +117,14 @@ export default function SegmentedRowList({
           ).length;
 
           return (
-            <div
-              key={segment.value}
-              className="text-center"
-            >
+            <div key={segment.value} className="text-center">
               <div
                 className="text-lg font-bold"
                 style={{ color: segment.color }}
               >
                 {count}
               </div>
-              <div className="text-[10px] text-white/40">{segment.label}</div>
+              <div className="text-[10px] text-black/40">{segment.label}</div>
             </div>
           );
         })}
@@ -135,7 +138,7 @@ export default function SegmentedRowList({
               className="w-3 h-3 rounded-full"
               style={{ backgroundColor: segment.color }}
             />
-            <span className="text-xs text-white/50">{segment.label}</span>
+            <span className="text-xs text-black/50">{segment.label}</span>
           </div>
         ))}
       </div>

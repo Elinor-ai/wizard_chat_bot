@@ -996,16 +996,28 @@ export const UI_TOOLS_SCHEMA = {
       },
       segments: {
         type: "array",
-        description: "Segment options for each row",
+        description:
+          "Segment options for each row. Each segment color MUST be a hex color code string (e.g., '#22c55e'), NOT a Tailwind class.",
         required: false,
         items: {
           type: "object",
           properties: {
             value: { type: "string" },
             label: { type: "string" },
-            color: { type: "string" },
+            color: {
+              type: "string",
+              description:
+                "MUST be a hex color code (e.g., '#22c55e', '#ef4444'). Do NOT use Tailwind classes like 'bg-blue-500'.",
+            },
           },
         },
+        example: [
+          { value: "never", label: "Never", color: "#22c55e" },
+          { value: "rare", label: "Rare", color: "#84cc16" },
+          { value: "sometimes", label: "Sometimes", color: "#eab308" },
+          { value: "often", label: "Often", color: "#f97316" },
+          { value: "always", label: "Always", color: "#ef4444" },
+        ],
       },
     },
     useCases: [
