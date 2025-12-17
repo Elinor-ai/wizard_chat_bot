@@ -14,6 +14,7 @@ import { nanoid } from "nanoid";
 import { estimateSchemaCompletion } from "./prompts.js";
 import { validateUIToolProps } from "./tools-definition.js";
 import { createInitialGoldenRecord } from "@wizard/core";
+import { enhanceUITool } from "./ui-templates.js";
 import {
   getSession,
   saveSession,
@@ -558,6 +559,20 @@ export class GoldenInterviewerService {
     // Normalize UI tool props (fix common LLM format errors)
     if (parsed.ui_tool) {
       parsed.ui_tool = this.normalizeUIToolProps(parsed.ui_tool, sessionId);
+
+      // Apply smart defaults and generate component ID (A2UI pattern)
+      const schemaPath = parsed.currently_asking_field || null;
+      parsed.ui_tool = enhanceUITool(parsed.ui_tool, schemaPath);
+
+      this.logger.debug(
+        {
+          sessionId,
+          tool: parsed.ui_tool.type,
+          componentId: parsed.ui_tool.componentId,
+          schemaPath,
+        },
+        "golden-interviewer.ui_tool.enhanced"
+      );
     }
 
     // Validate UI tool props
@@ -799,10 +814,15 @@ export class GoldenInterviewerService {
     }
 
     // Convert from camelCase (llm-client) to snake_case (API contract)
+    // Enhance UI tool with smart defaults and component ID (A2UI pattern)
+    const enhancedUiTool = llmResponse.uiTool
+      ? enhanceUITool(llmResponse.uiTool, llmResponse.currentlyAskingField)
+      : null;
+
     return {
       message: llmResponse.message,
       extraction: llmResponse.extraction,
-      ui_tool: llmResponse.uiTool,
+      ui_tool: enhancedUiTool,
       currently_asking_field: llmResponse.currentlyAskingField,
       next_priority_fields: llmResponse.nextPriorityFields,
       completion_percentage: llmResponse.completionPercentage,
