@@ -63,8 +63,10 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
   }
 
   // Build conversation history context
+  // NOTE: Reduced from 20 to 3 messages to save tokens (~1,500-3,000 tokens saved)
+  // The schema already contains extracted data, so full history is redundant
   let historyContext = "";
-  const recentHistory = conversationHistory.slice(-20);
+  const recentHistory = conversationHistory.slice(-3);
   if (recentHistory.length > 0) {
     const historyText = recentHistory
       .map(
