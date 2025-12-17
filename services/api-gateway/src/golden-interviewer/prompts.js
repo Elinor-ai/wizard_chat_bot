@@ -10,7 +10,8 @@
  * - Smart defaults to reduce LLM prop errors
  */
 
-import { UI_TOOLS_SCHEMA } from "./tools-definition.js";
+// NOTE: UI_TOOLS_SCHEMA import removed - using condensed schema only (A2UI pattern)
+// If you need full schema for debugging, re-add: import { UI_TOOLS_SCHEMA } from "./tools-definition.js";
 import {
   detectRoleArchetype,
   filterFieldsByArchetype,
@@ -31,54 +32,54 @@ const CONDENSED_TOOL_SCHEMA = `
 ### VISUAL QUANTIFIERS (For Numbers & Ranges)
 | Tool | Use When | Required Props | Example |
 |------|----------|----------------|---------|
-| circular_gauge | Single number with benchmarks (salary, team size) | label, min, max, markers[{value,label}] | Salary dial with Entry/Market/Expert markers |
-| stacked_bar | Percentage breakdown that sums to 100% | segments[{id,label,color,value}] | Base 70% / Bonus 20% / Equity 10% |
-| gradient_slider | Spectrum with labeled ends (remote flexibility) | leftLabel, rightLabel | "Fully Remote" ↔ "Fully On-site" |
-| bipolar_scale | Multiple opposing-ends sliders | items[{id,leftLabel,rightLabel,value}] | Fast↔Steady, Structured↔Flexible |
-| radar_chart | Multi-dimensional assessment (5-8 axes) | dimensions[{id,label,value,icon}] | Learning/Impact/Autonomy/Growth radar |
+| circular_gauge | Single number with benchmarks (salary, team size) | **label** (center text), min, max, markers[{value,label}] | {label:"Hourly Rate", min:15, max:50, markers:[{value:25,label:"Entry"}]} |
+| stacked_bar | Percentage breakdown that sums to 100% | **title**, segments[{id,label,color,value}] | {title:"Comp Split", segments:[{id:"base",label:"Base",color:"#6366f1",value:70}]} |
+| gradient_slider | Spectrum with labeled ends (remote flexibility) | **leftLabel**, **rightLabel** | {leftLabel:"Fully Remote", rightLabel:"Fully On-site"} |
+| bipolar_scale | Multiple opposing-ends sliders | **items**[{id,leftLabel,rightLabel,value}] | {items:[{id:"pace",leftLabel:"Fast",rightLabel:"Steady",value:50}]} |
+| radar_chart | Multi-dimensional assessment (5-8 axes) | **dimensions**[{id,label,value,icon}] | {dimensions:[{id:"growth",label:"Growth",value:50,icon:"trending-up"}]} |
 | equity_builder | Equity type + vesting config wizard | (uses defaults) | Stock options with 4yr/1yr cliff |
-| dial_group | Grouped rating sliders with average | dials[{id,label,value,icon}] | Autonomy metrics assessment |
-| brand_meter | Vertical bars with star rating output | metrics[{id,label,value,icon}] | Employer brand value rating |
+| dial_group | Grouped rating sliders with average | **dials**[{id,label,value,icon}] | {dials:[{id:"auto",label:"Autonomy",value:50,icon:"unlock"}]} |
+| brand_meter | Vertical bars with star rating output | **metrics**[{id,label,value,icon}] | {metrics:[{id:"brand",label:"Brand",value:50,icon:"crown"}]} |
 
 ### GRIDS & SELECTORS (For Choices)
 | Tool | Use When | Required Props | Example |
 |------|----------|----------------|---------|
-| icon_grid | Visual multi-select with icons | options[{id,label,icon}], multiple:true/false | Benefits: health, dental, 401k |
-| detailed_cards | Cards with title + description | options[{id,title,description,icon}] | Shift patterns with details |
-| gradient_cards | Mood/vibe selection with gradients | options[{id,label,icon}] | Workspace atmosphere |
-| superpower_grid | Predefined + custom text entry | traits[{id,label,icon}] | Team strengths |
-| node_map | Central node with orbiting satellites | rings[{id,label,maxCount}] | Team structure visualization |
+| icon_grid | Visual multi-select with icons | **title**, **options**[{id,label,icon}], multiple | {title:"Benefits",options:[{id:"health",label:"Health",icon:"heart-pulse"}],multiple:true} |
+| detailed_cards | Cards with title + description | **title**, **options**[{id,title,description,icon}] | {title:"Shifts",options:[{id:"day",title:"Day Shift",description:"9-5",icon:"sun"}]} |
+| gradient_cards | Mood/vibe selection with gradients | **title**, **options**[{id,label,icon}] | {title:"Vibe",options:[{id:"chill",label:"Relaxed",icon:"coffee"}]} |
+| superpower_grid | Predefined + custom text entry | **title**, **traits**[{id,label,icon}] | {title:"Strengths",traits:[{id:"lead",label:"Leadership",icon:"crown"}]} |
+| node_map | Central node with orbiting satellites | **title**, **rings**[{id,label,maxCount}] | {title:"Team",rings:[{id:"direct",label:"Reports",maxCount:10}]} |
 
 ### LISTS & TOGGLES (For Yes/No & Frequencies)
 | Tool | Use When | Required Props | Example |
 |------|----------|----------------|---------|
-| toggle_list | Checklist (red flags, features) | items[{id,label,icon}], variant:default/danger | Concern checklist |
-| chip_cloud | Grouped tags (tech stack, skills) | groups[{groupId,groupLabel,items[{id,label}]}] | Frontend/Backend/DevOps chips |
-| segmented_rows | Frequency rating per row | rows[{id,label}], segments[{value,label,color}] | Never/Rare/Sometimes/Often |
-| expandable_list | Select + provide evidence | items[{id,label,placeholder}] | Values with examples |
-| perk_revealer | Tabbed category perks | categories[{id,label,items}] | Food/Wellness/Travel perks |
-| counter_stack | +/- counters with total | items[{id,label,unit,min,max}] | PTO calculator |
+| toggle_list | Checklist (red flags, features) | **title**, **items**[{id,label,icon}], variant | {title:"Red Flags",items:[{id:"layoffs",label:"Recent Layoffs",icon:"alert-triangle"}],variant:"danger"} |
+| chip_cloud | Grouped tags (tech stack, skills) | **title**, **groups**[{groupId,groupLabel,items}] | {title:"Stack",groups:[{groupId:"fe",groupLabel:"Frontend",items:[{id:"react",label:"React"}]}]} |
+| segmented_rows | Frequency rating per row | **title**, **rows**[{id,label}] | {title:"Physical Demands",rows:[{id:"stand",label:"Standing"}]} |
+| expandable_list | Select + provide evidence | **title**, **items**[{id,label,placeholder}] | {title:"Values",items:[{id:"trust",label:"Trust",placeholder:"Example..."}]} |
+| perk_revealer | Tabbed category perks | **title**, **categories**[{id,label,icon,items}] | {title:"Perks",categories:[{id:"food",label:"Food",icon:"pizza",items:[...]}]} |
+| counter_stack | +/- counters with total | **title**, **items**[{id,label,unit,min,max}] | {title:"PTO",items:[{id:"vacation",label:"Vacation",unit:"days",min:0,max:30}]} |
 
 ### INTERACTIVE & GAMIFIED (For Engagement)
 | Tool | Use When | Required Props | Example |
 |------|----------|----------------|---------|
-| token_allocator | Fixed budget across categories | categories[{id,label,icon}], totalTokens | Priority budgeting |
-| swipe_deck | Tinder-style rapid yes/no | cards[{id,title,content}] | Deal-breaker sorting |
-| reaction_scale | Emoji sentiment response | prompt, reactions[{id,emoji,label}] | How do you feel about X? |
-| comparison_duel | A vs B forced choice | optionA{id,title,icon}, optionB{...} | Startup vs Enterprise |
-| heat_map | Grid with clickable color states | rows[], columns[] | Availability by day/hour |
-| week_scheduler | 7-day drag-to-paint schedule | startHour, endHour | Work schedule input |
+| token_allocator | Fixed budget across categories | **title**, **categories**[{id,label,icon}], totalTokens | {title:"Priorities",categories:[{id:"pay",label:"Pay",icon:"dollar-sign"}],totalTokens:10} |
+| swipe_deck | Tinder-style rapid yes/no | **title**, **cards**[{id,title,content}] | {title:"Deal Breakers",cards:[{id:"ot",title:"Overtime",content:"Mandatory OT"}]} |
+| reaction_scale | Emoji sentiment response | **prompt**, **reactions**[{id,emoji,label}] | {prompt:"Open office?",reactions:[{id:"love",emoji:"😍",label:"Love it"}]} |
+| comparison_duel | A vs B forced choice | **title**, **optionA**{id,title,icon}, **optionB**{...} | {title:"Preference",optionA:{id:"startup",title:"Startup",icon:"rocket"},optionB:{id:"corp",title:"Corporate",icon:"building"}} |
+| heat_map | Grid with clickable color states | **title**, **rows**[], **columns**[] | {title:"Availability",rows:["9AM","12PM","3PM"],columns:["Mon","Tue","Wed"]} |
+| week_scheduler | 7-day drag-to-paint schedule | **title**, startHour, endHour | {title:"Schedule",startHour:6,endHour:22} |
 
 ### TEXT & MEDIA (For Open-Ended)
 | Tool | Use When | Required Props | Example |
 |------|----------|----------------|---------|
-| smart_textarea | Open text with rotating prompts | prompts[], title | "What makes this role special?" |
-| tag_input | Short text with suggestions | suggestions[], placeholder | First impression capture |
-| chat_simulator | Mini conversation flow | flow[{id,bot,quickReplies}] | Guided Q&A |
-| timeline_builder | Vertical timeline with inputs | points[{id,label}] | Career milestones |
-| comparison_table | Two-column input (A vs B) | rows[{id,label}], leftHeader, rightHeader | Expectation vs Reality |
-| qa_list | Expandable Q&A pairs | maxPairs, suggestedQuestions[] | Interview prep questions |
-| media_upload | Audio/photo/video placeholder | mediaType:audio/photo/video | Voice testimonial |
+| smart_textarea | Open text with rotating prompts | **title**, prompts[] | {title:"What makes this special?",prompts:["The culture...","The team..."]} |
+| tag_input | Short text with suggestions | **title**, suggestions[], placeholder | {title:"First Impression",suggestions:["Innovative","Fast-paced"],placeholder:"Describe..."} |
+| chat_simulator | Mini conversation flow | **title**, **flow**[{id,bot,quickReplies}] | {title:"Quick Q&A",flow:[{id:"q1",bot:"Tell me about...",quickReplies:["Great","Okay"]}]} |
+| timeline_builder | Vertical timeline with inputs | **title**, **points**[{id,label}] | {title:"Career Path",points:[{id:"y1",label:"Year 1"},{id:"y3",label:"Year 3"}]} |
+| comparison_table | Two-column input (A vs B) | **title**, **rows**[{id,label}], leftHeader, rightHeader | {title:"Reality Check",rows:[{id:"hours",label:"Hours"}],leftHeader:"Expected",rightHeader:"Actual"} |
+| qa_list | Expandable Q&A pairs | **title**, maxPairs, suggestedQuestions[] | {title:"FAQs",maxPairs:5,suggestedQuestions:["What's the culture like?"]} |
+| media_upload | Audio/photo/video placeholder | **title**, mediaType | {title:"Voice Note",mediaType:"audio"} |
 
 ## CRITICAL RULES
 
@@ -102,14 +103,6 @@ const CONDENSED_TOOL_SCHEMA = `
 - Set \`multiple: true\` for benefits, skills, preferences (can pick many)
 - Set \`multiple: false\` for exclusive choices (pick one)
 `;
-
-/**
- * Generates the full tool schema JSON for reference (used sparingly)
- * Only include this in debug mode or when LLM specifically needs prop details
- */
-function getFullToolSchemaForDebug() {
-  return JSON.stringify(UI_TOOLS_SCHEMA, null, 2);
-}
 
 // =============================================================================
 // GOLDEN SCHEMA REFERENCE (Rich Context Version)
@@ -478,17 +471,12 @@ ${
  * @returns {string}
  */
 export function buildSystemPrompt(options = {}) {
-  const { currentSchema, companyData, frictionState, debugMode = false } = options;
+  const { currentSchema, companyData, frictionState } = options;
 
   // Build context sections if available
   const companyContext = buildCompanyContextSection(companyData);
   const userContext = buildUserContextSection(currentSchema);
   const frictionContext = buildFrictionContextSection(frictionState);
-
-  // Use condensed schema by default, full schema only in debug mode
-  const toolSchemaSection = debugMode
-    ? `## AVAILABLE UI TOOLS (Full Debug Schema)\n\n\`\`\`json\n${getFullToolSchemaForDebug()}\n\`\`\``
-    : CONDENSED_TOOL_SCHEMA;
 
   return `# ROLE: Golden Information Extraction Agent
 
@@ -607,59 +595,51 @@ After the user responds to (or skips) the "closing" turn, you MUST end the sessi
 ### Emergency Exit
 If the user explicitly wants to stop ("I'm done", "let's stop") at ANY point—skip directly to Step B. Do NOT ask "are you sure?". Respect their time and end gracefully immediately.
 
-## AVAILABLE UI TOOLS
+${CONDENSED_TOOL_SCHEMA}
 
-You have access to interactive UI components. Below is the strict JSON definition of every tool and its properties.
-You MUST adhere to the "props" schema defined for each tool.
+## STRUCTURED THINKING PROTOCOL (Required Before Each Response)
 
-\`\`\`json
-${toolsJson}
+Before generating your response, you MUST complete this internal reasoning process in the \`tool_reasoning\` field:
+
+### STEP 1: ANALYZE (What did the user just tell me?)
+- Extract key information from user's message
+- Identify any data that maps to Golden Schema fields
+- Note the emotional tone (engaged, hesitant, rushing)
+
+### STEP 2: MAP (Which schema field does this target?)
+- Identify the exact Golden Schema path for extracted data
+- Check if this was the field you were asking about
+- Note confidence level (explicit statement vs inference)
+
+### STEP 3: PRIORITIZE (What's the next most valuable question?)
+- Review the Context-Relevant Fields for this role type
+- Consider: What's missing that would make this job posting compelling?
+- Avoid: Fields in the "Skip" list or already-filled fields
+
+### STEP 4: SELECT (Which UI tool best engages for this question?)
+- Match the data type to the tool category:
+  - Numbers/Ranges → Visual Quantifiers (circular_gauge, stacked_bar)
+  - Multiple choices → Grids & Selectors (icon_grid, detailed_cards)
+  - Yes/No/Frequency → Lists & Toggles (toggle_list, segmented_rows)
+  - Open-ended → Text & Media (smart_textarea, tag_input)
+- Consider engagement: Would an interactive tool make this more fun?
+
+### STEP 5: VALIDATE (Are my props correct?)
+- Icons: All kebab-case Lucide names (NOT emojis)
+- Arrays: All objects with {id, label} (NOT plain strings)
+- Colors: All hex codes (NOT Tailwind classes)
+- IDs: All unique within their array
+
+**Example tool_reasoning:**
+\`\`\`
+ANALYZE: User said base salary is $85k annually. Clear, explicit statement.
+MAP: financial_reality.base_compensation.amount_or_range (confidence: 0.95)
+PRIORITIZE: Next valuable = variable compensation (bonuses, commission, tips). Role is tech, so equity also relevant.
+SELECT: stacked_bar for comp breakdown - visual, engaging, shows how total comp splits.
+VALIDATE: segments need id+label+color+value. Using hex colors. IDs: base, bonus, equity (unique).
 \`\`\`
 
-## CRITICAL USAGE RULES (Overrides Schema)
-
-### 1. ICON FORMAT RULE
-**ALL icon values MUST be Lucide React icon names in kebab-case. NEVER use emojis.**
-
-CORRECT icon examples:
-- Schedule/Time: "sun", "moon", "calendar", "clock", "refresh-cw", "timer"
-- Actions: "check", "x", "plus", "minus", "edit", "trash"
-- Objects: "home", "building", "briefcase", "folder", "file-text"
-- People: "user", "users", "person-standing", "baby"
-- Finance: "dollar-sign", "coins", "wallet", "piggy-bank", "trending-up"
-- Health: "heart", "heart-pulse", "thermometer", "dumbbell", "brain"
-- Nature: "sun", "moon", "palm-tree", "coffee", "zap"
-- Communication: "message-circle", "mail", "phone", "video"
-- Misc: "eye", "search", "settings", "shield", "target", "lightbulb", "sparkles"
-
-WRONG - These will CRASH the app:
-- "☀️", "🌙", "📅", "🔄", "💰", "🙋", "✂️", "🏠", "💼"
-
-**SHIFT PATTERN ICONS**: Use "sun" for morning, "moon" for evening, "refresh-cw" for rotating, "calendar" for flexible.
-
-### 2. ARRAY CONTENT RULE
-**For tools like 'chip_cloud', 'toggle_list', 'icon_grid':**
-- When a prop defines an array of items, you MUST provide an array of **OBJECTS** with \`id\` and \`label\` (and often \`icon\`).
-- **NEVER** provide an array of plain strings (e.g. \`["React", "Vue"]\`).
-- **ALWAYS** provide \`[{ "id": "react", "label": "React" }, ...]\`
-
-### 3. MULTI-SELECT LOGIC
-**For 'icon_grid', 'detailed_cards', 'gradient_cards':**
-- You MUST set \`multiple: true\` when users might need to select MORE THAN ONE option (e.g. Benefits, Stack, Preferences).
-- Only set \`multiple: false\` for mutually exclusive choices (e.g. Yes/No).
-
-### 4. KEY NAME STRICTNESS
-- **bipolar_scale**: Items MUST use keys \`leftLabel\`, \`rightLabel\`. Do NOT use \`left\`/\`right\`.
-- **chip_cloud**: Groups MUST use keys \`groupLabel\`, \`items\`. Do NOT use \`category\`/\`options\`.
-
 ## RESPONSE FORMAT (Strict JSON)
-
-You MUST respond with valid JSON.
-
-**CRITICAL: Fill the 'tool_reasoning' field FIRST.** Explain your logic step-by-step:
-1. What data type is the field? (e.g., Salary is a Number)
-2. What is the best visualization? (e.g., A gauge shows range better than a text box)
-3. Is there a specific constraint? (e.g., "Multiple" is needed for benefits)
 
 **MANDATORY FIELD - 'currently_asking_field'**: You MUST ALWAYS include this field in EVERY response. Set it to the exact Golden Schema field path that your current question is targeting. Examples:
 - Asking about job title → "role_overview.job_title"
@@ -669,34 +649,54 @@ This field is REQUIRED for skip tracking. DO NOT omit it.
 
 \`\`\`json
 {
-  "tool_reasoning": "The user is discussing salary. The field is 'base_compensation' (Number). A 'circular_gauge' is best because it visualizes the range $30k-$200k effectively, whereas a text input is boring.",
-  "message": "Your conversational response/question...",
-  "context_explanation": "A persuasive 1-2 sentences derived from the 'Why It Matters' column. Explain to the user how this specific data point helps them find better candidates or save time.",
+  "tool_reasoning": "ANALYZE: User shared salary is $85k/year. Explicit, confident. TONE: engaged. | MAP: financial_reality.base_compensation.amount_or_range (0.95 confidence). | PRIORITIZE: Next = variable comp or benefits - both high-value for tech role. | SELECT: icon_grid for benefits - visual, multi-select, engaging. | VALIDATE: options have id+label+icon, multiple:true, icons are kebab-case.",
+  "message": "Got it—$85k base is solid. What about the extras?",
+  "context_explanation": "Benefits can add 20-30% to total comp value. Candidates often underestimate perks like 401k matching or equity.",
   "extraction": {
     "updates": {
-      "path.to.field": "extracted_value"
+      "financial_reality.base_compensation.amount_or_range": "$85,000/year",
+      "financial_reality.base_compensation.pay_frequency": "annual"
     },
     "confidence": {
-      "path.to.field": 0.9
+      "financial_reality.base_compensation.amount_or_range": 0.95,
+      "financial_reality.base_compensation.pay_frequency": 0.90
     }
   },
   "ui_tool": {
-    "type": "tool_name",
+    "type": "icon_grid",
     "props": {
-      "title": "Question title",
+      "title": "What benefits come with the role?",
       "options": [
-        { "id": "example", "label": "Example", "icon": "sun" }
-      ]
+        { "id": "health", "label": "Health Insurance", "icon": "heart-pulse" },
+        { "id": "dental", "label": "Dental", "icon": "smile" },
+        { "id": "401k", "label": "401k Match", "icon": "piggy-bank" },
+        { "id": "equity", "label": "Equity/Stock", "icon": "trending-up" },
+        { "id": "pto", "label": "Unlimited PTO", "icon": "palm-tree" }
+      ],
+      "multiple": true,
+      "columns": 3
     }
   },
-  "currently_asking_field": "financial_reality.base_compensation.amount_or_range",
-  "next_priority_fields": ["field1", "field2"],
+  "currently_asking_field": "stability_signals.benefits_security.health_insurance",
+  "next_priority_fields": ["financial_reality.equity.offered", "time_and_life.time_off.pto_days"],
   "completion_percentage": 25,
-  "interview_phase": "compensation|time_flexibility|environment|culture|growth|stability|role_details|unique_value|closing"
+  "interview_phase": "compensation"
 }
 \`\`\`
 
-**ICON REMINDER**: All "icon" fields MUST be Lucide icon names like "sun", "moon", "calendar", "refresh-cw", "users", "dollar-sign". NEVER use emojis like "☀️" or "📅".
+## SMART DEFAULTS (You can omit these props - they auto-apply)
+
+| Tool | Auto-Defaults |
+|------|---------------|
+| icon_grid | columns: 3, multiple: false |
+| circular_gauge | step: 1, prefix: "", unit: "" |
+| stacked_bar | total: 100, autoBalance: true |
+| segmented_rows | segments: Never/Rare/Sometimes/Often/Always with green→red colors |
+| toggle_list | variant: "default", singleSelect: false |
+| smart_textarea | rows: 4 |
+| counter_stack | totalUnit: "days" |
+
+**Only specify props when you need NON-DEFAULT values.**
 
 ${GOLDEN_SCHEMA_REFERENCE}
 

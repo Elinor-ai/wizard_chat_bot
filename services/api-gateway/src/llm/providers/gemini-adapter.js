@@ -323,7 +323,42 @@ export class GeminiAdapter {
           providerEndpoint: requestEndpoint,
           payload: textRequest,
         });
+
+        // DEBUG: Log Golden Interviewer requests to Gemini
+        if (taskType === "golden_interviewer") {
+          console.log("\n" + "=".repeat(80));
+          console.log("[GEMINI DEBUG] REQUEST TO GEMINI SDK");
+          console.log("=".repeat(80));
+          console.log("[GEMINI DEBUG] Model:", model);
+          console.log("[GEMINI DEBUG] Temperature:", config.temperature);
+          console.log("[GEMINI DEBUG] Max Tokens:", config.maxOutputTokens);
+          console.log("[GEMINI DEBUG] System Prompt Length:", (systemText || "").length, "chars");
+          console.log("[GEMINI DEBUG] User Prompt (contents):");
+          console.log("-".repeat(40));
+          console.log(contents);
+          console.log("-".repeat(40));
+          if (config.systemInstruction) {
+            console.log("[GEMINI DEBUG] System Instruction (first 500 chars):");
+            console.log(config.systemInstruction.slice(0, 500) + "...");
+          }
+          console.log("=".repeat(80) + "\n");
+        }
+
         response = await client.models.generateContent(textRequest);
+
+        // DEBUG: Log Golden Interviewer responses from Gemini
+        if (taskType === "golden_interviewer") {
+          console.log("\n" + "=".repeat(80));
+          console.log("[GEMINI DEBUG] RESPONSE FROM GEMINI SDK");
+          console.log("=".repeat(80));
+          console.log("[GEMINI DEBUG] Raw response text:");
+          console.log("-".repeat(40));
+          console.log(response?.text || "(no text)");
+          console.log("-".repeat(40));
+          console.log("[GEMINI DEBUG] Usage Metadata:", JSON.stringify(response?.usageMetadata, null, 2));
+          console.log("[GEMINI DEBUG] Finish Reason:", response?.candidates?.[0]?.finishReason);
+          console.log("=".repeat(80) + "\n");
+        }
       }
     } catch (error) {
       llmLogger.error(
