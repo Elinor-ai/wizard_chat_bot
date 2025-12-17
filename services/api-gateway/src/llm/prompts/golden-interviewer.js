@@ -36,6 +36,7 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
   const {
     currentSchema = {},
     conversationHistory = [],
+    companyData = null,
     userMessage,
     uiResponse,
     previousToolType,
@@ -48,14 +49,22 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
   } = context;
 
   // Build the appropriate turn prompt
+  // NOTE: Conversation history is now built inside the prompt builders (prompts.js)
+  // for consistency with GOLDEN_DB_UPDATE architecture
   let turnPrompt;
 
   if (isFirstTurn) {
-    turnPrompt = buildGoldenFirstTurnPrompt();
+    turnPrompt = buildGoldenFirstTurnPrompt({
+      companyData,
+      currentSchema,
+      conversationHistory,
+    });
   } else {
     turnPrompt = buildGoldenContinueTurnPrompt({
       userMessage,
       currentSchema,
+      companyData,
+      conversationHistory,
       uiResponse,
       previousToolType,
       turnNumber,
@@ -64,35 +73,20 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
     });
   }
 
-  // Build conversation history context
-  // NOTE: Reduced from 20 to 3 messages to save tokens (~1,500-3,000 tokens saved)
-  // The schema already contains extracted data, so full history is redundant
-  let historyContext = "";
-  const recentHistory = conversationHistory.slice(-3);
-  if (recentHistory.length > 0) {
-    const historyText = recentHistory
-      .map(
-        (msg) =>
-          `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`
-      )
-      .join("\n\n");
-    historyContext = `Previous conversation:\n${historyText}\n\n---\n\n`;
-  }
-
   // Add strict mode guidance for retries
   const strictGuidance = strictMode
     ? "\n\n## CRITICAL: RETRY MODE\nYour previous response was not valid JSON. You MUST respond with ONLY a valid JSON object. No text before or after the JSON."
     : "";
 
   // Combine into final prompt
-  const fullPrompt = `${historyContext}Current turn:\n${turnPrompt}${strictGuidance}`;
+  const fullPrompt = `${turnPrompt}${strictGuidance}`;
 
   llmLogger.info(
     {
       task: "golden_interviewer",
       isFirstTurn,
       turnNumber,
-      historyLength: recentHistory.length,
+      historyLength: conversationHistory.length,
       attempt,
       strictMode,
       friction: frictionState ? {

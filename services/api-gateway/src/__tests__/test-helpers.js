@@ -251,6 +251,15 @@ export function createMockLlmClient(responses = {}) {
     askHeroImagePrompt: vi.fn(async () => responses.askHeroImagePrompt ?? {}),
     runImageGeneration: vi.fn(async () => responses.runImageGeneration ?? {}),
     askImageCaption: vi.fn(async () => responses.askImageCaption ?? {}),
+    askGoldenDbUpdate: vi.fn(async () => responses.askGoldenDbUpdate ?? {
+      updates: {},
+      reasoning: "No data to extract",
+      metadata: {
+        promptTokens: 100,
+        candidateTokens: 50,
+        totalTokens: 150,
+      },
+    }),
   };
 }
 
