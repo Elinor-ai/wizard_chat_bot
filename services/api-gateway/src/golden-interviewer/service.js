@@ -196,7 +196,12 @@ export class GoldenInterviewerService {
     // STEP 2: Create Golden Record with companyId reference (not full company data)
     // =========================================================================
     const resolvedCompanyName = companyData?.name || companyName || null;
-    const goldenSchema = createInitialGoldenRecord(sessionId, companyId, resolvedCompanyName, userData);
+    const goldenSchema = createInitialGoldenRecord(
+      sessionId,
+      companyId,
+      resolvedCompanyName,
+      userData
+    );
 
     // =========================================================================
     // STEP 3: Create session via repository
@@ -218,15 +223,21 @@ export class GoldenInterviewerService {
     // STEP 4: Generate first turn with hydrated context (via HTTP /api/llm)
     // =========================================================================
     // Extract only the fields needed for the prompt
-    const companyDataForPrompt = companyData ? {
-      name: companyData.name,
-      industry: companyData.industry,
-      description: companyData.longDescription || companyData.description,
-      employeeCountBucket: companyData.employeeCountBucket,
-      toneOfVoice: companyData.toneOfVoice,
-    } : null;
+    const companyDataForPrompt = companyData
+      ? {
+          name: companyData.name,
+          industry: companyData.industry,
+          description: companyData.longDescription || companyData.description,
+          employeeCountBucket: companyData.employeeCountBucket,
+          toneOfVoice: companyData.toneOfVoice,
+        }
+      : null;
 
-    const firstTurnResponse = await this.generateFirstTurn(session, authToken, companyDataForPrompt);
+    const firstTurnResponse = await this.generateFirstTurn(
+      session,
+      authToken,
+      companyDataForPrompt
+    );
 
     // Update session with first turn via repository
     const assistantMessage = buildAssistantMessage({
@@ -236,7 +247,8 @@ export class GoldenInterviewerService {
 
     // Track lastAskedField from first turn (for skip attribution)
     // Use currently_asking_field - the field THIS turn is asking about (not next_priority_fields)
-    const currentlyAskingField = firstTurnResponse.currently_asking_field || null;
+    const currentlyAskingField =
+      firstTurnResponse.currently_asking_field || null;
     const currentlyAskingCategory = currentlyAskingField
       ? this.extractCategoryFromField(currentlyAskingField)
       : null;
@@ -244,7 +256,8 @@ export class GoldenInterviewerService {
     session.conversationHistory.push(assistantMessage);
     session.turnCount = 1;
     session.metadata.lastToolUsed = firstTurnResponse.ui_tool?.type;
-    session.metadata.currentPhase = firstTurnResponse.interview_phase || "opening";
+    session.metadata.currentPhase =
+      firstTurnResponse.interview_phase || "opening";
     session.metadata.lastAskedField = currentlyAskingField;
     session.metadata.lastAskedCategory = currentlyAskingCategory;
     session.updatedAt = new Date();
@@ -277,7 +290,13 @@ export class GoldenInterviewerService {
    * @param {object} [options.skipAction] - Explicit skip signal { isSkip, reason }
    * @returns {Promise<object>}
    */
-  async processTurn({ sessionId, authToken, userMessage, uiResponse, skipAction }) {
+  async processTurn({
+    sessionId,
+    authToken,
+    userMessage,
+    uiResponse,
+    skipAction,
+  }) {
     // Load session via repository
     const session = await getSession(this.firestore, sessionId);
     if (!session) {
@@ -293,7 +312,8 @@ export class GoldenInterviewerService {
     // =========================================================================
     // SKIP DETECTION (explicit flag OR legacy "Skip" text fallback)
     // =========================================================================
-    const isSkip = skipAction?.isSkip === true ||
+    const isSkip =
+      skipAction?.isSkip === true ||
       (userMessage && userMessage.toLowerCase().trim() === "skip");
     const skipReason = skipAction?.reason || "unknown";
 
@@ -355,7 +375,8 @@ export class GoldenInterviewerService {
         this.logger.info(
           {
             sessionId,
-            turnsToRecover: session.turnCount - (friction.strategyChangedAt || 0),
+            turnsToRecover:
+              session.turnCount - (friction.strategyChangedAt || 0),
             previousStrategy: friction.currentStrategy,
           },
           "golden-interviewer.turn.recovery_success"
@@ -370,7 +391,10 @@ export class GoldenInterviewerService {
     // STRATEGY DETERMINATION
     // =========================================================================
     const previousStrategy = friction.currentStrategy;
-    friction.currentStrategy = this.determineFrictionStrategy(friction, skippedField);
+    friction.currentStrategy = this.determineFrictionStrategy(
+      friction,
+      skippedField
+    );
 
     if (friction.currentStrategy !== previousStrategy) {
       friction.strategyChangedAt = session.turnCount + 1;
@@ -469,7 +493,7 @@ export class GoldenInterviewerService {
     try {
       llmResponse = await this.callLlmApi({ authToken, context: llmContext });
       console.log(
-        "🔍 [Backend] RAW LLM Response:",
+        "[Backend] RAW LLM Response:",
         JSON.stringify(llmResponse, null, 2)
       );
     } catch (error) {
@@ -530,7 +554,7 @@ export class GoldenInterviewerService {
       interview_phase: llmResponse.interviewPhase,
       tool_reasoning: llmResponse.toolReasoning,
     };
-    console.log("🔍 [Backend] parsed :", JSON.stringify(parsed, null, 2));
+    console.log("[Backend] parsed :", JSON.stringify(parsed, null, 2));
 
     // Log tool selection reasoning for debugging
     this.logger.info(
@@ -544,16 +568,24 @@ export class GoldenInterviewerService {
     );
     // Apply schema extractions
     if (parsed.extraction?.updates) {
-      console.log("🔍 [Backend] EXTRACTION UPDATES:", JSON.stringify(parsed.extraction.updates, null, 2));
+      console.log(
+        "🔍 [Backend] EXTRACTION UPDATES:",
+        JSON.stringify(parsed.extraction.updates, null, 2)
+      );
       const updatedSchema = this.applySchemaUpdates(
         session.goldenSchema || {},
         parsed.extraction.updates
       );
-      console.log("🔍 [Backend] SCHEMA AFTER APPLY (technologies_used):",
-        updatedSchema?.growth_trajectory?.skill_building?.technologies_used);
+      console.log(
+        "🔍 [Backend] SCHEMA AFTER APPLY (technologies_used):",
+        updatedSchema?.growth_trajectory?.skill_building?.technologies_used
+      );
       session.goldenSchema = updatedSchema;
     } else {
-      console.log("🔍 [Backend] NO EXTRACTION UPDATES - parsed.extraction:", JSON.stringify(parsed.extraction, null, 2));
+      console.log(
+        "🔍 [Backend] NO EXTRACTION UPDATES - parsed.extraction:",
+        JSON.stringify(parsed.extraction, null, 2)
+      );
     }
 
     // Normalize UI tool props (fix common LLM format errors)
@@ -642,8 +674,10 @@ export class GoldenInterviewerService {
     }
 
     // Save updated session via repository
-    console.log("🔍 [Backend] BEFORE SAVE - technologies_used:",
-      session.goldenSchema?.growth_trajectory?.skill_building?.technologies_used);
+    console.log(
+      "🔍 [Backend] BEFORE SAVE - technologies_used:",
+      session.goldenSchema?.growth_trajectory?.skill_building?.technologies_used
+    );
     await saveSession({
       firestore: this.firestore,
       sessionId,
@@ -821,7 +855,10 @@ export class GoldenInterviewerService {
     let enhancedUiTool = llmResponse.uiTool;
     if (enhancedUiTool) {
       enhancedUiTool = expandTemplateRef(enhancedUiTool);
-      enhancedUiTool = enhanceUITool(enhancedUiTool, llmResponse.currentlyAskingField);
+      enhancedUiTool = enhanceUITool(
+        enhancedUiTool,
+        llmResponse.currentlyAskingField
+      );
     }
 
     return {
@@ -1113,10 +1150,10 @@ export class GoldenInterviewerService {
     return str
       .toLowerCase()
       .trim()
-      .replace(/[^\w\s-]/g, "")  // Remove non-word chars
-      .replace(/\s+/g, "-")       // Replace spaces with hyphens
-      .replace(/-+/g, "-")        // Replace multiple hyphens with single
-      .substring(0, 50);          // Limit length
+      .replace(/[^\w\s-]/g, "") // Remove non-word chars
+      .replace(/\s+/g, "-") // Replace spaces with hyphens
+      .replace(/-+/g, "-") // Replace multiple hyphens with single
+      .substring(0, 50); // Limit length
   }
 }
 
