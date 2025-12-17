@@ -759,6 +759,7 @@ export function buildContinueTurnPrompt({
   previousToolType,
   turnNumber,
   frictionState,
+  lastAskedField,
 }) {
   const schemaCompletion = estimateSchemaCompletion(currentSchema);
 
@@ -781,6 +782,39 @@ ${frictionState.consecutiveSkips === 1 ? "→ Acknowledge gracefully and pivot t
 
 `
     : "";
+
+  // Build extraction checkpoint - reminds LLM what field was asked and to extract ALL info
+  const userResponseDisplay = uiResponse
+    ? JSON.stringify(uiResponse)
+    : userMessage || "(no response)";
+
+  const extractionCheckpoint =
+    lastAskedField && !frictionState?.isSkip
+      ? `###  EXTRACTION CHECKPOINT (CRITICAL)
+
+**Previous question targeted:** \`${lastAskedField}\`
+**User's response:** ${userResponseDisplay}
+
+**YOU MUST DO ALL OF THE FOLLOWING:**
+1. Extract the direct answer → Map to \`${lastAskedField}\` in \`extraction.updates\`
+2. Extract ANY additional info mentioned (location, salary, team size, dates, names, etc.)
+3. If the response contains multiple facts, extract ALL of them to their respective fields
+
+**Example of multi-field extraction:**
+If user said "Dispatcher in our Seattle office" when asked about job title:
+\`\`\`json
+"extraction": {
+  "updates": {
+    "role_overview.job_title": "Dispatcher",
+    "role_overview.location_city": "Seattle"
+  }
+}
+\`\`\`
+
+**⚠️ WARNING:** If you understood information from the user but did NOT include it in \`extraction.updates\`, that data will be LOST. The extraction.updates field is the ONLY way data gets saved.
+
+`
+      : "";
 
   // Build the context-aware fields section
   const relevantFieldsSection =
@@ -812,7 +846,7 @@ It is BETTER to leave these fields empty than to ask awkward, irrelevant questio
 
   return `## Current Turn: ${turnNumber}
 
-${skipAlert}### User's Input
+${skipAlert}${extractionCheckpoint}### User's Input
 ${userMessage ? `Text message: "${userMessage}"` : "(No text message)"}
 
 ${

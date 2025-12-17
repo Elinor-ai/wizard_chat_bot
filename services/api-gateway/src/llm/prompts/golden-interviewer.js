@@ -44,6 +44,7 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
     attempt = 0,
     strictMode = false,
     frictionState = null,
+    lastAskedField = null,
   } = context;
 
   // Build the appropriate turn prompt
@@ -59,6 +60,7 @@ export function buildGoldenInterviewerTurnPrompt(context = {}) {
       previousToolType,
       turnNumber,
       frictionState,
+      lastAskedField,
     });
   }
 
