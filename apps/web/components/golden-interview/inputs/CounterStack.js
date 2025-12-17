@@ -12,7 +12,7 @@
  * @param {string} [props.accentColor="#8b5cf6"] - Accent color
  */
 export default function CounterStack({
-  items,
+  items = [],
   value = {},
   onChange,
   title,
