@@ -14,7 +14,7 @@ import { nanoid } from "nanoid";
 import { estimateSchemaCompletion } from "./prompts.js";
 import { validateUIToolProps } from "./tools-definition.js";
 import { createInitialGoldenRecord } from "@wizard/core";
-import { enhanceUITool } from "./ui-templates.js";
+import { enhanceUITool, expandTemplateRef } from "./ui-templates.js";
 import {
   getSession,
   saveSession,
@@ -558,6 +558,9 @@ export class GoldenInterviewerService {
 
     // Normalize UI tool props (fix common LLM format errors)
     if (parsed.ui_tool) {
+      // Phase 3: Expand template references (e.g., template_ref: "benefits")
+      parsed.ui_tool = expandTemplateRef(parsed.ui_tool);
+
       parsed.ui_tool = this.normalizeUIToolProps(parsed.ui_tool, sessionId);
 
       // Apply smart defaults and generate component ID (A2UI pattern)
@@ -814,10 +817,12 @@ export class GoldenInterviewerService {
     }
 
     // Convert from camelCase (llm-client) to snake_case (API contract)
-    // Enhance UI tool with smart defaults and component ID (A2UI pattern)
-    const enhancedUiTool = llmResponse.uiTool
-      ? enhanceUITool(llmResponse.uiTool, llmResponse.currentlyAskingField)
-      : null;
+    // Phase 3: Expand template refs, then enhance with smart defaults and component ID
+    let enhancedUiTool = llmResponse.uiTool;
+    if (enhancedUiTool) {
+      enhancedUiTool = expandTemplateRef(enhancedUiTool);
+      enhancedUiTool = enhanceUITool(enhancedUiTool, llmResponse.currentlyAskingField);
+    }
 
     return {
       message: llmResponse.message,

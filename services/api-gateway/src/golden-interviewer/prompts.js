@@ -18,6 +18,7 @@ import {
   getSkipReasons,
   getArchetypeLabel,
 } from "./role-archetypes.js";
+import { generateTemplateCatalog } from "./ui-templates.js";
 
 // =============================================================================
 // CONDENSED LLM-FACING TOOL SCHEMA (A2UI-Inspired)
@@ -596,6 +597,8 @@ After the user responds to (or skips) the "closing" turn, you MUST end the sessi
 If the user explicitly wants to stop ("I'm done", "let's stop") at ANY point—skip directly to Step B. Do NOT ask "are you sure?". Respect their time and end gracefully immediately.
 
 ${CONDENSED_TOOL_SCHEMA}
+
+${generateTemplateCatalog()}
 
 ## STRUCTURED THINKING PROTOCOL (Required Before Each Response)
 

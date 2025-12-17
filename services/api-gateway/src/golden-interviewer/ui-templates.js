@@ -502,10 +502,248 @@ export function enhanceUITool(uiTool, schemaPath = null) {
 }
 
 // =============================================================================
+// PHASE 3: TEMPLATE SHORTCUTS (LLM-Friendly Names)
+// =============================================================================
+// Short, memorable names that map to schema paths - reduces LLM tokens further
+
+export const TEMPLATE_SHORTCUTS = {
+  // Financial
+  salary: "financial_reality.base_compensation.amount_or_range",
+  hourly_rate: "financial_reality.base_compensation.amount_or_range", // variant: hourly
+  variable_comp: "financial_reality.variable_compensation.types",
+  equity: "financial_reality.equity.offered",
+  benefits: "stability_signals.benefits_security.health_insurance",
+
+  // Time
+  schedule_type: "time_and_life.schedule_pattern.type",
+  remote_flex: "time_and_life.flexibility.remote_frequency",
+  pto: "time_and_life.time_off.pto_days",
+  overtime: "time_and_life.overtime_reality.overtime_expected",
+
+  // Environment
+  workspace: "environment.physical_space.type",
+  physical_demands: "environment.safety_and_comfort.physical_demands",
+
+  // Culture
+  team_size: "humans_and_culture.team_composition.team_size",
+  management: "humans_and_culture.management_style.management_approach",
+
+  // Growth
+  tech_stack: "growth_trajectory.skill_building.technologies_used",
+  career_path: "growth_trajectory.career_path.promotion_path",
+
+  // Role
+  day_in_life: "role_reality.day_to_day.typical_day_description",
+  autonomy: "role_reality.autonomy.decision_authority",
+
+  // Unique
+  special: "unique_value.rare_offerings.what_makes_this_special",
+};
+
+/**
+ * Resolve a template shortcut to its full schema path
+ * @param {string} shortcut - Short name or full path
+ * @returns {string} - Full schema path
+ */
+export function resolveTemplateShortcut(shortcut) {
+  return TEMPLATE_SHORTCUTS[shortcut] || shortcut;
+}
+
+/**
+ * Get a template by shortcut name
+ * @param {string} shortcut - Short name (e.g., "salary", "benefits")
+ * @param {object} options - Options including variant and overrides
+ * @returns {object|null} - UI tool configuration
+ */
+export function getTemplateByShortcut(shortcut, options = {}) {
+  const schemaPath = resolveTemplateShortcut(shortcut);
+
+  // Special handling for variants
+  if (shortcut === "hourly_rate") {
+    return getTemplateForSchemaPath(schemaPath, { ...options, variant: "hourly" });
+  }
+
+  return getTemplateForSchemaPath(schemaPath, options);
+}
+
+// =============================================================================
+// PHASE 3: LLM TEMPLATE CATALOG (Condensed for Prompt Injection)
+// =============================================================================
+
+/**
+ * Generate a condensed template catalog for the LLM prompt
+ * This reduces tokens while giving LLM awareness of available templates
+ * @returns {string} - Markdown-formatted template catalog
+ */
+export function generateTemplateCatalog() {
+  const catalog = `## AVAILABLE TEMPLATES (Use \`template_ref\` to auto-load)
+
+Instead of building full props, you can reference a pre-built template:
+
+| Shortcut | Tool | Description |
+|----------|------|-------------|
+| salary | circular_gauge | Salary input with market benchmarks |
+| hourly_rate | circular_gauge | Hourly rate variant ($15-100/hr) |
+| variable_comp | icon_grid | Tips, commission, bonuses selector |
+| equity | equity_builder | Stock options & vesting wizard |
+| benefits | icon_grid | Health, dental, 401k, PTO selector |
+| schedule_type | detailed_cards | Fixed/rotating/flexible cards |
+| remote_flex | gradient_slider | Remote ↔ On-site spectrum |
+| pto | counter_stack | Vacation/sick/personal day counters |
+| overtime | segmented_rows | Overtime/weekend/on-call frequency |
+| workspace | gradient_cards | Office/retail/warehouse/remote |
+| physical_demands | segmented_rows | Standing/lifting/walking frequency |
+| team_size | circular_gauge | 1-50 team members with markers |
+| management | bipolar_scale | Hands-off↔on, Flexible↔Structured |
+| tech_stack | chip_cloud | Frontend/backend tech groups |
+| career_path | timeline_builder | Year 1 / Year 2-3 / Year 5+ |
+| day_in_life | smart_textarea | Rotating prompts for typical day |
+| autonomy | radar_chart | 5-axis decision authority chart |
+| special | smart_textarea | "What makes this special?" prompts |
+
+### How to Use Templates
+
+**Option 1: Reference by shortcut (PREFERRED - saves tokens)**
+\`\`\`json
+{
+  "ui_tool": {
+    "template_ref": "benefits",
+    "overrides": { "title": "What perks come with this role?" }
+  }
+}
+\`\`\`
+
+**Option 2: Build custom (when template doesn't fit)**
+\`\`\`json
+{
+  "ui_tool": {
+    "type": "icon_grid",
+    "props": { ... full props ... }
+  }
+}
+\`\`\`
+
+Templates auto-apply smart defaults. Only specify \`overrides\` for custom values.
+`;
+
+  return catalog;
+}
+
+// =============================================================================
+// PHASE 3: A2UI EXPORT FORMAT
+// =============================================================================
+// Convert our format to Google A2UI-compatible format for interoperability
+
+/**
+ * Convert our UI tool format to A2UI-compatible format
+ * A2UI separates surface (UI) from data model updates
+ *
+ * @param {object} response - Our response format
+ * @returns {object} - A2UI-compatible format
+ */
+export function convertToA2UIFormat(response) {
+  const { message, ui_tool, extraction, currently_asking_field } = response;
+
+  // A2UI format structure
+  const a2uiResponse = {
+    // Surface update - the UI components
+    surfaceUpdate: {
+      components: [],
+    },
+    // Data model update - extracted data
+    dataModelUpdate: {
+      updates: extraction?.updates || {},
+    },
+    // Agent message
+    agentMessage: message,
+    // Metadata
+    metadata: {
+      targetField: currently_asking_field,
+      timestamp: new Date().toISOString(),
+    },
+  };
+
+  // Convert ui_tool to A2UI component format
+  if (ui_tool) {
+    a2uiResponse.surfaceUpdate.components.push({
+      componentId: ui_tool.componentId || generateComponentId(ui_tool.type, currently_asking_field),
+      componentType: mapToolTypeToA2UI(ui_tool.type),
+      props: ui_tool.props,
+      binding: ui_tool._binding || {
+        schemaPath: currently_asking_field,
+      },
+    });
+  }
+
+  return a2uiResponse;
+}
+
+/**
+ * Map our tool types to A2UI component type conventions
+ * @param {string} toolType - Our tool type
+ * @returns {string} - A2UI component type
+ */
+function mapToolTypeToA2UI(toolType) {
+  // A2UI uses PascalCase for component types
+  const mapping = {
+    circular_gauge: "CircularGauge",
+    stacked_bar: "StackedBar",
+    gradient_slider: "GradientSlider",
+    bipolar_scale: "BipolarScale",
+    radar_chart: "RadarChart",
+    icon_grid: "IconGrid",
+    detailed_cards: "DetailedCards",
+    gradient_cards: "GradientCards",
+    toggle_list: "ToggleList",
+    chip_cloud: "ChipCloud",
+    segmented_rows: "SegmentedRows",
+    counter_stack: "CounterStack",
+    smart_textarea: "SmartTextarea",
+    equity_builder: "EquityBuilder",
+    timeline_builder: "TimelineBuilder",
+    // Add more as needed
+  };
+
+  return mapping[toolType] || toolType.split("_").map(
+    word => word.charAt(0).toUpperCase() + word.slice(1)
+  ).join("");
+}
+
+/**
+ * Process a template reference from LLM response
+ * If ui_tool contains template_ref, expand it to full tool config
+ *
+ * @param {object} uiTool - UI tool that may contain template_ref
+ * @returns {object} - Expanded UI tool
+ */
+export function expandTemplateRef(uiTool) {
+  if (!uiTool) return uiTool;
+
+  // If it's a template reference, expand it
+  if (uiTool.template_ref) {
+    const template = getTemplateByShortcut(uiTool.template_ref, {
+      overrides: uiTool.overrides || {},
+    });
+
+    if (template) {
+      return template;
+    }
+
+    // Fallback: template not found, return as-is (will need full props)
+    console.warn(`Template not found: ${uiTool.template_ref}`);
+    return uiTool;
+  }
+
+  // Not a template reference, return as-is
+  return uiTool;
+}
+
+// =============================================================================
 // EXPORTS
 // =============================================================================
 
 export default {
+  // Phase 2
   SMART_DEFAULTS,
   SCHEMA_BINDINGS,
   generateComponentId,
@@ -514,4 +752,11 @@ export default {
   getRecommendedToolForPath,
   hasTemplateForPath,
   enhanceUITool,
+  // Phase 3
+  TEMPLATE_SHORTCUTS,
+  resolveTemplateShortcut,
+  getTemplateByShortcut,
+  generateTemplateCatalog,
+  convertToA2UIFormat,
+  expandTemplateRef,
 };
