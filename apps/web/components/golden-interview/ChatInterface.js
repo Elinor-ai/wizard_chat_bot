@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import DOMPurify from "isomorphic-dompurify";
 import { GoldenInterviewApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
 import { getComponent } from "./registry";
@@ -532,11 +533,18 @@ export default function ChatInterface({
             </div> */}
 
             {/* Question / Message */}
-            <div className="mb-8">
-              <h1 className="text-2xl font-bold leading-tight text-slate-900 sm:text-xl">
-                {currentMessage || "Let's get started with your interview"}
-              </h1>
-            </div>
+            <div
+              className="mb-8 text-lg text-slate-600 [&>h3]:text-2xl [&>h3]:font-bold [&>h3]:leading-tight [&>h3]:text-slate-900 [&>h3]:mb-3 [&>h3]:block"
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(
+                  currentMessage || "Let's get started with your interview",
+                  {
+                    ALLOWED_TAGS: ["h3", "b", "strong", "span", "em"],
+                    ALLOWED_ATTR: ["class"],
+                  }
+                ),
+              }}
+            />
 
             {/* Typing Indicator */}
             {isTyping && (
