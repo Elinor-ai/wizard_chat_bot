@@ -478,6 +478,8 @@ export class GoldenInterviewerService {
       turnNumber: session.turnCount + 1,
       isFirstTurn: false,
       sessionId,
+      // Pass the field that was asked in the PREVIOUS turn (for extraction reminder)
+      lastAskedField: session.metadata?.lastAskedField || null,
       // Pass friction state to LLM
       frictionState: {
         isSkip,
