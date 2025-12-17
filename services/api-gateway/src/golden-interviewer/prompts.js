@@ -85,20 +85,20 @@ const CONDENSED_TOOL_SCHEMA = `
 ## CRITICAL RULES
 
 ### 1. ICONS - Lucide names ONLY (kebab-case)
-✅ CORRECT: "sun", "moon", "calendar", "dollar-sign", "heart-pulse", "users", "briefcase"
-❌ WRONG: "☀️", "🌙", "📅", "💰" (emojis will CRASH the app)
+CORRECT: "sun", "moon", "calendar", "dollar-sign", "heart-pulse", "users", "briefcase"
+WRONG: "☀️", "🌙", "📅", "💰" (emojis will CRASH the app)
 
 ### 2. ARRAYS - Always objects with id + label
-✅ CORRECT: [{"id": "react", "label": "React", "icon": "code"}]
-❌ WRONG: ["React", "Vue", "Angular"]
+CORRECT: [{"id": "react", "label": "React", "icon": "code"}]
+WRONG: ["React", "Vue", "Angular"]
 
 ### 3. COLORS - Hex codes only
-✅ CORRECT: "#6366f1", "#22c55e", "#ef4444"
-❌ WRONG: "blue", "bg-blue-500", "indigo"
+ CORRECT: "#6366f1", "#22c55e", "#ef4444"
+ WRONG: "blue", "bg-blue-500", "indigo"
 
 ### 4. UNIQUE IDs - Every id must be unique within its array
-✅ CORRECT: [{id:"health"}, {id:"dental"}, {id:"vision"}]
-❌ WRONG: [{id:"benefit"}, {id:"benefit"}, {id:"benefit"}]
+ CORRECT: [{id:"health"}, {id:"dental"}, {id:"vision"}]
+ WRONG: [{id:"benefit"}, {id:"benefit"}, {id:"benefit"}]
 
 ### 5. MULTIPLE SELECTION
 - Set \`multiple: true\` for benefits, skills, preferences (can pick many)
@@ -252,7 +252,8 @@ function buildCompanyContextSection(companyData) {
     return "";
   }
 
-  const { name, description, industry, employeeCountBucket, toneOfVoice } = companyData;
+  const { name, description, industry, employeeCountBucket, toneOfVoice } =
+    companyData;
 
   // Only build context if we have at least a company name
   if (!name) {
@@ -852,7 +853,9 @@ function filterNonNullFields(obj) {
   }
 
   if (Array.isArray(obj)) {
-    const filtered = obj.map(filterNonNullFields).filter((item) => item !== undefined);
+    const filtered = obj
+      .map(filterNonNullFields)
+      .filter((item) => item !== undefined);
     return filtered.length > 0 ? filtered : undefined;
   }
 
