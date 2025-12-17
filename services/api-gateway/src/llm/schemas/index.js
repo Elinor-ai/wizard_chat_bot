@@ -316,9 +316,10 @@ export const CompanyIntelOutputSchema = z.object({
 export { GoldenInterviewerOutputSchema } from "./golden-interviewer.js";
 
 // =============================================================================
-// GOLDEN DB UPDATE TASK
+// GOLDEN DB UPDATE TASK (Saver Agent)
 // =============================================================================
 
 export const GoldenDbUpdateOutputSchema = z.object({
-  updates: z.record(z.any()).describe("Key-value pairs to update in the Golden Schema"),
+  updates: z.record(z.any()).describe("Key-value pairs to update in the Golden Schema. Keys use dot notation (e.g., 'financial_reality.base_compensation.amount_or_range')"),
+  reasoning: z.string().optional().describe("Brief explanation of what was extracted and why"),
 });

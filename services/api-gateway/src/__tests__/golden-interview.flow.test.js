@@ -29,7 +29,16 @@ import {
 // Store original fetch
 const originalFetch = global.fetch;
 
-// Mock response for /api/llm golden_interviewer calls
+// Mock response for golden_db_update (Saver Agent)
+const mockSaverAgentResponse = {
+  taskType: "golden_db_update",
+  result: {
+    updates: {},
+    reasoning: "No factual data found to extract",
+  },
+};
+
+// Mock response for golden_interviewer (Chat Agent)
 const mockLlmApiResponse = {
   taskType: "golden_interviewer",
   result: {
@@ -84,19 +93,26 @@ describe("Golden Interviewer Flow", () => {
 
       // Intercept calls to /api/llm
       if (urlStr.includes("/api/llm")) {
+        const body = options?.body ? JSON.parse(options.body) : null;
+
         internalLlmCalls.push({
           url: urlStr,
           method: options?.method,
-          body: options?.body ? JSON.parse(options.body) : null,
+          body,
           headers: options?.headers,
         });
 
-        // Return mock response
+        // Return appropriate mock response based on taskType
+        const taskType = body?.taskType;
+        const mockResponse = taskType === "golden_db_update"
+          ? mockSaverAgentResponse
+          : mockLlmApiResponse;
+
         return {
           ok: true,
           status: 200,
-          json: async () => mockLlmApiResponse,
-          text: async () => JSON.stringify(mockLlmApiResponse),
+          json: async () => mockResponse,
+          text: async () => JSON.stringify(mockResponse),
         };
       }
 
@@ -237,7 +253,7 @@ describe("Golden Interviewer Flow", () => {
       expect(response.body).toHaveProperty("message");
     });
 
-    it("makes internal HTTP call to /api/llm for chat turn", async () => {
+    it("makes internal HTTP calls to /api/llm for chat turn (Saver + Chat agents)", async () => {
       await request(app)
         .post("/golden-interview/chat")
         .set("Authorization", `Bearer ${authToken}`)
@@ -246,12 +262,23 @@ describe("Golden Interviewer Flow", () => {
           userMessage: "The job title is Senior Engineer",
         });
 
-      // Verify internal fetch was called with golden_interviewer task
-      const llmCall = internalLlmCalls.find((c) => c.url.includes("/api/llm"));
-      expect(llmCall).toBeDefined();
-      expect(llmCall.body).toHaveProperty("taskType", "golden_interviewer");
-      expect(llmCall.body.context).toHaveProperty("isFirstTurn", false);
-      expect(llmCall.body.context).toHaveProperty("userMessage", "The job title is Senior Engineer");
+      // With Saver Agent architecture, there are now 2 LLM calls:
+      // 1. golden_db_update (Saver Agent) - extracts data
+      // 2. golden_interviewer (Chat Agent) - generates response
+
+      // Verify both calls were made
+      expect(internalLlmCalls.length).toBe(2);
+
+      // First call should be Saver Agent
+      const saverCall = internalLlmCalls[0];
+      expect(saverCall.body).toHaveProperty("taskType", "golden_db_update");
+      expect(saverCall.body.context).toHaveProperty("userMessage", "The job title is Senior Engineer");
+
+      // Second call should be Chat Agent
+      const chatCall = internalLlmCalls[1];
+      expect(chatCall.body).toHaveProperty("taskType", "golden_interviewer");
+      expect(chatCall.body.context).toHaveProperty("isFirstTurn", false);
+      expect(chatCall.body.context).toHaveProperty("userMessage", "The job title is Senior Engineer");
     });
 
     it("updates session turnCount after chat", async () => {

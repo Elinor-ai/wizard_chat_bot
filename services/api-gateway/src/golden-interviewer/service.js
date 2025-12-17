@@ -11,7 +11,7 @@
  */
 
 import { nanoid } from "nanoid";
-import { estimateSchemaCompletion } from "./prompts.js";
+import { estimateSchemaCompletion, detectRoleArchetypeFromSchema } from "./prompts.js";
 import { validateUIToolProps } from "./tools-definition.js";
 import { createInitialGoldenRecord } from "@wizard/core";
 import { enhanceUITool, expandTemplateRef } from "./ui-templates.js";
@@ -110,6 +110,70 @@ export class GoldenInterviewerService {
     );
 
     return data.result;
+  }
+
+  /**
+   * Call the Saver Agent (golden_db_update) via HTTP POST /api/llm
+   * This runs BEFORE the chat agent to extract and save data from user input.
+   *
+   * @param {object} options
+   * @param {string} options.authToken - Bearer token for authentication
+   * @param {object} options.context - Context for the Saver Agent
+   * @returns {Promise<object>} - The extraction result { updates, reasoning, metadata }
+   */
+  async callSaverAgentApi({ authToken, context }) {
+    const url = `${this.apiBaseUrl}/api/llm`;
+
+    this.logger.info(
+      {
+        taskType: "golden_db_update",
+        sessionId: context.sessionId,
+        lastAskedField: context.lastAskedField,
+        hasUserInput: Boolean(context.userInput || context.userMessage || context.uiResponse),
+      },
+      "golden-interviewer.saver_agent.request"
+    );
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        taskType: "golden_db_update",
+        context,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      this.logger.error(
+        {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+          sessionId: context.sessionId,
+        },
+        "golden-interviewer.saver_agent.http_error"
+      );
+      // Don't throw - Saver Agent failure shouldn't block the chat
+      return { updates: {}, reasoning: null, error: errorText };
+    }
+
+    const data = await response.json();
+
+    this.logger.info(
+      {
+        sessionId: context.sessionId,
+        hasResult: !!data.result,
+        hasError: !!data.result?.error,
+        updateCount: data.result?.updates ? Object.keys(data.result.updates).length : 0,
+      },
+      "golden-interviewer.saver_agent.response"
+    );
+
+    return data.result || { updates: {}, reasoning: null };
   }
 
   // ===========================================================================
@@ -466,9 +530,101 @@ export class GoldenInterviewerService {
     }
 
     // =========================================================================
-    // GENERATE NEXT TURN VIA LLM (with friction context)
+    // STEP 1: SAVER AGENT - Extract and save data BEFORE chat agent
+    // =========================================================================
+    // Detect role archetype for context-aware extraction
+    const roleArchetype = detectRoleArchetypeFromSchema(session.goldenSchema || {});
+
+    const saverContext = {
+      userInput: userMessage || uiResponse,
+      userMessage,
+      uiResponse,
+      lastAskedField: session.metadata?.lastAskedField || null,
+      currentSchema: session.goldenSchema || {},
+      conversationHistory: session.conversationHistory.slice(-4), // Last 4 messages for context
+      sessionId,
+      // Additional context for smarter extraction
+      companyData,
+      roleArchetype,
+      frictionState: {
+        isSkip,
+        skipReason: isSkip ? skipReason : null,
+        consecutiveSkips: friction.consecutiveSkips,
+        totalSkips: friction.totalSkips,
+      },
+    };
+
+    // Call Saver Agent to extract data from user input
+    let saverResult = { updates: {}, reasoning: null };
+
+    // Log schema state BEFORE Saver Agent
+    console.log(
+      "\n========== SCHEMA TRACKING ==========\n" +
+      "📋 [BEFORE SAVER AGENT] Schema fields with values:",
+      JSON.stringify(this.getFilledFields(session.goldenSchema || {}), null, 2)
+    );
+
+    try {
+      saverResult = await this.callSaverAgentApi({ authToken, context: saverContext });
+      console.log(
+        "🤖 [SAVER AGENT] Result:",
+        JSON.stringify(saverResult, null, 2)
+      );
+
+      // Apply Saver Agent extractions to schema BEFORE chat agent sees it
+      if (saverResult?.updates && Object.keys(saverResult.updates).length > 0) {
+        console.log(
+          "✅ [SAVER AGENT] Updates to apply:",
+          JSON.stringify(saverResult.updates, null, 2)
+        );
+        const updatedSchema = this.applySchemaUpdates(
+          session.goldenSchema || {},
+          saverResult.updates
+        );
+        session.goldenSchema = updatedSchema;
+
+        // Log schema state AFTER Saver Agent
+        console.log(
+          "📋 [AFTER SAVER AGENT] Schema fields with values:",
+          JSON.stringify(this.getFilledFields(session.goldenSchema || {}), null, 2)
+        );
+
+        this.logger.info(
+          {
+            sessionId,
+            updateCount: Object.keys(saverResult.updates).length,
+            fields: Object.keys(saverResult.updates),
+            reasoning: saverResult.reasoning,
+          },
+          "golden-interviewer.saver_agent.updates_applied"
+        );
+
+        // Save immediately after Saver Agent extractions (don't wait for Chat Agent)
+        await saveSession({
+          firestore: this.firestore,
+          sessionId,
+          session,
+        });
+        console.log("💾 [SAVER AGENT] Saved to Firestore immediately");
+      } else {
+        console.log(
+          "⚠️ [SAVER AGENT] No updates extracted. Reasoning:",
+          saverResult?.reasoning || "none"
+        );
+      }
+    } catch (error) {
+      // Saver Agent failure should NOT block the conversation
+      this.logger.warn(
+        { sessionId, err: error },
+        "golden-interviewer.saver_agent.error"
+      );
+    }
+
+    // =========================================================================
+    // STEP 2: CHAT AGENT - Generate next turn (with updated schema from Saver)
     // =========================================================================
     const llmContext = {
+      // Use the UPDATED schema after Saver Agent extraction
       currentSchema: session.goldenSchema || {},
       companyData,
       conversationHistory: session.conversationHistory,
@@ -488,6 +644,11 @@ export class GoldenInterviewerService {
         consecutiveSkips: friction.consecutiveSkips,
         totalSkips: friction.totalSkips,
         currentStrategy: friction.currentStrategy,
+      },
+      // Pass Saver Agent result for context (chat agent knows what was just saved)
+      saverResult: {
+        fieldsUpdated: Object.keys(saverResult?.updates || {}),
+        reasoning: saverResult?.reasoning || null,
       },
     };
 
@@ -568,27 +729,37 @@ export class GoldenInterviewerService {
       },
       "golden-interviewer.tool_selection.reasoning"
     );
-    // Apply schema extractions
+    // Log schema state BEFORE Chat Agent extraction
+    console.log(
+      "\n📋 [BEFORE CHAT AGENT EXTRACTION] Schema fields with values:",
+      JSON.stringify(this.getFilledFields(session.goldenSchema || {}), null, 2)
+    );
+
+    // Apply schema extractions from Chat Agent
     if (parsed.extraction?.updates && Object.keys(parsed.extraction.updates).length > 0) {
       console.log(
-        "🔍 [Backend] EXTRACTION UPDATES:",
+        "🎯 [CHAT AGENT] Extraction updates to apply:",
         JSON.stringify(parsed.extraction.updates, null, 2)
       );
       const updatedSchema = this.applySchemaUpdates(
         session.goldenSchema || {},
         parsed.extraction.updates
       );
-      console.log(
-        "🔍 [Backend] SCHEMA AFTER APPLY (technologies_used):",
-        updatedSchema?.growth_trajectory?.skill_building?.technologies_used
-      );
       session.goldenSchema = updatedSchema;
+
+      // Log schema state AFTER Chat Agent extraction
+      console.log(
+        "📋 [AFTER CHAT AGENT EXTRACTION] Schema fields with values:",
+        JSON.stringify(this.getFilledFields(session.goldenSchema || {}), null, 2)
+      );
     } else {
       console.log(
-        "🔍 [Backend] NO EXTRACTION UPDATES - parsed.extraction:",
+        "⚠️ [CHAT AGENT] No extraction updates - parsed.extraction:",
         JSON.stringify(parsed.extraction, null, 2)
       );
     }
+
+    console.log("========== END SCHEMA TRACKING ==========\n");
 
     // Normalize UI tool props (fix common LLM format errors)
     if (parsed.ui_tool) {
@@ -685,6 +856,7 @@ export class GoldenInterviewerService {
       sessionId,
       session,
     });
+    console.log("💾 [CHAT AGENT] Saved to Firestore (final save)");
 
     // Auto-complete session if interview is done
     if (isInterviewComplete) {
@@ -906,6 +1078,48 @@ export class GoldenInterviewerService {
     });
 
     return schema;
+  }
+
+  /**
+   * Get filled fields from schema for logging purposes
+   * Returns only fields that have actual values (not null/undefined/empty objects)
+   * @param {object} schema - The schema to analyze
+   * @param {string} [prefix=""] - Internal prefix for recursion
+   * @returns {object} Flat object with dot notation keys and their values
+   */
+  getFilledFields(schema, prefix = "") {
+    const result = {};
+
+    if (!schema || typeof schema !== "object") {
+      return result;
+    }
+
+    for (const [key, value] of Object.entries(schema)) {
+      // Skip internal/system fields
+      if (["id", "companyId", "user_context"].includes(key)) {
+        continue;
+      }
+
+      const fullPath = prefix ? `${prefix}.${key}` : key;
+
+      if (value === null || value === undefined) {
+        continue;
+      }
+
+      if (typeof value === "object" && !Array.isArray(value)) {
+        // Recurse into nested objects
+        const nested = this.getFilledFields(value, fullPath);
+        Object.assign(result, nested);
+      } else if (Array.isArray(value) && value.length > 0) {
+        // Include non-empty arrays
+        result[fullPath] = value;
+      } else if (typeof value !== "object") {
+        // Include primitive values
+        result[fullPath] = value;
+      }
+    }
+
+    return result;
   }
 
   /**
