@@ -51,6 +51,11 @@ import {
 } from "./prompts/golden-interviewer.js";
 import { parseGoldenInterviewerResult } from "./parsers/golden-interviewer.js";
 import {
+  buildGoldenDbUpdatePrompt,
+  buildGoldenDbUpdateSystemPrompt,
+} from "./prompts/golden-db-update.js";
+import { parseGoldenDbUpdateResult } from "./parsers/golden-db-update.js";
+import {
   SuggestOutputSchema,
   RefineOutputSchema,
   ChannelsOutputSchema,
@@ -66,6 +71,7 @@ import {
   ImageCaptionOutputSchema,
   CompanyIntelOutputSchema,
   GoldenInterviewerOutputSchema,
+  GoldenDbUpdateOutputSchema,
 } from "./schemas/index.js";
 
 export const TASK_REGISTRY = {
@@ -300,6 +306,20 @@ export const TASK_REGISTRY = {
     // Native structured output schema - enforces response structure at API level
     outputSchema: GoldenInterviewerOutputSchema,
     outputSchemaName: "golden_interviewer_response",
+  },
+  golden_db_update: {
+    // TODO: Implement full system prompt
+    systemBuilder: buildGoldenDbUpdateSystemPrompt,
+    system: "You are a data extraction assistant. Extract structured data from user responses.",
+    builder: buildGoldenDbUpdatePrompt,
+    parser: parseGoldenDbUpdateResult,
+    mode: "json",
+    temperature: 0.1,
+    maxTokens: { default: 1000, gemini: 2048 },
+    retries: 2,
+    strictOnRetry: true,
+    outputSchema: GoldenDbUpdateOutputSchema,
+    outputSchemaName: "golden_db_update_response",
   },
 };
 

@@ -675,6 +675,81 @@ async function askGoldenInterviewerTurn(context) {
   }
 }
 
+/**
+ * Process a Golden DB Update request.
+ * Extracts structured data from user input and maps it to Golden Schema fields.
+ *
+ * @param {object} context - The context for the update
+ * @param {object} [context.userInput] - The user's input to extract from
+ * @param {string} [context.targetField] - The schema field being targeted
+ * @param {object} [context.currentSchema] - Current state of the golden schema
+ * @returns {Promise<object>} - The LLM response with extraction updates
+ */
+async function askGoldenDbUpdate(context) {
+  try {
+    llmLogger.info(
+      {
+        sessionId: context?.sessionId ?? null,
+        targetField: context?.targetField ?? null,
+        hasUserInput: Boolean(context?.userInput),
+      },
+      "askGoldenDbUpdate:start"
+    );
+
+    const result = await orchestrator.run(
+      LLM_CORE_TASK.GOLDEN_DB_UPDATE,
+      context
+    );
+
+    if (result.error) {
+      llmLogger.error(
+        {
+          task: LLM_CORE_TASK.GOLDEN_DB_UPDATE,
+          provider: result.provider,
+          model: result.model,
+          reason: result.error.reason,
+          message: result.error.message,
+        },
+        "askGoldenDbUpdate:error"
+      );
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model,
+        },
+      };
+    }
+
+    llmLogger.info(
+      {
+        provider: result.provider,
+        model: result.model,
+        updateCount: Object.keys(result.updates ?? {}).length,
+      },
+      "askGoldenDbUpdate:success"
+    );
+
+    return {
+      provider: result.provider,
+      model: result.model,
+      updates: result.updates ?? {},
+      metadata: result.metadata ?? null,
+    };
+  } catch (error) {
+    llmLogger.error(
+      { err: error },
+      "askGoldenDbUpdate orchestrator failure"
+    );
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error),
+      },
+    };
+  }
+}
+
 export const llmClient = {
   askSuggestions,
   askChannelRecommendations,
@@ -692,4 +767,5 @@ export const llmClient = {
   askImageCaption,
   runImageGeneration,
   askGoldenInterviewerTurn,
+  askGoldenDbUpdate,
 };

@@ -314,3 +314,11 @@ export const CompanyIntelOutputSchema = z.object({
 // =============================================================================
 
 export { GoldenInterviewerOutputSchema } from "./golden-interviewer.js";
+
+// =============================================================================
+// GOLDEN DB UPDATE TASK
+// =============================================================================
+
+export const GoldenDbUpdateOutputSchema = z.object({
+  updates: z.record(z.any()).describe("Key-value pairs to update in the Golden Schema"),
+});
