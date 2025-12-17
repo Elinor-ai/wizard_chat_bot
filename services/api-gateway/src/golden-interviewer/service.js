@@ -567,7 +567,7 @@ export class GoldenInterviewerService {
       "golden-interviewer.tool_selection.reasoning"
     );
     // Apply schema extractions
-    if (parsed.extraction?.updates) {
+    if (parsed.extraction?.updates && Object.keys(parsed.extraction.updates).length > 0) {
       console.log(
         "🔍 [Backend] EXTRACTION UPDATES:",
         JSON.stringify(parsed.extraction.updates, null, 2)

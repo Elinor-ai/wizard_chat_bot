@@ -16,10 +16,10 @@ const LLMResponseSchema = z.object({
   message: z.string(),
   extraction: z
     .object({
-      updates: z.record(z.any()).optional(),
+      updates: z.record(z.any()).default({}),
       confidence: z.record(z.number()).optional(),
     })
-    .optional(),
+    .default({ updates: {} }),
   ui_tool: z
     .object({
       type: z.string(),
