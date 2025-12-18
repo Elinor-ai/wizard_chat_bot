@@ -56,6 +56,11 @@ import {
 } from "./prompts/golden-db-update.js";
 import { parseGoldenDbUpdateResult } from "./parsers/golden-db-update.js";
 import {
+  buildGoldenRefinePrompt,
+  buildGoldenRefineSystemPrompt,
+} from "./prompts/golden-refine.js";
+import { parseGoldenRefineResult } from "./parsers/golden-refine.js";
+import {
   SuggestOutputSchema,
   RefineOutputSchema,
   ChannelsOutputSchema,
@@ -72,6 +77,7 @@ import {
   CompanyIntelOutputSchema,
   GoldenInterviewerOutputSchema,
   GoldenDbUpdateOutputSchema,
+  GoldenRefineOutputSchema,
 } from "./schemas/index.js";
 
 export const TASK_REGISTRY = {
@@ -320,6 +326,20 @@ export const TASK_REGISTRY = {
     strictOnRetry: true,
     outputSchema: GoldenDbUpdateOutputSchema,
     outputSchemaName: "golden_db_update_response",
+  },
+  golden_refine: {
+    // TODO: Implement full system prompt when requirements are finalized
+    systemBuilder: buildGoldenRefineSystemPrompt,
+    system: "You are a data refinement assistant. Analyze and suggest improvements to collected job data.",
+    builder: buildGoldenRefinePrompt,
+    parser: parseGoldenRefineResult,
+    mode: "json",
+    temperature: 0.3,
+    maxTokens: { default: 2000, gemini: 4096 },
+    retries: 2,
+    strictOnRetry: true,
+    outputSchema: GoldenRefineOutputSchema,
+    outputSchemaName: "golden_refine_response",
   },
 };
 

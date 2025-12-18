@@ -44,6 +44,8 @@ const ChatRequestSchema = z.object({
   uiResponse: z.any().optional(),
   // Explicit skip signal (machine-readable, locale-agnostic)
   skipAction: SkipActionSchema.optional(),
+  // Set to true when user already saw refine suggestions and is confirming a value
+  acceptRefinedValue: z.boolean().optional().default(false),
 });
 
 // =============================================================================
@@ -228,6 +230,7 @@ export function goldenInterviewRouter({ firestore, logger }) {
         userMessage: body.userMessage,
         uiResponse: body.uiResponse,
         skipAction: body.skipAction || null,
+        acceptRefinedValue: body.acceptRefinedValue || false,
       });
 
       logger.info(

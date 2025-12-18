@@ -323,3 +323,36 @@ export const GoldenDbUpdateOutputSchema = z.object({
   updates: z.record(z.any()).describe("Key-value pairs to update in the Golden Schema. Keys use dot notation (e.g., 'financial_reality.base_compensation.amount_or_range')"),
   reasoning: z.string().optional().describe("Brief explanation of what was extracted and why"),
 });
+
+// =============================================================================
+// GOLDEN REFINE TASK
+// =============================================================================
+
+const GoldenRefineSuggestionSchema = z.object({
+  value: z.string().describe("The improved version of the user's response"),
+  improvement_type: z.enum(["clarity", "completeness", "specificity", "professionalism", "attractiveness"])
+    .describe("Type of improvement made"),
+  why_better: z.string().optional().describe("Brief explanation of why this is an improvement"),
+});
+
+export const GoldenRefineOutputSchema = z.object({
+  // Can the user proceed with this answer?
+  can_proceed: z.boolean()
+    .describe("Whether the user can proceed with this answer. False if answer is invalid/nonsensical for the field."),
+
+  // Why can't they proceed? (only when can_proceed=false)
+  validation_issue: z.string().optional()
+    .describe("Explanation of why the answer is invalid (only present when can_proceed=false)"),
+
+  // Quality assessment (when can_proceed=true)
+  quality: z.enum(["good", "could_improve"])
+    .describe("Quality of the response - 'good' means no suggestions needed"),
+
+  // Explanation
+  reasoning: z.string()
+    .describe("Brief explanation of the evaluation"),
+
+  // Suggested improvements
+  suggestions: z.array(GoldenRefineSuggestionSchema)
+    .describe("List of suggested improvements (empty if quality is 'good' or can_proceed is false with no alternatives)"),
+});

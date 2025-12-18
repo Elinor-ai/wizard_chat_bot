@@ -66,6 +66,9 @@ export default function ChatInterface({
   const [inputValue, setInputValue] = useState("");
   const [dynamicValue, setDynamicValue] = useState(null);
 
+  // Refine suggestions state
+  const [refineResult, setRefineResult] = useState(null);
+
   // Interview progress state
   const [currentPhase, setCurrentPhase] = useState("opening");
   const [contextExplanation, setContextExplanation] = useState("");
@@ -144,6 +147,7 @@ export default function ChatInterface({
       setInputValue("");
       setDynamicValue(null);
       setCurrentTool(null);
+      setRefineResult(null);
       setIsTyping(true);
       setError(null);
 
@@ -157,6 +161,21 @@ export default function ChatInterface({
           },
           { authToken }
         );
+
+        // Check if we got refine suggestions (backend wants us to pause)
+        if (response.refine_result?.suggestions?.length > 0) {
+          setRefineResult(response.refine_result);
+          // Keep the current tool visible so user can see what they answered
+          // Don't update message - show suggestions UI instead
+          return;
+        }
+
+        // Check if validation failed (can_proceed = false)
+        if (response.refine_result?.can_proceed === false) {
+          setError(response.refine_result.validation_issue || response.message || "Please provide a valid response.");
+          // Keep current tool so user can retry
+          return;
+        }
 
         // Map snake_case API response to camelCase state
         if (response.interview_phase) {
@@ -211,6 +230,74 @@ export default function ChatInterface({
     }
   };
 
+  // Handle selecting a suggestion from refine result
+  const handleSelectSuggestion = useCallback(async (suggestionValue) => {
+    if (!refineResult || !sessionId || !authToken) return;
+
+    setRefineResult(null);
+    setIsTyping(true);
+    setError(null);
+
+    try {
+      // Re-submit with the improved value, marking as accepted (skip refine check)
+      const response = await GoldenInterviewApi.sendMessage(
+        {
+          sessionId,
+          userMessage: suggestionValue,
+          acceptRefinedValue: true, // Tell backend to skip golden_refine
+        },
+        { authToken }
+      );
+
+      // Process normal response
+      if (response.interview_phase) setCurrentPhase(response.interview_phase);
+      if (response.context_explanation) setContextExplanation(response.context_explanation);
+      if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
+      if (response.message) setCurrentMessage(response.message);
+      if (response.ui_tool) setCurrentTool(response.ui_tool);
+      if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
+    } catch (err) {
+      console.error("Failed to submit suggestion:", err);
+      setError(err.message || "Failed to submit. Please try again.");
+    } finally {
+      setIsTyping(false);
+    }
+  }, [refineResult, sessionId, authToken]);
+
+  // Handle keeping the original value
+  const handleKeepOriginal = useCallback(async () => {
+    if (!refineResult?.original_value || !sessionId || !authToken) return;
+
+    setRefineResult(null);
+    setIsTyping(true);
+    setError(null);
+
+    try {
+      // Re-submit with original value, marking as accepted (skip refine check)
+      const response = await GoldenInterviewApi.sendMessage(
+        {
+          sessionId,
+          userMessage: refineResult.original_value,
+          acceptRefinedValue: true, // Tell backend to skip golden_refine
+        },
+        { authToken }
+      );
+
+      // Process normal response
+      if (response.interview_phase) setCurrentPhase(response.interview_phase);
+      if (response.context_explanation) setContextExplanation(response.context_explanation);
+      if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
+      if (response.message) setCurrentMessage(response.message);
+      if (response.ui_tool) setCurrentTool(response.ui_tool);
+      if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
+    } catch (err) {
+      console.error("Failed to keep original:", err);
+      setError(err.message || "Failed to submit. Please try again.");
+    } finally {
+      setIsTyping(false);
+    }
+  }, [refineResult, sessionId, authToken]);
+
   // ==========================================================================
   // RENDER HELPERS
   // ==========================================================================
@@ -238,6 +325,82 @@ export default function ChatInterface({
         value={dynamicValue ?? undefined}
         onChange={setDynamicValue}
       />
+    );
+  };
+
+  const renderSuggestionsUI = () => {
+    if (!refineResult?.suggestions?.length) return null;
+
+    return (
+      <div className="rounded-xl border border-primary-100 bg-gradient-to-br from-primary-50/50 to-violet-50/50 p-6">
+        {/* Header */}
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-100">
+            <SparklesIcon className="h-5 w-5 text-primary-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-800">We have a few suggestions</h3>
+            <p className="text-sm text-slate-500">
+              {refineResult.reasoning || "Here are some ways to improve your response"}
+            </p>
+          </div>
+        </div>
+
+        {/* Original Value */}
+        <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
+          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">
+            Your answer
+          </div>
+          <div className="text-sm text-slate-700">{refineResult.original_value}</div>
+        </div>
+
+        {/* Suggestions */}
+        <div className="mb-4 space-y-2">
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Suggested improvements
+          </div>
+          {refineResult.suggestions.map((suggestion, index) => (
+            <button
+              key={index}
+              onClick={() => handleSelectSuggestion(suggestion.value)}
+              className="group w-full rounded-lg border border-slate-200 bg-white p-4 text-left transition-all hover:border-primary-300 hover:bg-primary-50/50 hover:shadow-md"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="font-medium text-slate-800 group-hover:text-primary-700">
+                    {suggestion.value}
+                  </div>
+                  {suggestion.why_better && (
+                    <div className="mt-1 text-xs text-slate-500">
+                      {suggestion.why_better}
+                    </div>
+                  )}
+                </div>
+                <div className="flex-shrink-0 rounded-full bg-slate-100 p-1.5 group-hover:bg-primary-100">
+                  <svg className="h-4 w-4 text-slate-400 group-hover:text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </div>
+              </div>
+              {suggestion.improvement_type && (
+                <div className="mt-2">
+                  <span className="inline-flex items-center rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700">
+                    {suggestion.improvement_type}
+                  </span>
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Keep Original Button */}
+        <button
+          onClick={handleKeepOriginal}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300"
+        >
+          Keep my original answer
+        </button>
+      </div>
     );
   };
 
@@ -550,8 +713,15 @@ export default function ChatInterface({
               </div>
             )}
 
-            {/* Dynamic Input OR Text Input */}
-            {!isTyping && (
+            {/* Suggestions UI - shown when refine_result has suggestions */}
+            {refineResult?.suggestions?.length > 0 && (
+              <div className="space-y-6">
+                {renderSuggestionsUI()}
+              </div>
+            )}
+
+            {/* Dynamic Input OR Text Input - hidden when showing suggestions */}
+            {!isTyping && !refineResult?.suggestions?.length && (
               <div className="space-y-6">
                 {currentTool ? (
                   <>
@@ -919,6 +1089,24 @@ function UserIcon({ className }) {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+      />
+    </svg>
+  );
+}
+
+function SparklesIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
       />
     </svg>
   );

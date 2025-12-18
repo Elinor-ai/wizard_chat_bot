@@ -750,6 +750,89 @@ async function askGoldenDbUpdate(context) {
   }
 }
 
+/**
+ * Process a Golden Refine request.
+ * Evaluates free-text user input and suggests improvements.
+ *
+ * @param {object} context - The context for the refine request
+ * @param {string} context.userMessage - The user's free-text input to evaluate
+ * @param {string} context.lastAskedField - The schema field path being answered
+ * @param {object} [context.currentSchema] - Current state of the golden schema
+ * @param {array} [context.conversationHistory] - Previous conversation messages
+ * @param {object} [context.companyData] - Company context data
+ * @returns {Promise<object>} - The LLM response with quality assessment and suggestions
+ */
+async function askGoldenRefine(context) {
+  try {
+    llmLogger.info(
+      {
+        sessionId: context?.sessionId ?? null,
+        lastAskedField: context?.lastAskedField ?? null,
+        userMessageLength: context?.userMessage?.length ?? 0,
+      },
+      "askGoldenRefine:start"
+    );
+
+    const result = await orchestrator.run(
+      LLM_CORE_TASK.GOLDEN_REFINE,
+      context
+    );
+
+    if (result.error) {
+      llmLogger.error(
+        {
+          task: LLM_CORE_TASK.GOLDEN_REFINE,
+          provider: result.provider,
+          model: result.model,
+          reason: result.error.reason,
+          message: result.error.message,
+        },
+        "askGoldenRefine:error"
+      );
+      return {
+        error: {
+          ...result.error,
+          provider: result.provider,
+          model: result.model,
+        },
+      };
+    }
+
+    llmLogger.info(
+      {
+        provider: result.provider,
+        model: result.model,
+        canProceed: result.can_proceed,
+        quality: result.quality,
+        suggestionCount: result.suggestions?.length ?? 0,
+      },
+      "askGoldenRefine:success"
+    );
+
+    return {
+      provider: result.provider,
+      model: result.model,
+      can_proceed: result.can_proceed ?? true,
+      validation_issue: result.validation_issue ?? null,
+      quality: result.quality ?? "good",
+      reasoning: result.reasoning ?? null,
+      suggestions: result.suggestions ?? [],
+      metadata: result.metadata ?? null,
+    };
+  } catch (error) {
+    llmLogger.error(
+      { err: error },
+      "askGoldenRefine orchestrator failure"
+    );
+    return {
+      error: {
+        reason: "exception",
+        message: error?.message ?? String(error),
+      },
+    };
+  }
+}
+
 export const llmClient = {
   askSuggestions,
   askChannelRecommendations,
@@ -768,4 +851,5 @@ export const llmClient = {
   runImageGeneration,
   askGoldenInterviewerTurn,
   askGoldenDbUpdate,
+  askGoldenRefine,
 };

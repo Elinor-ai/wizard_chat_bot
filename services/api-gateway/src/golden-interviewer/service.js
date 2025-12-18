@@ -176,6 +176,82 @@ export class GoldenInterviewerService {
     return data.result || { updates: {}, reasoning: null };
   }
 
+  /**
+   * Call the Golden Refine API to validate and suggest improvements for free-text input.
+   * This runs BEFORE saving data to validate user input.
+   *
+   * @param {object} options
+   * @param {string} options.authToken - Bearer token for authentication
+   * @param {object} options.context - Context for the refine request
+   * @returns {Promise<object>} - The refine result { can_proceed, validation_issue, quality, suggestions, ... }
+   */
+  async callGoldenRefineApi({ authToken, context }) {
+    const url = `${this.apiBaseUrl}/api/llm`;
+
+    this.logger.info(
+      {
+        taskType: "golden_refine",
+        sessionId: context.sessionId,
+        lastAskedField: context.lastAskedField,
+        userMessageLength: context.userMessage?.length || 0,
+      },
+      "golden-interviewer.refine.request"
+    );
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        taskType: "golden_refine",
+        context,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      this.logger.error(
+        {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+          sessionId: context.sessionId,
+        },
+        "golden-interviewer.refine.http_error"
+      );
+      // Don't throw - refine failure shouldn't block the conversation
+      // Return permissive default (allow proceed)
+      return { can_proceed: true, quality: "good", suggestions: [], error: errorText };
+    }
+
+    const data = await response.json();
+
+    this.logger.info(
+      {
+        sessionId: context.sessionId,
+        hasResult: !!data.result,
+        canProceed: data.result?.can_proceed,
+        quality: data.result?.quality,
+        suggestionCount: data.result?.suggestions?.length || 0,
+      },
+      "golden-interviewer.refine.response"
+    );
+
+    return data.result || { can_proceed: true, quality: "good", suggestions: [] };
+  }
+
+  /**
+   * Check if a UI tool type is a free-text input that should be refined
+   * @param {string} toolType - The UI tool type (e.g., "smart_textarea", "tag_input")
+   * @returns {boolean}
+   */
+  isRefineableToolType(toolType) {
+    const REFINEABLE_TOOLS = ["smart_textarea", "tag_input"];
+    return REFINEABLE_TOOLS.includes(toolType);
+  }
+
   // ===========================================================================
   // SESSION MANAGEMENT
   // ===========================================================================
@@ -352,6 +428,7 @@ export class GoldenInterviewerService {
    * @param {string} [options.userMessage] - User's text message
    * @param {object} [options.uiResponse] - Response from UI component
    * @param {object} [options.skipAction] - Explicit skip signal { isSkip, reason }
+   * @param {boolean} [options.acceptRefinedValue] - If true, skip golden_refine (user already saw suggestions)
    * @returns {Promise<object>}
    */
   async processTurn({
@@ -360,6 +437,7 @@ export class GoldenInterviewerService {
     userMessage,
     uiResponse,
     skipAction,
+    acceptRefinedValue = false,
   }) {
     // Load session via repository
     const session = await getSession(this.firestore, sessionId);
@@ -503,6 +581,34 @@ export class GoldenInterviewerService {
     }
 
     // =========================================================================
+    // FETCH COMPANY DATA FOR LLM CONTEXT (if companyId exists)
+    // Moved up because we need it for golden_refine context
+    // =========================================================================
+    let companyData = null;
+    const companyId = session.goldenSchema?.companyId;
+
+    if (companyId) {
+      try {
+        const company = await getCompanyById(this.firestore, companyId);
+        if (company) {
+          // Extract only the fields needed for the prompt
+          companyData = {
+            name: company.name,
+            industry: company.industry,
+            description: company.longDescription || company.description,
+            employeeCountBucket: company.employeeCountBucket,
+            toneOfVoice: company.toneOfVoice,
+          };
+        }
+      } catch (error) {
+        this.logger.warn(
+          { sessionId, companyId, err: error },
+          "golden-interviewer.turn.company_fetch_error"
+        );
+      }
+    }
+
+    // =========================================================================
     // SERVER-SIDE EXTRACTION: Save user response BEFORE LLM call (deterministic)
     // =========================================================================
     // With single-field-per-question architecture, we know exactly which field
@@ -514,6 +620,114 @@ export class GoldenInterviewerService {
       ? uiResponse
       : userMessage || null;
 
+    // =========================================================================
+    // GOLDEN REFINE: Validate free-text input before saving
+    // =========================================================================
+    // Check if this was a free-text input that should be refined
+    // Skip refine if acceptRefinedValue=true (user already saw suggestions and confirmed)
+    const previousToolType = session.metadata?.lastToolUsed;
+    const shouldRefine = this.isRefineableToolType(previousToolType) &&
+      valueToSave !== null &&
+      typeof valueToSave === "string" &&
+      valueToSave.trim().length > 0 &&
+      !isSkip &&
+      !acceptRefinedValue;
+
+    let refineResult = null;
+
+    if (shouldRefine && lastAskedField) {
+      try {
+        const refineContext = {
+          userMessage: valueToSave,
+          lastAskedField,
+          currentSchema: session.goldenSchema || {},
+          conversationHistory: session.conversationHistory.slice(-4),
+          companyData,
+          sessionId,
+        };
+
+        refineResult = await this.callGoldenRefineApi({ authToken, context: refineContext });
+
+        console.log(
+          "🔍 [GOLDEN REFINE] Result:",
+          JSON.stringify({
+            can_proceed: refineResult.can_proceed,
+            quality: refineResult.quality,
+            validation_issue: refineResult.validation_issue,
+            suggestionCount: refineResult.suggestions?.length || 0,
+          }, null, 2)
+        );
+
+        // If user cannot proceed, return early with validation error
+        if (refineResult.can_proceed === false) {
+          this.logger.info(
+            {
+              sessionId,
+              field: lastAskedField,
+              validationIssue: refineResult.validation_issue,
+            },
+            "golden-interviewer.refine.blocked"
+          );
+
+          return {
+            message: refineResult.validation_issue || "This response doesn't match what we're looking for. Please try again.",
+            ui_tool: null, // Keep current UI tool
+            completion_percentage: session.metadata?.completionPercentage || 0,
+            interview_phase: session.metadata?.currentPhase || "opening",
+            extracted_fields: [],
+            next_priority_fields: [],
+            // Special flag to indicate validation failure
+            refine_result: {
+              can_proceed: false,
+              validation_issue: refineResult.validation_issue,
+              reasoning: refineResult.reasoning,
+            },
+          };
+        }
+
+        // If quality could improve and we have suggestions, PAUSE and return them
+        // User must choose before we continue to next question
+        if (refineResult.quality === "could_improve" && refineResult.suggestions?.length > 0) {
+          this.logger.info(
+            {
+              sessionId,
+              field: lastAskedField,
+              suggestionCount: refineResult.suggestions.length,
+            },
+            "golden-interviewer.refine.suggestions_available"
+          );
+
+          // Return early - don't continue to next question yet
+          // Data is NOT saved yet - user needs to confirm or pick a suggestion
+          return {
+            message: "", // Empty string - frontend will show suggestions instead
+            ui_tool: null, // Keep current UI tool
+            completion_percentage: session.metadata?.completionPercentage || 0,
+            interview_phase: session.metadata?.currentPhase || "opening",
+            extracted_fields: [],
+            next_priority_fields: [],
+            // Refine result with suggestions for the user to choose from
+            refine_result: {
+              can_proceed: true,
+              quality: refineResult.quality,
+              field: lastAskedField,
+              original_value: valueToSave,
+              suggestions: refineResult.suggestions,
+              reasoning: refineResult.reasoning,
+            },
+          };
+        }
+      } catch (error) {
+        // Refine failure should NOT block the conversation
+        this.logger.warn(
+          { sessionId, err: error },
+          "golden-interviewer.refine.error"
+        );
+        // Continue without refine
+      }
+    }
+
+    // Now save the value (we've passed validation if we got here)
     if (lastAskedField && valueToSave !== null && !isSkip) {
       // Save the user's response directly to the schema path
       const serverExtraction = { [lastAskedField]: valueToSave };
@@ -555,33 +769,6 @@ export class GoldenInterviewerService {
         { sessionId, hasUserMessage: !!userMessage, hasUiResponse: !!uiResponse },
         "golden-interviewer.server_extraction.skipped_no_field"
       );
-    }
-
-    // =========================================================================
-    // FETCH COMPANY DATA FOR LLM CONTEXT (if companyId exists)
-    // =========================================================================
-    let companyData = null;
-    const companyId = session.goldenSchema?.companyId;
-
-    if (companyId) {
-      try {
-        const company = await getCompanyById(this.firestore, companyId);
-        if (company) {
-          // Extract only the fields needed for the prompt
-          companyData = {
-            name: company.name,
-            industry: company.industry,
-            description: company.longDescription || company.description,
-            employeeCountBucket: company.employeeCountBucket,
-            toneOfVoice: company.toneOfVoice,
-          };
-        }
-      } catch (error) {
-        this.logger.warn(
-          { sessionId, companyId, err: error },
-          "golden-interviewer.turn.company_fetch_error"
-        );
-      }
     }
 
     // =========================================================================
@@ -965,7 +1152,8 @@ export class GoldenInterviewerService {
       "golden-interviewer.turn.processed"
     );
 
-    return {
+    // Build response object
+    const response = {
       message: parsed.message,
       ui_tool: parsed.ui_tool,
       completion_percentage: session.metadata.completionPercentage,
@@ -981,6 +1169,18 @@ export class GoldenInterviewerService {
       // Flag for frontend to show completion UI
       is_complete: isInterviewComplete,
     };
+
+    // Include refine suggestions if available (for client to show improvement options)
+    if (refineResult && refineResult.quality === "could_improve" && refineResult.suggestions?.length > 0) {
+      response.refine_result = {
+        can_proceed: true, // We got here, so proceeding is allowed
+        quality: refineResult.quality,
+        suggestions: refineResult.suggestions,
+        reasoning: refineResult.reasoning,
+      };
+    }
+
+    return response;
   }
 
   /**

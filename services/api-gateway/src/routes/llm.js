@@ -73,6 +73,7 @@ export const TASK_METHOD_MAP = {
   image_caption: "askImageCaption",
   golden_interviewer: "askGoldenInterviewerTurn",
   golden_db_update: "askGoldenDbUpdate",
+  golden_refine: "askGoldenRefine",
 };
 
 /**

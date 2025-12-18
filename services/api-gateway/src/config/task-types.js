@@ -36,6 +36,7 @@ export const LLM_CORE_TASK = {
   IMAGE_CAPTION: "image_caption",
   GOLDEN_INTERVIEWER: "golden_interviewer",
   GOLDEN_DB_UPDATE: "golden_db_update",
+  GOLDEN_REFINE: "golden_refine",
 };
 
 /**

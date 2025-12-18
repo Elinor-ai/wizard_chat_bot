@@ -4,6 +4,7 @@ import { LLM_CORE_TASK, LLM_SPECIAL_TASK } from "./task-types.js";
 // TEXT & IMAGE LLM CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 const GEMINI_DEFAULT_MODEL = "gemini-3-pro-preview";
+const GEMINI_FLASH_MODEL = "gemini-2.0-flash-001"; // Fast & cheap for simple tasks
 const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -76,6 +77,7 @@ const GEMINI_TASKS = [
   LLM_CORE_TASK.IMAGE_PROMPT_GENERATION,
   LLM_CORE_TASK.GOLDEN_INTERVIEWER,
   LLM_CORE_TASK.GOLDEN_DB_UPDATE,
+  LLM_CORE_TASK.GOLDEN_REFINE,
 ];
 
 const config = GEMINI_TASKS.reduce((acc, task) => {
@@ -92,6 +94,12 @@ config[LLM_CORE_TASK.IMAGE_PROMPT_GENERATION] = {
   provider: "gemini",
   // Use the text model here—this task only crafts prompts and shouldn't incur image-model billing
   model: GEMINI_DEFAULT_MODEL
+};
+
+// Golden Refine - use fast model for quick validation and suggestions
+config[LLM_CORE_TASK.GOLDEN_REFINE] = {
+  provider: "gemini",
+  model: GEMINI_FLASH_MODEL
 };
 
 // Video render still goes through the shared LLM usage pipeline for pricing/logging.

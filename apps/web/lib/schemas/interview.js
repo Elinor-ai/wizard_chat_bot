@@ -12,6 +12,22 @@ const goldenInterviewUiToolSchema = z
   .optional()
   .nullable();
 
+// Refine result schema - when LLM suggests improvements
+const goldenRefineSuggestionSchema = z.object({
+  value: z.string(),
+  improvement_type: z.enum(["clarity", "completeness", "specificity", "professionalism"]).optional(),
+  why_better: z.string().optional(),
+});
+
+const goldenRefineResultSchema = z.object({
+  can_proceed: z.boolean(),
+  quality: z.enum(["good", "could_improve"]).optional(),
+  field: z.string().optional(),
+  original_value: z.string().optional(),
+  suggestions: z.array(goldenRefineSuggestionSchema).optional(),
+  reasoning: z.string().optional(),
+}).optional().nullable();
+
 const goldenInterviewResponseDataSchema = z.object({
   message: z.string().optional(),
   ui_tool: goldenInterviewUiToolSchema,
@@ -20,6 +36,7 @@ const goldenInterviewResponseDataSchema = z.object({
   context_explanation: z.string().optional(),
   extracted_fields: z.array(z.string()).optional(),
   next_priority_fields: z.array(z.string()).optional(),
+  refine_result: goldenRefineResultSchema,
 });
 
 const goldenInterviewStartResponseSchema = z
