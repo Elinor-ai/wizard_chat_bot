@@ -16,13 +16,7 @@ export default function SegmentedRowList({
   rows,
   value = {},
   onChange,
-  segments = [
-    { value: "never", label: "Never", color: "#22c55e" },
-    { value: "rare", label: "Rare", color: "#84cc16" },
-    { value: "sometimes", label: "Sometimes", color: "#eab308" },
-    { value: "often", label: "Often", color: "#f97316" },
-    { value: "always", label: "Always", color: "#ef4444" },
-  ],
+  segments, // Server applies SMART_DEFAULTS from ui-templates.js
   title,
   defaultSegment,
 }) {

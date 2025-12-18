@@ -215,21 +215,6 @@ export default function ChatInterface({
   // RENDER HELPERS
   // ==========================================================================
 
-  // Map of component types to their primary data prop name
-  // These components use array/object props instead of `value`
-  const DATA_PROP_MAP = {
-    dial_group: "dials",
-    bipolar_scale: "items",
-    radar_chart: "dimensions",
-    brand_meter: "metrics",
-    toggle_list: "items",
-    segmented_rows: "rows",
-    expandable_list: "items",
-    perk_revealer: "categories",
-    counter_stack: "items",
-    stacked_bar: "segments",
-  };
-
   const renderDynamicInput = () => {
     if (!currentTool) return null;
 
@@ -243,22 +228,14 @@ export default function ChatInterface({
       );
     }
 
-    const props = currentTool.props || {};
-    const dataPropName = DATA_PROP_MAP[currentTool.type];
-
-    // Build final props, overriding the data prop if dynamicValue exists
-    const finalProps = { ...props };
-
-    if (dataPropName && dynamicValue !== null) {
-      // For array-based components, override their data prop with dynamicValue
-      finalProps[dataPropName] = dynamicValue;
-    }
-
+    // All components follow the same pattern:
+    // - Config props (items, rows, segments, etc.) come from LLM via currentTool.props
+    // - value prop captures the user's response (null → undefined to trigger component defaults)
+    // - onChange updates the response
     return (
       <Component
-        {...finalProps}
-        variant="minimal"
-        value={dataPropName ? undefined : dynamicValue} // Only pass value for non-array components
+        {...(currentTool.props || {})}
+        value={dynamicValue ?? undefined}
         onChange={setDynamicValue}
       />
     );

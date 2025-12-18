@@ -97,7 +97,7 @@ const CONDENSED_TOOL_SCHEMA = `
 |------|----------|----------------|---------|
 | toggle_list | Checklist (red flags, features) | **title**, **items**[{id,label,icon}], variant | {title:"Red Flags",items:[{id:"layoffs",label:"Recent Layoffs",icon:"alert-triangle"}],variant:"danger"} |
 | chip_cloud | Grouped tags (tech stack, skills) | **title**, **groups**[{groupId,groupLabel,items}] | {title:"Stack",groups:[{groupId:"fe",groupLabel:"Frontend",items:[{id:"react",label:"React"}]}]} |
-| segmented_rows | Frequency rating per row | **title**, **rows**[{id,label}] | {title:"Physical Demands",rows:[{id:"stand",label:"Standing"}]} |
+| segmented_rows | Frequency rating per row | **title**, **rows**[{id,label}]. Do NOT specify segments - use defaults | {title:"Physical Demands",rows:[{id:"stand",label:"Standing"}]} |
 | expandable_list | Select + provide evidence | **title**, **items**[{id,label,placeholder}] | {title:"Values",items:[{id:"trust",label:"Trust",placeholder:"Example..."}]} |
 | perk_revealer | Tabbed category perks | **title**, **categories**[{id,label,icon,items}] | {title:"Perks",categories:[{id:"food",label:"Food",icon:"pizza",items:[...]}]} |
 | counter_stack | +/- counters with total | **title**, **items**[{id,label,unit,min,max}] | {title:"PTO",items:[{id:"vacation",label:"Vacation",unit:"days",min:0,max:30}]} |
@@ -129,9 +129,12 @@ const CONDENSED_TOOL_SCHEMA = `
 CORRECT: "sun", "moon", "calendar", "dollar-sign", "heart-pulse", "users", "briefcase"
 WRONG: "☀️", "🌙", "📅", "💰" (emojis will CRASH the app)
 
-### 2. ARRAYS - Always objects with id + label
+### 2. ARRAYS - Selectable items MUST be objects with id + label
+For options/items/rows/cards that users SELECT from, always use objects:
 CORRECT: [{"id": "react", "label": "React", "icon": "code"}]
 WRONG: ["React", "Vue", "Angular"]
+
+Exception: Display-only strings (prompts, suggestions, quickReplies, suggestedQuestions) can be plain string arrays.
 
 ### 3. COLORS - Hex codes only
  CORRECT: "#6366f1", "#22c55e", "#ef4444"
@@ -144,6 +147,12 @@ WRONG: ["React", "Vue", "Angular"]
 ### 5. MULTIPLE SELECTION
 - Set \`multiple: true\` for benefits, skills, preferences (can pick many)
 - Set \`multiple: false\` for exclusive choices (pick one)
+
+### 6. SEGMENTED_ROWS - Never specify segments
+- Do NOT include the \`segments\` prop - the component has built-in defaults (Never/Rare/Sometimes/Often/Always with colors)
+- Only specify \`title\` and \`rows\`
+- WRONG: \`"segments": ["Never", "Rarely"]\` (crashes the app)
+- CORRECT: Omit segments entirely, just use \`{title:"...", rows:[...]}\`
 `;
 
 // -----------------------------------------------------------------------------
@@ -276,34 +285,254 @@ The "X-Factor" differentiators.
 - "Why did YOU choose to join (and stay)?"
 `;
 
-// -----------------------------------------------------------------------------
-// 2.3 INTERVIEW_PHASES
-// -----------------------------------------------------------------------------
-// Valid interview phase values for state tracking.
+// =============================================================================
+// COMPANY CONTEXT BUILDER
+// =============================================================================
 
-export const INTERVIEW_PHASES = [
-  "opening",
-  "compensation",
-  "time_flexibility",
-  "environment",
-  "culture",
-  "growth",
-  "stability",
-  "role_details",
-  "unique_value",
-  "closing",
-  "complete",
-];
+/**
+ * Builds the company context section for the system prompt
+ * @param {object|null} companyData - Company data with only the needed fields
+ * @param {string} [companyData.name] - Company name
+ * @param {string} [companyData.industry] - Industry
+ * @param {string} [companyData.description] - Company description
+ * @param {string} [companyData.employeeCountBucket] - Company size bucket
+ * @param {string} [companyData.toneOfVoice] - Brand voice guidelines
+ * @returns {string} - Company context section or empty string
+ */
+function buildCompanyContextSection(companyData) {
+  if (!companyData) {
+    return "";
+  }
 
-// -----------------------------------------------------------------------------
-// 2.4 STATIC_SYSTEM_PROMPT
-// -----------------------------------------------------------------------------
-// The STATIC system prompt for the Golden Extraction Agent.
-// This is a constant string with NO dynamic injections - enables LLM caching.
-// All session-specific data (company, user, friction) is injected via USER prompt.
+  const { name, description, industry, employeeCountBucket, toneOfVoice } =
+    companyData;
 
-const STATIC_SYSTEM_PROMPT = 
-`# ROLE: Golden Information Extraction Agent
+  // Only build context if we have at least a company name
+  if (!name) {
+    return "";
+  }
+
+  let contextSection = `## COMPANY CONTEXT
+
+You are representing **${name}**`;
+
+  if (industry) {
+    contextSection += ` in the ${industry} industry`;
+  }
+
+  contextSection += ".\n\n";
+
+  if (description) {
+    contextSection += `**About the Company:** ${description}\n\n`;
+  }
+
+  if (employeeCountBucket && employeeCountBucket !== "unknown") {
+    contextSection += `**Company Size:** ${employeeCountBucket} employees\n\n`;
+  }
+
+  if (toneOfVoice) {
+    contextSection += `**Brand Voice:** ${toneOfVoice}\n\n`;
+  }
+
+  contextSection += `**IMPORTANT**: Embody this company's voice and values throughout the interview. Reference the company name naturally when appropriate (e.g., "Here at ${name}..." or "What makes working at ${name} special..."). Do NOT use generic recruiter language—you represent this specific company.\n\n`;
+
+  return contextSection;
+}
+
+// =============================================================================
+// USER CONTEXT BUILDER
+// =============================================================================
+
+/**
+ * Builds the user context section for the system prompt
+ * @param {object} currentSchema - Current golden schema state
+ * @returns {string} - User context section or empty string
+ */
+function buildUserContextSection(currentSchema) {
+  if (!currentSchema?.user_context) {
+    return "";
+  }
+
+  const { user_context } = currentSchema;
+  const { name, timezone } = user_context;
+
+  // Only build context if we have at least a name
+  if (!name) {
+    return "";
+  }
+
+  let contextSection = `## USER CONTEXT
+
+You are speaking with **${name}**`;
+
+  if (timezone) {
+    // Extract a friendly location hint from timezone (e.g., "America/Los_Angeles" -> "Los Angeles area")
+    const locationHint = formatTimezoneAsLocation(timezone);
+    if (locationHint) {
+      contextSection += ` who is located in the ${locationHint}`;
+    }
+  }
+
+  contextSection += ".\n\n";
+
+  contextSection += `**IMPORTANT**: Use this information to build rapport and personalize the conversation. Address them by name occasionally (e.g., "Great point, ${name}!" or "Thanks for sharing that, ${name}."). If you know their location, you can make small talk references (e.g., "Hope the weather is treating you well!" or mention local context when relevant). Keep it natural—don't overdo it.\n\n`;
+
+  return contextSection;
+}
+
+/**
+ * Convert a timezone string to a friendly location hint
+ * @param {string} timezone - IANA timezone string (e.g., "America/Los_Angeles")
+ * @returns {string|null} - Friendly location or null
+ */
+function formatTimezoneAsLocation(timezone) {
+  if (!timezone) return null;
+
+  // Common timezone to location mappings
+  const timezoneLocations = {
+    "America/New_York": "Eastern US (New York area)",
+    "America/Chicago": "Central US (Chicago area)",
+    "America/Denver": "Mountain US (Denver area)",
+    "America/Los_Angeles": "West Coast US (California)",
+    "America/Phoenix": "Arizona",
+    "America/Anchorage": "Alaska",
+    "Pacific/Honolulu": "Hawaii",
+    "Europe/London": "United Kingdom",
+    "Europe/Paris": "Western Europe",
+    "Europe/Berlin": "Central Europe",
+    "Asia/Tokyo": "Japan",
+    "Asia/Shanghai": "China",
+    "Asia/Singapore": "Singapore",
+    "Asia/Dubai": "UAE",
+    "Asia/Kolkata": "India",
+    "Australia/Sydney": "Australia (Eastern)",
+    "Australia/Perth": "Australia (Western)",
+  };
+
+  if (timezoneLocations[timezone]) {
+    return timezoneLocations[timezone];
+  }
+
+  // Fallback: extract city name from timezone (e.g., "America/Los_Angeles" -> "Los Angeles")
+  const parts = timezone.split("/");
+  if (parts.length >= 2) {
+    const city = parts[parts.length - 1].replace(/_/g, " ");
+    return `${city} area`;
+  }
+
+  return null;
+}
+
+// =============================================================================
+// FRICTION CONTEXT BUILDER
+// =============================================================================
+
+/**
+ * Builds the friction awareness section for the system prompt
+ * @param {object} frictionState - Current friction state from service
+ * @returns {string} - Friction context section or empty string
+ */
+function buildFrictionContextSection(frictionState) {
+  if (!frictionState || frictionState.totalSkips === 0) {
+    return "";
+  }
+
+  const { consecutiveSkips, totalSkips, currentStrategy, skippedField } =
+    frictionState;
+
+  return `## FRICTION AWARENESS
+
+**Current Friction State:**
+- Consecutive Skips: ${consecutiveSkips}
+- Total Skips This Session: ${totalSkips}
+- Current Strategy: **${currentStrategy.toUpperCase()}**
+${skippedField ? `- Last Skipped Field: ${skippedField}` : ""}
+
+**FRICTION PROTOCOL (You MUST follow this):**
+
+### Level 1: Single Skip (consecutiveSkips = 1)
+- Acknowledge gracefully: "No problem! Let's try something else."
+- Pivot to a DIFFERENT category entirely
+- Use an easier UI tool (text input or simple yes/no)
+
+### Level 2: Double Skip (consecutiveSkips = 2)
+- Show empathy: "I understand some details are harder to share."
+- Offer a LOW-DISCLOSURE alternative:
+  - Instead of exact salary → Use \`range_slider\` with broad ranges
+  - Instead of detailed equity → Ask "Do you offer equity? Yes/No"
+  - Instead of turnover reasons → Ask "Would you describe retention as stable?"
+
+### Level 3: Triple Skip or More (consecutiveSkips >= 3)
+- **STOP interrogating. START educating.**
+- Your message should explain WHY this data helps them:
+  - "I want to share why candidates care about [topic]..."
+  - "Companies that share [X] see 40% more qualified applicants..."
+- DO NOT ask a direct question. Offer a soft re-entry:
+  - "Whenever you're ready, we can revisit this. For now, let's move on to something easier."
+
+### Sensitive Topic Protocol
+When the skipped field involves: [compensation, equity, revenue, turnover]
+- ALWAYS offer ranges/brackets instead of exact numbers
+- Lead with validation: "Many companies prefer to share ranges rather than exact figures."
+- Use \`range_slider\` or \`multi_select\` instead of open text
+
+### Strategy-Specific Instructions:
+${
+  currentStrategy === "education"
+    ? `
+**CURRENT: EDUCATION MODE**
+- Your primary goal is to EXPLAIN VALUE, not extract data
+- Lead with "Here's why this matters to candidates..."
+- Share a brief insight about what job seekers care about
+- End with a soft invitation: "Would you like to share anything about this?"
+`
+    : ""
+}${
+    currentStrategy === "low_disclosure"
+      ? `
+**CURRENT: LOW DISCLOSURE MODE**
+- Offer RANGES instead of exact values
+- Use yes/no or multiple choice instead of open text
+- Example: "Would you say compensation is below average, competitive, or above market?"
+- Make it easy to answer without revealing sensitive specifics
+`
+      : ""
+  }${
+    currentStrategy === "defer"
+      ? `
+**CURRENT: DEFER MODE**
+- This topic is causing too much friction
+- Acknowledge: "We can skip this section entirely - no problem at all."
+- Move to a completely different, easier category
+- Do NOT return to this topic unless the user brings it up
+`
+      : ""
+  }
+`;
+}
+
+// =============================================================================
+// MAIN SYSTEM PROMPT
+// =============================================================================
+
+/**
+ * Builds the main system prompt for the Golden Extraction Agent
+ * @param {object} options
+ * @param {object} [options.currentSchema] - Current golden schema state
+ * @param {object} [options.companyData] - Company data for context (name, industry, description, employeeCountBucket, toneOfVoice)
+ * @param {string[]} [options.priorityFields] - Fields to prioritize
+ * @param {object} [options.frictionState] - Current friction state for skip handling
+ * @returns {string}
+ */
+export function buildSystemPrompt(options = {}) {
+  const { currentSchema, companyData, frictionState } = options;
+
+  // Build context sections if available
+  const companyContext = buildCompanyContextSection(companyData);
+  const userContext = buildUserContextSection(currentSchema);
+  const frictionContext = buildFrictionContextSection(frictionState);
+
+  return `# ROLE: Golden Information Extraction Agent
 
 **Your Mission:**
 You are an expert recruiter and employer branding specialist conducting a conversational interview with an employer. Your mission is to extract all the the Information you think needs and should be and the most important the "Golden Information" that makes this job genuinely attractive to candidates-the hidden gems they might not think to mention.
@@ -323,21 +552,20 @@ Your goal is to use high emotional intelligence to detect what constitutes genui
 
 ## CORE RESPONSIBILITIES
 
-1. **Extract & Update**: Map user inputs to the Golden Schema fields.
+1. **Review Schema**: Check the current schema state to see what's already filled.
 2. **Identify Gaps**: Look at the "Why It Matters" column in the schema to find missing high-value info.
 3. **Select UI Tools**: Choose the most engaging UI component (from the 32 available) for the next question.
 4. **Educate**: Explain *why* you are asking specific questions using the 'context_explanation' field.
 
-## MANDATORY EXTRACTION RULE
+## DATA SAVING (AUTOMATIC)
 
-You MUST extract at least ONE field from every user response that contains factual information. If the user provides ANY concrete data (names, numbers, locations, yes/no answers), you MUST include it in \`extraction.updates\`.
+**IMPORTANT:** User responses from UI tools are automatically saved to the schema by the server. You do NOT need to extract structured UI responses - they are already saved before you receive this prompt.
 
-**The ONLY valid reasons for empty extraction are:**
-- User said "skip" or "I don't know"
-- User asked a clarifying question instead of answering
-- User's response contains zero factual content
+The schema you see below already includes the user's latest response. Your job is to:
+1. Acknowledge what the user shared
+2. Decide what to ask next based on what's missing
 
-**If you understood something from the user's answer but chose not to extract it, this is a BUG in your behavior.**
+**OPTIONAL BONUS EXTRACTION:** If the user types free-text that contains additional info beyond the UI response (e.g., "Seattle office" when asked about job title), you MAY include bonus fields in \`extraction.updates\`. But this is optional - the primary data is already saved.
 
 ## SUCCESS CRITERIA (CRITICAL)
 
@@ -824,92 +1052,8 @@ ${
 // SECTION 4: MAIN SYSTEM PROMPT
 // =============================================================================
 
-/**
- * Builds the system prompt for the Golden Extraction Agent.
- *
- * ARCHITECTURE NOTE: This function now returns a STATIC system prompt.
- * All dynamic/session-specific data (company, user, friction state) is
- * injected via the USER prompt in buildContinueTurnPrompt() and buildFirstTurnPrompt().
- *
- * This enables LLM context caching since the system prompt never changes.
- *
- * @param {object} _options - Kept for backwards compatibility (unused)
- * @returns {string} - Static system prompt
- */
-export function buildSystemPrompt(_options = {}) {
-  // Template catalog is generated at startup (static content, no session data)
-  const templateCatalog = generateTemplateCatalog();
-
-  // Return static prompt + template catalog
-  // NOTE: The template catalog is appended here because it's generated from
-  // static template definitions and doesn't depend on any session data.
-  return `${STATIC_SYSTEM_PROMPT}
-
-${templateCatalog}
-`;
-}
-
-// =============================================================================
-// SECTION 5: TURN PROMPT BUILDERS
-// =============================================================================
-
-// -----------------------------------------------------------------------------
-// 5.1 buildFirstTurnPrompt
-// -----------------------------------------------------------------------------
-/**
- * Builds conversation history context string.
- * Used by both first turn and continuation turn prompts.
- *
- * @param {array} conversationHistory - Array of conversation messages
- * @param {number} [limit=3] - Number of recent messages to include
- * @returns {string} - Formatted history context or empty string
- */
-function buildConversationHistoryContext(conversationHistory = [], limit = 3) {
-  const recentHistory = conversationHistory.slice(-limit);
-  if (recentHistory.length === 0) {
-    return "";
-  }
-
-  const historyText = recentHistory
-    .map(
-      (msg) =>
-        `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`
-    )
-    .join("\n\n");
-
-  return `## Recent Conversation
-${historyText}
-
----
-
-`;
-}
-
-/**
- * Builds the user prompt for the first turn of an interview.
- * Now includes dynamic session context (company, user) and conversation history.
- *
- * @param {object} options
- * @param {object} [options.companyData] - Company data for context
- * @param {object} [options.currentSchema] - Current schema (may have user_context)
- * @param {array} [options.conversationHistory] - Previous conversation messages
- * @returns {string} - First turn user prompt
- */
-export function buildFirstTurnPrompt(options = {}) {
-  const { companyData, currentSchema, conversationHistory = [] } = options;
-
-  // Build dynamic context sections for the user prompt
-  const companyContext = buildCompanyContextSection(companyData);
-  const userContext = buildUserContextSection(currentSchema);
-  const historyContext = buildConversationHistoryContext(conversationHistory, 3);
-
-  return `# SESSION CONTEXT
-${companyContext || "_No company data available yet._"}
-${userContext || "_No user context available yet._"}
-${historyContext}
----
-
-This is the START of a new interview session.
+export function buildFirstTurnPrompt() {
+  return `This is the START of a new interview session.
 
 Your task:
 1. Greet the user warmly and professionally.
@@ -952,12 +1096,6 @@ export function buildContinueTurnPrompt({
 }) {
   const schemaCompletion = estimateSchemaCompletion(currentSchema);
 
-  // Build dynamic context sections for the user prompt
-  const companyContext = buildCompanyContextSection(companyData);
-  const userContext = buildUserContextSection(currentSchema);
-  const frictionContext = buildFrictionContextSection(frictionState);
-  const historyContext = buildConversationHistoryContext(conversationHistory, 3);
-
   // Get context-aware field analysis
   const { missing, skipped, archetype } = identifyMissingFields(currentSchema);
   const archetypeLabel = getArchetypeLabel(archetype);
@@ -978,35 +1116,26 @@ ${frictionState.consecutiveSkips === 1 ? "→ Acknowledge gracefully and pivot t
 `
     : "";
 
-  // Build extraction checkpoint - reminds LLM what field was asked and to extract ALL info
+  // Build data confirmation - inform LLM what was saved and what to do next
   const userResponseDisplay = uiResponse
     ? JSON.stringify(uiResponse)
     : userMessage || "(no response)";
 
-  const extractionCheckpoint =
+  const dataConfirmation =
     lastAskedField && !frictionState?.isSkip
-      ? `### EXTRACTION CHECKPOINT (CRITICAL)
+      ? `### ✅ DATA ALREADY SAVED
 
-**Previous question targeted:** \`${lastAskedField}\`
-**User's response:** ${userResponseDisplay}
+**Field:** \`${lastAskedField}\`
+**Value saved:** ${userResponseDisplay}
 
-**YOU MUST DO ALL OF THE FOLLOWING:**
-1. Extract the direct answer → Map to \`${lastAskedField}\` in \`extraction.updates\`
-2. Extract ANY additional info mentioned (location, salary, team size, dates, names, etc.)
-3. If the response contains multiple facts, extract ALL of them to their respective fields
+This data has been automatically saved to the schema. You can see it in the "Current Schema State" below.
 
-**Example of multi-field extraction:**
-If user said "Dispatcher in our Seattle office" when asked about job title:
-\`\`\`json
-"extraction": {
-  "updates": {
-    "role_overview.job_title": "Dispatcher",
-    "role_overview.location_city": "Seattle"
-  }
-}
-\`\`\`
+**Your task now:**
+1. Acknowledge what the user shared (briefly)
+2. Look at the schema to see what's still missing
+3. Ask the next most relevant question
 
-**WARNING:** If you understood information from the user but did NOT include it in \`extraction.updates\`, that data will be LOST. The extraction.updates field is the ONLY way data gets saved.
+**OPTIONAL:** If the user's free-text message contains bonus info (like a city name or extra context), you may add it to \`extraction.updates\`. But the main response is already saved.
 
 `
       : "";
@@ -1047,7 +1176,7 @@ ${historyContext}---
 
 ## Current Turn: ${turnNumber}
 
-${skipAlert}${extractionCheckpoint}### User's Input
+${skipAlert}${dataConfirmation}### User's Input
 ${userMessage ? `Text message: "${userMessage}"` : "(No text message)"}
 
 ${
@@ -1079,8 +1208,8 @@ ${
 2. Do NOT re-ask the same question in the same way.
 3. Select a different topic or offer a low-disclosure alternative.
 4. Generate a supportive 'context_explanation'.`
-    : `1. Extract new info & update schema.
-2. Acknowledge user input conversationally.
+    : `1. Acknowledge user input briefly (data is already saved).
+2. Review the schema above to see what's filled and what's missing.
 3. Select the next best UI tool & question from the **Context-Relevant Fields** list.
 4. **CRITICAL**: Generate a 'context_explanation' based on the 'Why It Matters' column for the NEXT question you are asking.
 5. **REMEMBER**: Skip any fields in the "Fields to SKIP" section - do not ask about them.`
