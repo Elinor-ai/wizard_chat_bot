@@ -56,7 +56,7 @@ const CONDENSED_TOOL_SCHEMA = `
 |------|----------|----------------|---------|
 | toggle_list | Checklist (red flags, features) | **title**, **items**[{id,label,icon}], variant | {title:"Red Flags",items:[{id:"layoffs",label:"Recent Layoffs",icon:"alert-triangle"}],variant:"danger"} |
 | chip_cloud | Grouped tags (tech stack, skills) | **title**, **groups**[{groupId,groupLabel,items}] | {title:"Stack",groups:[{groupId:"fe",groupLabel:"Frontend",items:[{id:"react",label:"React"}]}]} |
-| segmented_rows | Frequency rating per row | **title**, **rows**[{id,label}] | {title:"Physical Demands",rows:[{id:"stand",label:"Standing"}]} |
+| segmented_rows | Frequency rating per row | **title**, **rows**[{id,label}]. Do NOT specify segments - use defaults | {title:"Physical Demands",rows:[{id:"stand",label:"Standing"}]} |
 | expandable_list | Select + provide evidence | **title**, **items**[{id,label,placeholder}] | {title:"Values",items:[{id:"trust",label:"Trust",placeholder:"Example..."}]} |
 | perk_revealer | Tabbed category perks | **title**, **categories**[{id,label,icon,items}] | {title:"Perks",categories:[{id:"food",label:"Food",icon:"pizza",items:[...]}]} |
 | counter_stack | +/- counters with total | **title**, **items**[{id,label,unit,min,max}] | {title:"PTO",items:[{id:"vacation",label:"Vacation",unit:"days",min:0,max:30}]} |
@@ -88,9 +88,12 @@ const CONDENSED_TOOL_SCHEMA = `
 CORRECT: "sun", "moon", "calendar", "dollar-sign", "heart-pulse", "users", "briefcase"
 WRONG: "☀️", "🌙", "📅", "💰" (emojis will CRASH the app)
 
-### 2. ARRAYS - Always objects with id + label
+### 2. ARRAYS - Selectable items MUST be objects with id + label
+For options/items/rows/cards that users SELECT from, always use objects:
 CORRECT: [{"id": "react", "label": "React", "icon": "code"}]
 WRONG: ["React", "Vue", "Angular"]
+
+Exception: Display-only strings (prompts, suggestions, quickReplies, suggestedQuestions) can be plain string arrays.
 
 ### 3. COLORS - Hex codes only
  CORRECT: "#6366f1", "#22c55e", "#ef4444"
@@ -103,6 +106,12 @@ WRONG: ["React", "Vue", "Angular"]
 ### 5. MULTIPLE SELECTION
 - Set \`multiple: true\` for benefits, skills, preferences (can pick many)
 - Set \`multiple: false\` for exclusive choices (pick one)
+
+### 6. SEGMENTED_ROWS - Never specify segments
+- Do NOT include the \`segments\` prop - the component has built-in defaults (Never/Rare/Sometimes/Often/Always with colors)
+- Only specify \`title\` and \`rows\`
+- WRONG: \`"segments": ["Never", "Rarely"]\` (crashes the app)
+- CORRECT: Omit segments entirely, just use \`{title:"...", rows:[...]}\`
 `;
 
 // =============================================================================
@@ -501,21 +510,20 @@ Your goal is to use high emotional intelligence to detect what constitutes genui
 
 ## CORE RESPONSIBILITIES
 
-1. **Extract & Update**: Map user inputs to the Golden Schema fields.
+1. **Review Schema**: Check the current schema state to see what's already filled.
 2. **Identify Gaps**: Look at the "Why It Matters" column in the schema to find missing high-value info.
 3. **Select UI Tools**: Choose the most engaging UI component (from the 32 available) for the next question.
 4. **Educate**: Explain *why* you are asking specific questions using the 'context_explanation' field.
 
-## MANDATORY EXTRACTION RULE
+## DATA SAVING (AUTOMATIC)
 
-You MUST extract at least ONE field from every user response that contains factual information. If the user provides ANY concrete data (names, numbers, locations, yes/no answers), you MUST include it in \`extraction.updates\`.
+**IMPORTANT:** User responses from UI tools are automatically saved to the schema by the server. You do NOT need to extract structured UI responses - they are already saved before you receive this prompt.
 
-**The ONLY valid reasons for empty extraction are:**
-- User said "skip" or "I don't know"
-- User asked a clarifying question instead of answering
-- User's response contains zero factual content
+The schema you see below already includes the user's latest response. Your job is to:
+1. Acknowledge what the user shared
+2. Decide what to ask next based on what's missing
 
-**If you understood something from the user's answer but chose not to extract it, this is a BUG in your behavior.**
+**OPTIONAL BONUS EXTRACTION:** If the user types free-text that contains additional info beyond the UI response (e.g., "Seattle office" when asked about job title), you MAY include bonus fields in \`extraction.updates\`. But this is optional - the primary data is already saved.
 
 ## SUCCESS CRITERIA (CRITICAL)
 
@@ -827,35 +835,26 @@ ${frictionState.consecutiveSkips === 1 ? "→ Acknowledge gracefully and pivot t
 `
     : "";
 
-  // Build extraction checkpoint - reminds LLM what field was asked and to extract ALL info
+  // Build data confirmation - inform LLM what was saved and what to do next
   const userResponseDisplay = uiResponse
     ? JSON.stringify(uiResponse)
     : userMessage || "(no response)";
 
-  const extractionCheckpoint =
+  const dataConfirmation =
     lastAskedField && !frictionState?.isSkip
-      ? `###  EXTRACTION CHECKPOINT (CRITICAL)
+      ? `### ✅ DATA ALREADY SAVED
 
-**Previous question targeted:** \`${lastAskedField}\`
-**User's response:** ${userResponseDisplay}
+**Field:** \`${lastAskedField}\`
+**Value saved:** ${userResponseDisplay}
 
-**YOU MUST DO ALL OF THE FOLLOWING:**
-1. Extract the direct answer → Map to \`${lastAskedField}\` in \`extraction.updates\`
-2. Extract ANY additional info mentioned (location, salary, team size, dates, names, etc.)
-3. If the response contains multiple facts, extract ALL of them to their respective fields
+This data has been automatically saved to the schema. You can see it in the "Current Schema State" below.
 
-**Example of multi-field extraction:**
-If user said "Dispatcher in our Seattle office" when asked about job title:
-\`\`\`json
-"extraction": {
-  "updates": {
-    "role_overview.job_title": "Dispatcher",
-    "role_overview.location_city": "Seattle"
-  }
-}
-\`\`\`
+**Your task now:**
+1. Acknowledge what the user shared (briefly)
+2. Look at the schema to see what's still missing
+3. Ask the next most relevant question
 
-**⚠️ WARNING:** If you understood information from the user but did NOT include it in \`extraction.updates\`, that data will be LOST. The extraction.updates field is the ONLY way data gets saved.
+**OPTIONAL:** If the user's free-text message contains bonus info (like a city name or extra context), you may add it to \`extraction.updates\`. But the main response is already saved.
 
 `
       : "";
@@ -890,7 +889,7 @@ It is BETTER to leave these fields empty than to ask awkward, irrelevant questio
 
   return `## Current Turn: ${turnNumber}
 
-${skipAlert}${extractionCheckpoint}### User's Input
+${skipAlert}${dataConfirmation}### User's Input
 ${userMessage ? `Text message: "${userMessage}"` : "(No text message)"}
 
 ${
@@ -922,8 +921,8 @@ ${
 2. Do NOT re-ask the same question in the same way.
 3. Select a different topic or offer a low-disclosure alternative.
 4. Generate a supportive 'context_explanation'.`
-    : `1. Extract new info & update schema.
-2. Acknowledge user input conversationally.
+    : `1. Acknowledge user input briefly (data is already saved).
+2. Review the schema above to see what's filled and what's missing.
 3. Select the next best UI tool & question from the **Context-Relevant Fields** list.
 4. **CRITICAL**: Generate a 'context_explanation' based on the 'Why It Matters' column for the NEXT question you are asking.
 5. **REMEMBER**: Skip any fields in the "Fields to SKIP" section - do not ask about them.`

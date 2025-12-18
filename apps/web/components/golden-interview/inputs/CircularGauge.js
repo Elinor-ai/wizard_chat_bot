@@ -38,7 +38,7 @@ export default function CircularGauge({
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
 
-  const normalizedValue = Math.min(Math.max(value, min), max);
+  const normalizedValue = Math.min(Math.max(value ?? min, min), max);
   const percentage = (normalizedValue - min) / (max - min);
   const strokeDashoffset = circumference * (1 - percentage * 0.75); // 270 degrees arc
 

@@ -439,6 +439,43 @@ export class GoldenInterviewerService {
     }
 
     // =========================================================================
+    // SERVER-SIDE EXTRACTION: Save user response BEFORE LLM call (deterministic)
+    // =========================================================================
+    const lastAskedField = session.metadata?.lastAskedField;
+
+    if (lastAskedField && uiResponse !== undefined && uiResponse !== null && !isSkip) {
+      // Save the user's response directly to the schema path
+      const serverExtraction = { [lastAskedField]: uiResponse };
+
+      console.log(
+        "🔵 [Backend] SERVER EXTRACTION (before LLM):",
+        JSON.stringify(serverExtraction, null, 2)
+      );
+
+      session.goldenSchema = this.applySchemaUpdates(
+        session.goldenSchema || {},
+        serverExtraction
+      );
+
+      // Save to Firestore immediately - DATA IS NOW SAFE
+      await saveSession({
+        firestore: this.firestore,
+        sessionId,
+        session,
+      });
+
+      this.logger.info(
+        {
+          sessionId,
+          field: lastAskedField,
+          valueType: typeof uiResponse,
+          savedBeforeLLM: true,
+        },
+        "golden-interviewer.server_extraction.saved"
+      );
+    }
+
+    // =========================================================================
     // FETCH COMPANY DATA FOR LLM CONTEXT (if companyId exists)
     // =========================================================================
     let companyData = null;
