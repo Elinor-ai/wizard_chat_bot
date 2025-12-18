@@ -7,6 +7,9 @@
  * 2. Updates from Saver Agent are applied to the schema
  * 3. Chat Agent sees the updated schema
  * 4. Both extractions (Saver + Chat) are saved to DB
+ *
+ * NOTE: These tests are SKIPPED because the Saver Agent is currently disabled
+ * (ENABLE_SAVER_AGENT = false in service.js). Re-enable when Saver Agent is active.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -26,7 +29,8 @@ import {
 // Store original fetch
 const originalFetch = global.fetch;
 
-describe("Golden Saver Agent Flow", () => {
+// SKIPPED: Saver Agent is currently disabled in service.js
+describe.skip("Golden Saver Agent Flow", () => {
   let app;
   let mockFirestore;
   let mockBigQuery;
