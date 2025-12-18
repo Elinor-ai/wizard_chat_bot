@@ -505,15 +505,26 @@ export class GoldenInterviewerService {
     // =========================================================================
     // SERVER-SIDE EXTRACTION: Save user response BEFORE LLM call (deterministic)
     // =========================================================================
+    // With single-field-per-question architecture, we know exactly which field
+    // to save the user's response to: lastAskedField (from previous turn's currently_asking_field)
     const lastAskedField = session.metadata?.lastAskedField;
 
-    if (lastAskedField && uiResponse !== undefined && uiResponse !== null && !isSkip) {
+    // Determine what value to save: uiResponse takes priority, fallback to userMessage
+    const valueToSave = uiResponse !== undefined && uiResponse !== null
+      ? uiResponse
+      : userMessage || null;
+
+    if (lastAskedField && valueToSave !== null && !isSkip) {
       // Save the user's response directly to the schema path
-      const serverExtraction = { [lastAskedField]: uiResponse };
+      const serverExtraction = { [lastAskedField]: valueToSave };
 
       console.log(
-        "🔵 [Backend] SERVER EXTRACTION (before LLM):",
-        JSON.stringify(serverExtraction, null, 2)
+        "🔵 [SERVER EXTRACTION] Saving user response directly to field:",
+        JSON.stringify({
+          field: lastAskedField,
+          value: valueToSave,
+          source: uiResponse !== undefined && uiResponse !== null ? "uiResponse" : "userMessage",
+        }, null, 2)
       );
 
       session.goldenSchema = this.applySchemaUpdates(
@@ -532,10 +543,17 @@ export class GoldenInterviewerService {
         {
           sessionId,
           field: lastAskedField,
-          valueType: typeof uiResponse,
+          valueType: typeof valueToSave,
+          source: uiResponse !== undefined && uiResponse !== null ? "uiResponse" : "userMessage",
           savedBeforeLLM: true,
         },
         "golden-interviewer.server_extraction.saved"
+      );
+    } else if (!lastAskedField && (userMessage || uiResponse) && !isSkip) {
+      // First turn or no field specified - log for debugging
+      this.logger.debug(
+        { sessionId, hasUserMessage: !!userMessage, hasUiResponse: !!uiResponse },
+        "golden-interviewer.server_extraction.skipped_no_field"
       );
     }
 

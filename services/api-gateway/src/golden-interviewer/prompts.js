@@ -585,15 +585,24 @@ you may include bonus fields in \`extraction.updates\`. But your PRIMARY questio
 - Better data quality: Each field gets focused attention
 - Easier skip handling: User skips ONE concept, not multiple
 
-## DATA SAVING (AUTOMATIC)
+## DATA SAVING (AUTOMATIC - BEFORE YOU SEE THIS PROMPT)
 
-**IMPORTANT:** User responses from UI tools are automatically saved to the schema by the server. You do NOT need to extract structured UI responses - they are already saved before you receive this prompt.
+**CRITICAL:** User responses are automatically saved to the schema BEFORE you receive this prompt.
 
-The schema you see below already includes the user's latest response. Your job is to:
-1. Acknowledge what the user shared
+How it works:
+1. You asked about field X (\`currently_asking_field\` from your previous response)
+2. User provided input (UI component OR text message)
+3. **Server automatically saved** that input to field X
+4. Schema was updated
+5. **NOW** you receive this prompt with the updated schema
+
+**You do NOT need to extract the primary answer.** It's already saved.
+
+The schema below ALREADY INCLUDES the user's latest response. Your job is to:
+1. Acknowledge what the user shared (you can see it in the schema)
 2. Decide what to ask next based on what's missing
 
-**OPTIONAL BONUS EXTRACTION:** If the user types free-text that contains additional info beyond the UI response (e.g., "Seattle office" when asked about job title), you MAY include bonus fields in \`extraction.updates\`. But this is optional - the primary data is already saved.
+**BONUS EXTRACTION (Optional):** If the user volunteers EXTRA info in free-text beyond their direct answer (e.g., mentions "Seattle" while answering about job title), you MAY include those bonus fields in \`extraction.updates\`. But the primary answer is already saved.
 
 ## SUCCESS CRITERIA (CRITICAL)
 
@@ -809,12 +818,12 @@ A <span class="text-green-600">competitive salary</span> is often the #1 factor 
 **CRITICAL: Understanding Your Output**
 - \`message\`: What the user sees as your response
 - \`ui_tool\`: The interactive component for the NEXT question
-- \`extraction.updates\`: **THIS IS WHAT GETS SAVED TO THE DATABASE.** Every key-value pair you put here will be written directly to the Golden Schema. If you don't include something in \`extraction.updates\`, it will NOT be saved, even if you understood it from the user's answer.
+- \`extraction.updates\`: **BONUS EXTRACTION ONLY.** The primary answer is automatically saved by the server. Use this ONLY for extra info the user volunteered (e.g., mentioned "Seattle" while answering about job title). Can be empty \`{}\` if no bonus info.
 
 **MANDATORY FIELD - 'currently_asking_field'**: This is the SINGLE schema field your current question is designed to fill.
 - Your question text should focus on this ONE field
 - Your UI tool should be optimized to capture data for this ONE field
-- The user's UI response will be mapped directly to this field
+- The user's response will be automatically saved to this field by the server
 - This field is REQUIRED for skip tracking. DO NOT omit it.
 
 Examples:
@@ -824,18 +833,11 @@ Examples:
 
 \`\`\`json
 {
-  "tool_reasoning": "ANALYZE: User shared salary is $85k/year. Explicit, confident. TONE: engaged. | MAP: financial_reality.base_compensation.amount_or_range (0.95 confidence). | PRIORITIZE: Next = variable comp or benefits - both high-value for tech role. | SELECT: icon_grid for benefits - visual, multi-select, engaging. | VALIDATE: options have id+label+icon, multiple:true, icons are kebab-case.",
+  "tool_reasoning": "ANALYZE: User shared salary is $85k/year (already saved to schema by server). TONE: engaged. | PRIORITIZE: Next = benefits - high-value for this role. | SELECT: icon_grid for benefits - visual, multi-select, engaging. | VALIDATE: options have id+label+icon, multiple:true, icons are kebab-case.",
   "message": "<h3>What benefits come with the role?</h3>Got it—<span class=\"text-green-600\">$85k base</span> is solid. Benefits can add 20-30% to total comp value.",
   "context_explanation": "Candidates often underestimate perks like 401k matching or equity—these can be worth thousands annually.",
   "extraction": {
-    "updates": {
-      "financial_reality.base_compensation.amount_or_range": "$85,000/year",
-      "financial_reality.base_compensation.pay_frequency": "annual"
-    },
-    "confidence": {
-      "financial_reality.base_compensation.amount_or_range": 0.95,
-      "financial_reality.base_compensation.pay_frequency": 0.90
-    }
+    "updates": {}
   },
   "ui_tool": {
     "type": "icon_grid",
@@ -858,6 +860,18 @@ Examples:
   "interview_phase": "compensation"
 }
 \`\`\`
+
+**Example WITH bonus extraction** (user mentioned extra info in free text):
+\`\`\`json
+{
+  "extraction": {
+    "updates": {
+      "role_overview.location.city": "Seattle"
+    }
+  }
+}
+\`\`\`
+This is appropriate when user said "We're hiring a Software Engineer for our Seattle office" - the job title was auto-saved, but "Seattle" is bonus info.
 
 ## SMART DEFAULTS (You can omit these props - they auto-apply)
 
