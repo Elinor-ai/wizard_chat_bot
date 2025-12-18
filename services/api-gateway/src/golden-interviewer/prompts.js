@@ -858,8 +858,25 @@ If this is the first turn:
 // SECTION 4: FIRST TURN PROMPT
 // =============================================================================
 
-export function buildFirstTurnPrompt() {
-  return `This is the START of a new interview session.
+/**
+ * Builds the user prompt for the first turn.
+ * Includes company and user context for personalized greetings.
+ *
+ * @param {object} options
+ * @param {object} [options.companyData] - Company data for context
+ * @param {object} [options.currentSchema] - Current golden schema state
+ * @returns {string} - First turn user prompt
+ */
+export function buildFirstTurnPrompt({ companyData, currentSchema } = {}) {
+  const companyContext = buildCompanyContextSection(companyData);
+  const userContext = buildUserContextSection(currentSchema);
+
+  return `# SESSION CONTEXT
+${companyContext || "_No company data available._"}
+${userContext || "_No user context available._"}
+---
+
+This is the START of a new interview session.
 
 Your task:
 1. Greet the user warmly and professionally.
