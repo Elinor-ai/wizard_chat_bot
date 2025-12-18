@@ -253,7 +253,7 @@ describe("Golden Interviewer Flow", () => {
       expect(response.body).toHaveProperty("message");
     });
 
-    it("makes internal HTTP calls to /api/llm for chat turn (Saver + Chat agents)", async () => {
+    it("makes internal HTTP calls to /api/llm for chat turn (Chat Agent only - Saver Agent disabled)", async () => {
       await request(app)
         .post("/golden-interview/chat")
         .set("Authorization", `Bearer ${authToken}`)
@@ -262,20 +262,14 @@ describe("Golden Interviewer Flow", () => {
           userMessage: "The job title is Senior Engineer",
         });
 
-      // With Saver Agent architecture, there are now 2 LLM calls:
-      // 1. golden_db_update (Saver Agent) - extracts data
-      // 2. golden_interviewer (Chat Agent) - generates response
+      // NOTE: Saver Agent is currently disabled (ENABLE_SAVER_AGENT = false in service.js)
+      // When re-enabled, this test should expect 2 LLM calls instead of 1
 
-      // Verify both calls were made
-      expect(internalLlmCalls.length).toBe(2);
+      // Verify only Chat Agent call was made
+      expect(internalLlmCalls.length).toBe(1);
 
-      // First call should be Saver Agent
-      const saverCall = internalLlmCalls[0];
-      expect(saverCall.body).toHaveProperty("taskType", "golden_db_update");
-      expect(saverCall.body.context).toHaveProperty("userMessage", "The job title is Senior Engineer");
-
-      // Second call should be Chat Agent
-      const chatCall = internalLlmCalls[1];
+      // The call should be Chat Agent
+      const chatCall = internalLlmCalls[0];
       expect(chatCall.body).toHaveProperty("taskType", "golden_interviewer");
       expect(chatCall.body.context).toHaveProperty("isFirstTurn", false);
       expect(chatCall.body.context).toHaveProperty("userMessage", "The job title is Senior Engineer");

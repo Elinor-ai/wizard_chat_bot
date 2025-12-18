@@ -569,91 +569,102 @@ export class GoldenInterviewerService {
     // =========================================================================
     // STEP 1: SAVER AGENT - Extract and save data BEFORE chat agent
     // =========================================================================
+    // TEMPORARILY DISABLED: Saver Agent is disabled while we iterate on the
+    // single-field-per-question architecture. The code is preserved for future use.
+    const ENABLE_SAVER_AGENT = false;
+
     // Detect role archetype for context-aware extraction
     const roleArchetype = detectRoleArchetypeFromSchema(session.goldenSchema || {});
 
-    const saverContext = {
-      userInput: userMessage || uiResponse,
-      userMessage,
-      uiResponse,
-      lastAskedField: session.metadata?.lastAskedField || null,
-      currentSchema: session.goldenSchema || {},
-      conversationHistory: session.conversationHistory.slice(-4), // Last 4 messages for context
-      sessionId,
-      // Additional context for smarter extraction
-      companyData,
-      roleArchetype,
-      frictionState: {
-        isSkip,
-        skipReason: isSkip ? skipReason : null,
-        consecutiveSkips: friction.consecutiveSkips,
-        totalSkips: friction.totalSkips,
-      },
-    };
-
-    // Call Saver Agent to extract data from user input
     let saverResult = { updates: {}, reasoning: null };
 
-    // Log schema state BEFORE Saver Agent
-    console.log(
-      "\n========== SCHEMA TRACKING ==========\n" +
-      "📋 [BEFORE SAVER AGENT] Schema fields with values:",
-      JSON.stringify(this.getFilledFields(session.goldenSchema || {}), null, 2)
-    );
+    if (ENABLE_SAVER_AGENT) {
+      const saverContext = {
+        userInput: userMessage || uiResponse,
+        userMessage,
+        uiResponse,
+        lastAskedField: session.metadata?.lastAskedField || null,
+        currentSchema: session.goldenSchema || {},
+        conversationHistory: session.conversationHistory.slice(-4), // Last 4 messages for context
+        sessionId,
+        // Additional context for smarter extraction
+        companyData,
+        roleArchetype,
+        frictionState: {
+          isSkip,
+          skipReason: isSkip ? skipReason : null,
+          consecutiveSkips: friction.consecutiveSkips,
+          totalSkips: friction.totalSkips,
+        },
+      };
 
-    try {
-      saverResult = await this.callSaverAgentApi({ authToken, context: saverContext });
+      // Log schema state BEFORE Saver Agent
       console.log(
-        "🤖 [SAVER AGENT] Result:",
-        JSON.stringify(saverResult, null, 2)
+        "\n========== SCHEMA TRACKING ==========\n" +
+        "📋 [BEFORE SAVER AGENT] Schema fields with values:",
+        JSON.stringify(this.getFilledFields(session.goldenSchema || {}), null, 2)
       );
 
-      // Apply Saver Agent extractions to schema BEFORE chat agent sees it
-      if (saverResult?.updates && Object.keys(saverResult.updates).length > 0) {
+      try {
+        saverResult = await this.callSaverAgentApi({ authToken, context: saverContext });
         console.log(
-          "✅ [SAVER AGENT] Updates to apply:",
-          JSON.stringify(saverResult.updates, null, 2)
-        );
-        const updatedSchema = this.applySchemaUpdates(
-          session.goldenSchema || {},
-          saverResult.updates
-        );
-        session.goldenSchema = updatedSchema;
-
-        // Log schema state AFTER Saver Agent
-        console.log(
-          "📋 [AFTER SAVER AGENT] Schema fields with values:",
-          JSON.stringify(this.getFilledFields(session.goldenSchema || {}), null, 2)
+          "🤖 [SAVER AGENT] Result:",
+          JSON.stringify(saverResult, null, 2)
         );
 
-        this.logger.info(
-          {
+        // Apply Saver Agent extractions to schema BEFORE chat agent sees it
+        if (saverResult?.updates && Object.keys(saverResult.updates).length > 0) {
+          console.log(
+            "✅ [SAVER AGENT] Updates to apply:",
+            JSON.stringify(saverResult.updates, null, 2)
+          );
+          const updatedSchema = this.applySchemaUpdates(
+            session.goldenSchema || {},
+            saverResult.updates
+          );
+          session.goldenSchema = updatedSchema;
+
+          // Log schema state AFTER Saver Agent
+          console.log(
+            "📋 [AFTER SAVER AGENT] Schema fields with values:",
+            JSON.stringify(this.getFilledFields(session.goldenSchema || {}), null, 2)
+          );
+
+          this.logger.info(
+            {
+              sessionId,
+              updateCount: Object.keys(saverResult.updates).length,
+              fields: Object.keys(saverResult.updates),
+              reasoning: saverResult.reasoning,
+            },
+            "golden-interviewer.saver_agent.updates_applied"
+          );
+
+          // Save immediately after Saver Agent extractions (don't wait for Chat Agent)
+          await saveSession({
+            firestore: this.firestore,
             sessionId,
-            updateCount: Object.keys(saverResult.updates).length,
-            fields: Object.keys(saverResult.updates),
-            reasoning: saverResult.reasoning,
-          },
-          "golden-interviewer.saver_agent.updates_applied"
-        );
-
-        // Save immediately after Saver Agent extractions (don't wait for Chat Agent)
-        await saveSession({
-          firestore: this.firestore,
-          sessionId,
-          session,
-        });
-        console.log("💾 [SAVER AGENT] Saved to Firestore immediately");
-      } else {
-        console.log(
-          "⚠️ [SAVER AGENT] No updates extracted. Reasoning:",
-          saverResult?.reasoning || "none"
+            session,
+          });
+          console.log("💾 [SAVER AGENT] Saved to Firestore immediately");
+        } else {
+          console.log(
+            "⚠️ [SAVER AGENT] No updates extracted. Reasoning:",
+            saverResult?.reasoning || "none"
+          );
+        }
+      } catch (error) {
+        // Saver Agent failure should NOT block the conversation
+        this.logger.warn(
+          { sessionId, err: error },
+          "golden-interviewer.saver_agent.error"
         );
       }
-    } catch (error) {
-      // Saver Agent failure should NOT block the conversation
-      this.logger.warn(
-        { sessionId, err: error },
-        "golden-interviewer.saver_agent.error"
+    } else {
+      // Saver Agent disabled - log for debugging
+      this.logger.debug(
+        { sessionId },
+        "golden-interviewer.saver_agent.disabled"
       );
     }
 
