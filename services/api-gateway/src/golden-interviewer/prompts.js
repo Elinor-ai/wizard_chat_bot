@@ -524,14 +524,9 @@ ${
  * @param {object} [options.frictionState] - Current friction state for skip handling
  * @returns {string}
  */
-export function buildSystemPrompt(options = {}) {
-  const { currentSchema, companyData, frictionState } = options;
-
-  // Build context sections if available
-  const companyContext = buildCompanyContextSection(companyData);
-  const userContext = buildUserContextSection(currentSchema);
-  const frictionContext = buildFrictionContextSection(frictionState);
-
+export function buildSystemPrompt() {
+  // STATIC system prompt - no dynamic injections
+  // All session-specific data (company, user, friction) is injected via USER prompt
   return `# ROLE: Golden Information Extraction Agent
 
 **Your Mission:**
@@ -857,199 +852,10 @@ If this is the first turn:
 3. Use a simple text-based tool (like \`smart_textarea\`).
 4. Provide a compelling \`context_explanation\` about why starting with the basics helps automate the rest of the process.
 `;
-
-// =============================================================================
-// SECTION 3: CONTEXT BUILDERS (For Dynamic User Prompt)
-// =============================================================================
-// These functions build dynamic context sections that are injected into the
-// USER prompt (not system prompt). This keeps the system prompt static for caching.
-
-// -----------------------------------------------------------------------------
-// 3.1 buildCompanyContextSection
-// -----------------------------------------------------------------------------
-/**
- * Builds the company context section for the USER prompt.
- *
- * @param {object|null} companyData - Company data with only the needed fields
- * @param {string} [companyData.name] - Company name
- * @param {string} [companyData.industry] - Industry
- * @param {string} [companyData.description] - Company description
- * @param {string} [companyData.employeeCountBucket] - Company size bucket
- * @param {string} [companyData.toneOfVoice] - Brand voice guidelines
- * @returns {string} - Company context section or empty string
- */
-function buildCompanyContextSection(companyData) {
-  if (!companyData) {
-    return "";
-  }
-
-  const { name, description, industry, employeeCountBucket, toneOfVoice } =
-    companyData;
-
-  // Only build context if we have at least a company name
-  if (!name) {
-    return "";
-  }
-
-  let contextSection = `## COMPANY CONTEXT
-
-You are representing **${name}**`;
-
-  if (industry) {
-    contextSection += ` in the ${industry} industry`;
-  }
-
-  contextSection += ".\n\n";
-
-  if (description) {
-    contextSection += `**About the Company:** ${description}\n\n`;
-  }
-
-  if (employeeCountBucket && employeeCountBucket !== "unknown") {
-    contextSection += `**Company Size:** ${employeeCountBucket} employees\n\n`;
-  }
-
-  if (toneOfVoice) {
-    contextSection += `**Brand Voice:** ${toneOfVoice}\n\n`;
-  }
-
-  contextSection += `**IMPORTANT**: Embody this company's voice and values throughout the interview. Reference the company name naturally when appropriate (e.g., "Here at ${name}..." or "What makes working at ${name} special..."). Do NOT use generic recruiter language—you represent this specific company.\n\n`;
-
-  return contextSection;
-}
-
-// -----------------------------------------------------------------------------
-// 3.2 buildUserContextSection
-// -----------------------------------------------------------------------------
-/**
- * Builds the user context section for the USER prompt.
- *
- * @param {object} currentSchema - Current golden schema state
- * @returns {string} - User context section or empty string
- */
-function buildUserContextSection(currentSchema) {
-  if (!currentSchema?.user_context) {
-    return "";
-  }
-
-  const { user_context } = currentSchema;
-  const { name, timezone } = user_context;
-
-  // Only build context if we have at least a name
-  if (!name) {
-    return "";
-  }
-
-  let contextSection = `## USER CONTEXT
-
-You are speaking with **${name}**`;
-
-  if (timezone) {
-    // Extract a friendly location hint from timezone
-    const locationHint = formatTimezoneAsLocation(timezone);
-    if (locationHint) {
-      contextSection += ` who is located in the ${locationHint}`;
-    }
-  }
-
-  contextSection += ".\n\n";
-
-  contextSection += `**IMPORTANT**: Use this information to build rapport and personalize the conversation. Address them by name occasionally (e.g., "Great point, ${name}!" or "Thanks for sharing that, ${name}."). If you know their location, you can make small talk references (e.g., "Hope the weather is treating you well!" or mention local context when relevant). Keep it natural—don't overdo it.\n\n`;
-
-  return contextSection;
-}
-
-// -----------------------------------------------------------------------------
-// 3.3 buildFrictionContextSection
-// -----------------------------------------------------------------------------
-/**
- * Builds the friction awareness section for the USER prompt.
- * Provides current skip state so LLM knows which friction level to apply.
- *
- * @param {object} frictionState - Current friction state from service
- * @returns {string} - Friction context section or empty string
- */
-function buildFrictionContextSection(frictionState) {
-  if (!frictionState || frictionState.totalSkips === 0) {
-    return "";
-  }
-
-  const { consecutiveSkips, totalSkips, currentStrategy, skippedField } =
-    frictionState;
-
-  return `## FRICTION AWARENESS
-
-**Current Friction State:**
-- Consecutive Skips: ${consecutiveSkips}
-- Total Skips This Session: ${totalSkips}
-- Current Strategy: **${currentStrategy.toUpperCase()}**
-${skippedField ? `- Last Skipped Field: ${skippedField}` : ""}
-
-**FRICTION PROTOCOL (You MUST follow this):**
-
-### Level 1: Single Skip (consecutiveSkips = 1)
-- Acknowledge gracefully: "No problem! Let's try something else."
-- Pivot to a DIFFERENT category entirely
-- Use an easier UI tool (text input or simple yes/no)
-
-### Level 2: Double Skip (consecutiveSkips = 2)
-- Show empathy: "I understand some details are harder to share."
-- Offer a LOW-DISCLOSURE alternative:
-  - Instead of exact salary → Use \`range_slider\` with broad ranges
-  - Instead of detailed equity → Ask "Do you offer equity? Yes/No"
-  - Instead of turnover reasons → Ask "Would you describe retention as stable?"
-
-### Level 3: Triple Skip or More (consecutiveSkips >= 3)
-- **STOP interrogating. START educating.**
-- Your message should explain WHY this data helps them:
-  - "I want to share why candidates care about [topic]..."
-  - "Companies that share [X] see 40% more qualified applicants..."
-- DO NOT ask a direct question. Offer a soft re-entry:
-  - "Whenever you're ready, we can revisit this. For now, let's move on to something easier."
-
-### Sensitive Topic Protocol
-When the skipped field involves: [compensation, equity, revenue, turnover]
-- ALWAYS offer ranges/brackets instead of exact numbers
-- Lead with validation: "Many companies prefer to share ranges rather than exact figures."
-- Use \`range_slider\` or \`multi_select\` instead of open text
-
-### Strategy-Specific Instructions:
-${
-  currentStrategy === "education"
-    ? `
-**CURRENT: EDUCATION MODE**
-- Your primary goal is to EXPLAIN VALUE, not extract data
-- Lead with "Here's why this matters to candidates..."
-- Share a brief insight about what job seekers care about
-- End with a soft invitation: "Would you like to share anything about this?"
-`
-    : ""
-}${
-    currentStrategy === "low_disclosure"
-      ? `
-**CURRENT: LOW DISCLOSURE MODE**
-- Offer RANGES instead of exact values
-- Use yes/no or multiple choice instead of open text
-- Example: "Would you say compensation is below average, competitive, or above market?"
-- Make it easy to answer without revealing sensitive specifics
-`
-      : ""
-  }${
-    currentStrategy === "defer"
-      ? `
-**CURRENT: DEFER MODE**
-- This topic is causing too much friction
-- Acknowledge: "We can skip this section entirely - no problem at all."
-- Move to a completely different, easier category
-- Do NOT return to this topic unless the user brings it up
-`
-      : ""
-  }
-`;
 }
 
 // =============================================================================
-// SECTION 4: MAIN SYSTEM PROMPT
+// SECTION 4: FIRST TURN PROMPT
 // =============================================================================
 
 export function buildFirstTurnPrompt() {
@@ -1095,6 +901,12 @@ export function buildContinueTurnPrompt({
   lastAskedField,
 }) {
   const schemaCompletion = estimateSchemaCompletion(currentSchema);
+
+  // Build dynamic context sections for the user prompt
+  const companyContext = buildCompanyContextSection(companyData);
+  const userContext = buildUserContextSection(currentSchema);
+  const frictionContext = buildFrictionContextSection(frictionState);
+  const historyContext = ""; // TODO: Add conversation history if needed
 
   // Get context-aware field analysis
   const { missing, skipped, archetype } = identifyMissingFields(currentSchema);
@@ -1455,53 +1267,6 @@ function getNestedValue(obj, path) {
   return path.split(".").reduce((current, key) => {
     return current && typeof current === "object" ? current[key] : undefined;
   }, obj);
-}
-
-// -----------------------------------------------------------------------------
-// 6.7 formatTimezoneAsLocation
-// -----------------------------------------------------------------------------
-/**
- * Convert a timezone string to a friendly location hint.
- *
- * @param {string} timezone - IANA timezone string (e.g., "America/Los_Angeles")
- * @returns {string|null} - Friendly location or null
- */
-function formatTimezoneAsLocation(timezone) {
-  if (!timezone) return null;
-
-  // Common timezone to location mappings
-  const timezoneLocations = {
-    "America/New_York": "Eastern US (New York area)",
-    "America/Chicago": "Central US (Chicago area)",
-    "America/Denver": "Mountain US (Denver area)",
-    "America/Los_Angeles": "West Coast US (California)",
-    "America/Phoenix": "Arizona",
-    "America/Anchorage": "Alaska",
-    "Pacific/Honolulu": "Hawaii",
-    "Europe/London": "United Kingdom",
-    "Europe/Paris": "Western Europe",
-    "Europe/Berlin": "Central Europe",
-    "Asia/Tokyo": "Japan",
-    "Asia/Shanghai": "China",
-    "Asia/Singapore": "Singapore",
-    "Asia/Dubai": "UAE",
-    "Asia/Kolkata": "India",
-    "Australia/Sydney": "Australia (Eastern)",
-    "Australia/Perth": "Australia (Western)",
-  };
-
-  if (timezoneLocations[timezone]) {
-    return timezoneLocations[timezone];
-  }
-
-  // Fallback: extract city name from timezone (e.g., "America/Los_Angeles" -> "Los Angeles")
-  const parts = timezone.split("/");
-  if (parts.length >= 2) {
-    const city = parts[parts.length - 1].replace(/_/g, " ");
-    return `${city} area`;
-  }
-
-  return null;
 }
 
 // =============================================================================
