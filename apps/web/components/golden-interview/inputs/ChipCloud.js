@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
+
 /**
  * ChipCloud - Grouped cloud of selectable text chips/tags
  *
@@ -7,15 +9,18 @@
  * - Defaults groups to [] if undefined/null
  * - Defaults group.items to [] if undefined/null
  * - Light mode styling for visibility on white backgrounds
+ * - Now supports custom chip creation when allowCustomInput is true
  *
  * @param {Object} props
  * @param {Array<{groupId: string, groupLabel: string, items: Array<{id: string, label: string}>}>} props.groups
- * @param {Array<string>} props.value - Array of selected item ids
+ * @param {Array<string>} props.value - Array of selected item ids (can include custom strings)
  * @param {function} props.onChange - Callback with updated selection array
  * @param {string} [props.title] - Title text
  * @param {number} [props.maxSelections] - Maximum number of selections
  * @param {boolean} [props.showGroupLabels=true] - Show group headers
  * @param {string} [props.selectedColor="#8b5cf6"] - Selection color
+ * @param {boolean} [props.allowCustomInput=false] - Allow custom chip creation
+ * @param {string} [props.customInputPlaceholder] - Placeholder for custom input
  */
 export default function ChipCloud({
   groups,
@@ -25,12 +30,40 @@ export default function ChipCloud({
   maxSelections,
   showGroupLabels = true,
   selectedColor = "#8b5cf6",
+  allowCustomInput = false,
+  customInputPlaceholder = "Add custom...",
 }) {
+  // State for custom input
+  const [isAddingCustom, setIsAddingCustom] = useState(false);
+  const [customInputValue, setCustomInputValue] = useState("");
+  const customInputRef = useRef(null);
+
   // Safety check: Ensure groups is always an array
   const safeGroups = Array.isArray(groups) ? groups : [];
 
   // Safety check: Ensure value is always an array
   const safeValue = Array.isArray(value) ? value : [];
+
+  // Focus input when entering custom mode
+  useEffect(() => {
+    if (isAddingCustom && customInputRef.current) {
+      customInputRef.current.focus();
+    }
+  }, [isAddingCustom]);
+
+  // Check if a value is a custom chip (not in any group)
+  const isCustomChip = (itemId) => {
+    for (const group of safeGroups) {
+      const safeItems = Array.isArray(group.items) ? group.items : [];
+      if (safeItems.some((item) => item?.id === itemId)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Get all custom chips from selected values
+  const customChips = safeValue.filter(isCustomChip);
 
   const handleChipToggle = (itemId) => {
     const isSelected = safeValue.includes(itemId);
@@ -39,6 +72,36 @@ export default function ChipCloud({
       onChange(safeValue.filter((id) => id !== itemId));
     } else if (!maxSelections || safeValue.length < maxSelections) {
       onChange([...safeValue, itemId]);
+    }
+  };
+
+  // Handle submitting custom chip
+  const handleCustomSubmit = () => {
+    const trimmedValue = customInputValue.trim();
+    if (!trimmedValue) {
+      setIsAddingCustom(false);
+      return;
+    }
+
+    // Don't add duplicates
+    if (!safeValue.includes(trimmedValue)) {
+      if (!maxSelections || safeValue.length < maxSelections) {
+        onChange([...safeValue, trimmedValue]);
+      }
+    }
+
+    setCustomInputValue("");
+    setIsAddingCustom(false);
+  };
+
+  // Handle keyboard events in custom input
+  const handleCustomKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleCustomSubmit();
+    } else if (e.key === "Escape") {
+      setCustomInputValue("");
+      setIsAddingCustom(false);
     }
   };
 
@@ -117,6 +180,62 @@ export default function ChipCloud({
             </div>
           );
         })}
+
+        {/* Custom chips section - shows custom chips and add button */}
+        {allowCustomInput && (
+          <div className="space-y-2">
+            {customChips.length > 0 && (
+              <div className="text-slate-500 text-xs uppercase tracking-wide font-medium">
+                Custom
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              {/* Render selected custom chips */}
+              {customChips.map((chipValue) => (
+                <button
+                  key={chipValue}
+                  onClick={() => handleChipToggle(chipValue)}
+                  className="px-4 py-2 rounded-full text-sm font-medium text-white shadow-lg transition-all duration-200"
+                  style={{
+                    backgroundColor: selectedColor,
+                    boxShadow: `0 4px 15px ${selectedColor}40`,
+                  }}
+                >
+                  <span className="mr-1">✓</span>
+                  {chipValue}
+                </button>
+              ))}
+
+              {/* "+ Add" chip or inline input */}
+              {isAddingCustom ? (
+                <div className="inline-flex items-center">
+                  <input
+                    ref={customInputRef}
+                    type="text"
+                    value={customInputValue}
+                    onChange={(e) => setCustomInputValue(e.target.value)}
+                    onKeyDown={handleCustomKeyDown}
+                    onBlur={handleCustomSubmit}
+                    placeholder={customInputPlaceholder}
+                    className="px-4 py-2 rounded-full text-sm border-2 border-dashed border-primary-400 bg-primary-50 focus:outline-none focus:border-primary-500 min-w-[120px]"
+                    autoFocus
+                  />
+                </div>
+              ) : (
+                canSelectMore && (
+                  <button
+                    onClick={() => setIsAddingCustom(true)}
+                    className="px-4 py-2 rounded-full text-sm font-medium border-2 border-dashed border-slate-300 text-slate-500 hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50 transition-all duration-200"
+                  >
+                    <span className="mr-1">+</span>
+                    Add
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Selected chips summary */}
@@ -131,11 +250,13 @@ export default function ChipCloud({
             {safeValue.map((itemId) => {
               // Find the item across all groups
               let itemLabel = itemId;
+              let isCustom = true;
               for (const group of safeGroups) {
                 const safeItems = Array.isArray(group.items) ? group.items : [];
                 const item = safeItems.find((i) => i?.id === itemId);
                 if (item) {
                   itemLabel = item.label || item.id;
+                  isCustom = false;
                   break;
                 }
               }
@@ -146,6 +267,21 @@ export default function ChipCloud({
                   className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm text-white"
                   style={{ backgroundColor: selectedColor }}
                 >
+                  {isCustom && (
+                    <svg
+                      className="w-3 h-3 mr-0.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                      />
+                    </svg>
+                  )}
                   {itemLabel}
                   <button
                     onClick={() => handleChipToggle(itemId)}

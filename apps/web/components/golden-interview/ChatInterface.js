@@ -672,22 +672,8 @@ export default function ChatInterface({
               )}
             </div> */}
 
-            {/* Question / Message */}
-            <div
-              className="mb-8 text-lg text-slate-600 [&>h3]:text-2xl [&>h3]:font-bold [&>h3]:leading-tight [&>h3]:text-slate-900 [&>h3]:mb-3 [&>h3]:block"
-              dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(
-                  currentMessage || "Let's get started with your interview",
-                  {
-                    ALLOWED_TAGS: ["h3", "b", "strong", "span", "em"],
-                    ALLOWED_ATTR: ["class"],
-                  }
-                ),
-              }}
-            />
-
-            {/* Typing Indicator */}
-            {isTyping && (
+            {/* Typing Indicator - shown when loading, hides message and component */}
+            {isTyping ? (
               <div className="mb-6 flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50">
                   <BulbIcon className="h-5 w-5 text-primary-500" />
@@ -698,6 +684,20 @@ export default function ChatInterface({
                   <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
                 </div>
               </div>
+            ) : (
+              /* Question / Message - only shown when not typing */
+              <div
+                className="mb-8 text-lg text-slate-600 [&>h3]:text-2xl [&>h3]:font-bold [&>h3]:leading-tight [&>h3]:text-slate-900 [&>h3]:mb-3 [&>h3]:block"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(
+                    currentMessage || "Let's get started with your interview",
+                    {
+                      ALLOWED_TAGS: ["h3", "b", "strong", "span", "em"],
+                      ALLOWED_ATTR: ["class"],
+                    }
+                  ),
+                }}
+              />
             )}
 
             {/* Error Display */}
