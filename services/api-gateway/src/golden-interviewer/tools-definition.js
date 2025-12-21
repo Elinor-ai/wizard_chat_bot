@@ -570,12 +570,28 @@ export const UI_TOOLS_SCHEMA = {
         description: "Maximum selections allowed (for multi-select)",
         required: false,
       },
+      allowCustomInput: {
+        type: "boolean",
+        description:
+          "When true, displays an 'Add Other' card that allows users to type a custom answer not listed in the options. Use this for open-ended questions where the provided options might not be exhaustive (e.g., 'What software do you use?', 'Who are your competitors?', 'What tools does your team use?'). The custom text value will be passed directly in the onChange event instead of an option ID.",
+        required: false,
+        default: false,
+      },
+      customInputPlaceholder: {
+        type: "string",
+        description:
+          "Placeholder text shown in the custom input field when allowCustomInput is true",
+        required: false,
+        default: "Type your answer...",
+      },
     },
     useCases: [
       "Benefits selection",
       "Amenities checklist",
       "Safety features",
       "Commute options",
+      "Software/tools selection with custom additions",
+      "Competitor identification",
     ],
     schemaMapping: [
       "stability_signals.benefits_security",
@@ -634,11 +650,34 @@ export const UI_TOOLS_SCHEMA = {
         default: "list",
         enum: ["list", "grid"],
       },
+      allowCustomInput: {
+        type: "boolean",
+        description:
+          "When true, displays an 'Add New Option' card that allows users to create a custom card with their own title and description. Use this for open-ended questions where the provided options might not be exhaustive (e.g., 'What are your marketing goals?', 'Describe your ideal work arrangement'). Custom values are returned as objects with {id, title, description, isCustom: true}.",
+        required: false,
+        default: false,
+      },
+      customTitlePlaceholder: {
+        type: "string",
+        description:
+          "Placeholder text for the title input when allowCustomInput is true",
+        required: false,
+        default: "Enter title...",
+      },
+      customDescriptionPlaceholder: {
+        type: "string",
+        description:
+          "Placeholder text for the description input when allowCustomInput is true",
+        required: false,
+        default: "Enter description (optional)...",
+      },
     },
     useCases: [
       "Shift pattern selection",
       "Management style preferences",
       "Role type selection",
+      "Marketing goals with custom additions",
+      "Work arrangement preferences",
     ],
     schemaMapping: [
       "time_and_life.schedule_pattern.type",
@@ -946,11 +985,27 @@ export const UI_TOOLS_SCHEMA = {
         required: false,
         default: true,
       },
+      allowCustomInput: {
+        type: "boolean",
+        description:
+          "When true, displays a '+ Add' chip that allows users to type custom tags/keywords not listed in the options. Use this for open-ended tag questions where users might have unique inputs (e.g., 'What keywords describe your brand?', 'What technologies do you use?'). Custom values are added as raw text strings to the selection array.",
+        required: false,
+        default: false,
+      },
+      customInputPlaceholder: {
+        type: "string",
+        description:
+          "Placeholder text shown in the custom input field when allowCustomInput is true",
+        required: false,
+        default: "Add custom...",
+      },
     },
     useCases: [
       "Tech stack selection",
       "Skills and competencies",
       "Tools and platforms",
+      "Brand keywords with custom additions",
+      "Custom tag entry",
     ],
     schemaMapping: [
       "growth_trajectory.skill_building.technologies_used",

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import DynamicIcon from "./DynamicIcon";
 
 /**
@@ -14,9 +15,10 @@ const isLikelyEmoji = (str) => {
 
 /**
  * IconGridSelect - Grid of square cards with icons, supports single/multi-select
+ * Now supports custom text input when allowCustomInput is true
  */
 export default function IconGridSelect({
-  options,
+  options = [],
   value,
   onChange,
   multiple = false,
@@ -24,8 +26,16 @@ export default function IconGridSelect({
   title,
   maxSelections,
   selectedColor = "#8b5cf6",
+  allowCustomInput = false,
+  customInputPlaceholder = "Type your answer...",
 }) {
-  const selectedIds = multiple
+  // State for custom input mode
+  const [isAddingCustom, setIsAddingCustom] = useState(false);
+  const [customInputValue, setCustomInputValue] = useState("");
+  const customInputRef = useRef(null);
+
+  // Parse selected values - can include both option IDs and custom strings
+  const selectedValues = multiple
     ? Array.isArray(value)
       ? value
       : []
@@ -33,24 +43,58 @@ export default function IconGridSelect({
       ? [value]
       : [];
 
-  const handleSelect = (optionId) => {
+  // Focus input when entering custom mode
+  useEffect(() => {
+    if (isAddingCustom && customInputRef.current) {
+      customInputRef.current.focus();
+    }
+  }, [isAddingCustom]);
+
+  // Handle selecting an option (ID or custom value)
+  const handleSelect = (optionIdOrValue) => {
     if (multiple) {
-      const isSelected = selectedIds.includes(optionId);
+      const isSelected = selectedValues.includes(optionIdOrValue);
       let newSelection;
 
       if (isSelected) {
-        newSelection = selectedIds.filter((id) => id !== optionId);
+        newSelection = selectedValues.filter((v) => v !== optionIdOrValue);
       } else {
-        if (maxSelections && selectedIds.length >= maxSelections) {
+        if (maxSelections && selectedValues.length >= maxSelections) {
           // Replace oldest selection
-          newSelection = [...selectedIds.slice(1), optionId];
+          newSelection = [...selectedValues.slice(1), optionIdOrValue];
         } else {
-          newSelection = [...selectedIds, optionId];
+          newSelection = [...selectedValues, optionIdOrValue];
         }
       }
       onChange(newSelection);
     } else {
-      onChange(optionId === value ? null : optionId);
+      // Single select - toggle or set new value
+      onChange(optionIdOrValue === value ? null : optionIdOrValue);
+    }
+  };
+
+  // Handle submitting custom input
+  const handleCustomInputSubmit = () => {
+    const trimmedValue = customInputValue.trim();
+    if (!trimmedValue) {
+      setIsAddingCustom(false);
+      return;
+    }
+
+    // Add the custom text value (not an ID)
+    handleSelect(trimmedValue);
+    setCustomInputValue("");
+    setIsAddingCustom(false);
+  };
+
+  // Handle custom input keydown
+  const handleCustomInputKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleCustomInputSubmit();
+    } else if (e.key === "Escape") {
+      setCustomInputValue("");
+      setIsAddingCustom(false);
     }
   };
 
@@ -69,7 +113,7 @@ export default function IconGridSelect({
           <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
           {multiple && maxSelections && (
             <span className="text-slate-400 text-sm">
-              {selectedIds.length} / {maxSelections}
+              {selectedValues.length} / {maxSelections}
             </span>
           )}
         </div>
@@ -77,7 +121,7 @@ export default function IconGridSelect({
 
       <div className={`grid ${gridCols[columns] || "grid-cols-3"} gap-3`}>
         {options.map((option) => {
-          const isSelected = selectedIds.includes(option.id);
+          const isSelected = selectedValues.includes(option.id);
           const isEmoji = isLikelyEmoji(option.icon);
 
           return (
@@ -168,25 +212,95 @@ export default function IconGridSelect({
             </button>
           );
         })}
+
+        {/* "Add Other" Card - shown when allowCustomInput is true */}
+        {allowCustomInput && (
+          <div
+            className={`relative aspect-square p-4 rounded-xl border-2 border-dashed transition-all duration-200 flex flex-col items-center justify-center gap-2 ${
+              isAddingCustom
+                ? "border-primary-400 bg-primary-50"
+                : "border-slate-300 bg-white hover:border-primary-300 hover:bg-slate-50 cursor-pointer"
+            }`}
+            onClick={() => !isAddingCustom && setIsAddingCustom(true)}
+          >
+            {isAddingCustom ? (
+              // Custom input mode
+              <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-1">
+                <input
+                  ref={customInputRef}
+                  type="text"
+                  value={customInputValue}
+                  onChange={(e) => setCustomInputValue(e.target.value)}
+                  onKeyDown={handleCustomInputKeyDown}
+                  onBlur={handleCustomInputSubmit}
+                  placeholder={customInputPlaceholder}
+                  className="w-full px-2 py-1.5 text-xs text-center border border-slate-200 rounded-lg focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                  autoFocus
+                />
+                <span className="text-[10px] text-slate-400">
+                  Press Enter to add
+                </span>
+              </div>
+            ) : (
+              // Add button mode
+              <>
+                <div className="transition-transform duration-200 group-hover:scale-105">
+                  <svg
+                    className="w-8 h-8 text-slate-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                </div>
+                <span className="text-xs font-medium text-center leading-tight text-slate-500">
+                  Add Other
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Selected summary for multi-select */}
-      {multiple && selectedIds.length > 0 && (
+      {multiple && selectedValues.length > 0 && (
         <div className="flex flex-wrap gap-2 pt-2">
-          {selectedIds.map((id) => {
-            const option = options.find((o) => o.id === id);
-            const isEmoji = isLikelyEmoji(option?.icon);
+          {selectedValues.map((val) => {
+            const option = options.find((o) => o.id === val);
+            const isCustom = !option;
+            const isEmoji = !isCustom && isLikelyEmoji(option?.icon);
 
             return (
               <span
-                key={id}
+                key={val}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-slate-700 border border-slate-200"
                 style={{
                   backgroundColor: `${selectedColor}10`,
                   borderColor: `${selectedColor}30`,
                 }}
               >
-                {isEmoji ? (
+                {isCustom ? (
+                  // Custom value - show edit icon
+                  <svg
+                    className="w-3.5 h-3.5 text-slate-500"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                    />
+                  </svg>
+                ) : isEmoji ? (
                   <span>{option?.icon}</span>
                 ) : (
                   <DynamicIcon
@@ -195,11 +309,11 @@ export default function IconGridSelect({
                     className="text-slate-500"
                   />
                 )}
-                <span>{option?.label}</span>
+                <span>{isCustom ? val : option?.label}</span>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleSelect(id);
+                    handleSelect(val);
                   }}
                   className="ml-1 hover:text-red-500 transition-colors"
                 >

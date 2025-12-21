@@ -86,8 +86,8 @@ const CONDENSED_TOOL_SCHEMA = `
 ### GRIDS & SELECTORS (For Choices)
 | Tool | Use When | Required Props | Example |
 |------|----------|----------------|---------|
-| icon_grid | Visual multi-select with icons | **title**, **options**[{id,label,icon}], multiple | {title:"Benefits",options:[{id:"health",label:"Health",icon:"heart-pulse"}],multiple:true} |
-| detailed_cards | Cards with title + description | **title**, **options**[{id,title,description,icon}] | {title:"Shifts",options:[{id:"day",title:"Day Shift",description:"9-5",icon:"sun"}]} |
+| icon_grid | Visual multi-select with icons | **title**, **options**[{id,label,icon}], multiple, allowCustomInput | {title:"Benefits",options:[{id:"health",label:"Health",icon:"heart-pulse"}],multiple:true,allowCustomInput:false} |
+| detailed_cards | Cards with title + description | **title**, **options**[{id,title,description,icon}], allowCustomInput | {title:"Shifts",options:[{id:"day",title:"Day Shift",description:"9-5",icon:"sun"}],allowCustomInput:false} |
 | gradient_cards | Mood/vibe selection with gradients | **title**, **options**[{id,label,icon}] | {title:"Vibe",options:[{id:"chill",label:"Relaxed",icon:"coffee"}]} |
 | superpower_grid | Predefined + custom text entry | **title**, **traits**[{id,label,icon}] | {title:"Strengths",traits:[{id:"lead",label:"Leadership",icon:"crown"}]} |
 | node_map | Central node with orbiting satellites | **title**, **rings**[{id,label,maxCount}] | {title:"Team",rings:[{id:"direct",label:"Reports",maxCount:10}]} |
@@ -96,7 +96,7 @@ const CONDENSED_TOOL_SCHEMA = `
 | Tool | Use When | Required Props | Example |
 |------|----------|----------------|---------|
 | toggle_list | Checklist (red flags, features) | **title**, **items**[{id,label,icon}], variant | {title:"Red Flags",items:[{id:"layoffs",label:"Recent Layoffs",icon:"alert-triangle"}],variant:"danger"} |
-| chip_cloud | Grouped tags (tech stack, skills) | **title**, **groups**[{groupId,groupLabel,items}] | {title:"Stack",groups:[{groupId:"fe",groupLabel:"Frontend",items:[{id:"react",label:"React"}]}]} |
+| chip_cloud | Grouped tags (tech stack, skills) | **title**, **groups**[{groupId,groupLabel,items}], allowCustomInput | {title:"Stack",groups:[{groupId:"fe",groupLabel:"Frontend",items:[{id:"react",label:"React"}]}],allowCustomInput:false} |
 | segmented_rows | Frequency rating per row | **title**, **rows**[{id,label}]. Do NOT specify segments - use defaults | {title:"Physical Demands",rows:[{id:"stand",label:"Standing"}]} |
 | expandable_list | Select + provide evidence | **title**, **items**[{id,label,placeholder}] | {title:"Values",items:[{id:"trust",label:"Trust",placeholder:"Example..."}]} |
 | perk_revealer | Tabbed category perks | **title**, **categories**[{id,label,icon,items}] | {title:"Perks",categories:[{id:"food",label:"Food",icon:"pizza",items:[...]}]} |
@@ -148,7 +148,72 @@ Exception: Display-only strings (prompts, suggestions, quickReplies, suggestedQu
 - Set \`multiple: true\` for benefits, skills, preferences (can pick many)
 - Set \`multiple: false\` for exclusive choices (pick one)
 
-### 6. SEGMENTED_ROWS - Never specify segments
+### 6. ALLOW CUSTOM INPUT (Open Questions)
+When asking questions where the provided options might NOT be exhaustive, you MUST set \`allowCustomInput: true\` on these components:
+- **icon_grid**: Adds an "Add Other" card for custom text
+- **detailed_cards**: Adds an "Add New Option" card with title + description form
+- **chip_cloud**: Adds a "+ Add" chip for custom tags
+
+**ALWAYS use allowCustomInput: true for:**
+- Software/tools questions: "What software do you use?", "Which tools does your team use?"
+- Competitor questions: "Who are your main competitors?"
+- Industry-specific tools: "What CRM/ERP/platforms do you use?"
+- Role-specific technologies: "What tech stack do you work with?"
+- Marketing/brand keywords: "What keywords describe your brand?"
+- Goals and objectives: "What are your marketing goals?"
+- Any question where "Other" would be a common answer
+
+**Example with icon_grid:**
+\`\`\`json
+{
+  "type": "icon_grid",
+  "props": {
+    "title": "What software does your team use?",
+    "options": [
+      { "id": "slack", "label": "Slack", "icon": "message-circle" },
+      { "id": "teams", "label": "MS Teams", "icon": "users" }
+    ],
+    "multiple": true,
+    "allowCustomInput": true
+  }
+}
+\`\`\`
+
+**Example with detailed_cards:**
+\`\`\`json
+{
+  "type": "detailed_cards",
+  "props": {
+    "title": "What are your marketing goals?",
+    "options": [
+      { "id": "brand", "title": "Brand Awareness", "description": "Increase visibility", "icon": "eye" },
+      { "id": "leads", "title": "Lead Generation", "description": "Capture prospects", "icon": "users" }
+    ],
+    "multiple": true,
+    "allowCustomInput": true
+  }
+}
+\`\`\`
+
+**Example with chip_cloud:**
+\`\`\`json
+{
+  "type": "chip_cloud",
+  "props": {
+    "title": "Brand Keywords",
+    "groups": [{ "groupId": "style", "groupLabel": "Style", "items": [{ "id": "modern", "label": "Modern" }] }],
+    "allowCustomInput": true
+  }
+}
+\`\`\`
+
+**How it works:**
+- **icon_grid**: An "Add Other" card appears; custom values are raw text strings
+- **detailed_cards**: An "Add New Option" card appears; custom values are objects with {id, title, description, isCustom: true}
+- **chip_cloud**: A "+ Add" chip appears; custom values are raw text strings
+- All components work with both single-select and multi-select modes
+
+### 7. SEGMENTED_ROWS - Never specify segments
 - Do NOT include the \`segments\` prop - the component has built-in defaults (Never/Rare/Sometimes/Often/Always with colors)
 - Only specify \`title\` and \`rows\`
 - WRONG: \`"segments": ["Never", "Rarely"]\` (crashes the app)
