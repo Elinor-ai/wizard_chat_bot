@@ -111,6 +111,7 @@ The social fabric.
 | Field Path | Description | Type |
 |------------|-------------|------|
 | humans_and_culture.team_composition.team_size | Number of team members | number |
+| humans_and_culture.team_composition.team_composition_description | Who works together day-to-day (e.g., "3 devs, 1 designer, 1 PM") | string |
 | humans_and_culture.team_composition.direct_reports | Number of direct reports | number |
 | humans_and_culture.management_style.management_approach | hands-off/collaborative/structured | enum |
 | humans_and_culture.social_dynamics.team_bonding | Team activities | string |
@@ -162,6 +163,20 @@ Basic job info.
 | role_overview.location.state | State/Province | string |
 | role_overview.location.country | Country | string |
 | role_overview.location.zip_code | Postal code | string |
+| role_overview.hiring_motivation | Why is this role open (growth/replacement/new project) | string |
+| role_overview.system_scale | Company size (small team, mid-size, enterprise) | string |
+
+### 10. ROLE CONTENT
+The professional substance of the role.
+
+| Field Path | Description | Type |
+|------------|-------------|------|
+| role_content.role_description | Detailed description of the role | string |
+| role_content.core_problems_to_solve | Main problems this role is hired to solve | array |
+| role_content.deliverables_expected | Tangible outputs (code, reports, plans) | array |
+| role_content.biggest_challenges | Known challenges and difficulties | array |
+| role_content.business_impact | How this role impacts the organization | string |
+| role_content.tooling_ecosystem | All work tools (CRM, machines, software) | array |
 
 ### 9. UNIQUE VALUE
 Differentiators.

@@ -239,6 +239,8 @@ The foundational information about the role. **These fields MUST be filled first
 | department | Which team/department | Helps candidates understand org structure. |
 | location_city, location_state, location_country | Physical location (if applicable) | Required for on-site or hybrid roles. |
 | role_summary | Brief overview of the role | Sets expectations and helps with search. |
+| hiring_motivation | Why is this role open (growth/replacement/new project) | Gives context about team stability and urgency. |
+| system_scale | Company size (small team, mid-size, enterprise) | Helps candidates understand work environment and scope. |
 | visa_sponsorship | Whether company sponsors work visas | Critical for international candidates - often a deal-breaker. |
 | relocation_assistance | Whether company helps with relocation | Important for out-of-area candidates considering the role. |
 
@@ -247,6 +249,8 @@ The foundational information about the role. **These fields MUST be filled first
 **Golden Questions**:
 - "What's the official job title for this role?"
 - "Is this fully remote, hybrid, or on-site?"
+- "Why is this position open? Is it a new role or replacing someone?"
+- "How big is the company in terms of employees?"
 - "Do you offer visa sponsorship or relocation assistance?"
 
 ## 1. ROLE CONTENT (HIGH PRIORITY - Ask After Mandatory Fields)
@@ -254,12 +258,18 @@ The actual substance of the job - what candidates will DO, what skills they NEED
 
 | Field | Description | Why It Matters |
 |-------|-------------|----------------|
+| role_description | Detailed description of the role | Gives candidates a full picture of what the job entails. |
 | key_responsibilities | Main duties and tasks | The #1 thing candidates want to know: "What will I actually be doing?" |
+| core_problems_to_solve | Main problems this role solves | Shows the strategic value and purpose of the position. |
+| deliverables_expected | Tangible outputs expected (code, reports, plans) | Sets clear expectations for what success looks like. |
+| biggest_challenges | Known challenges and difficulties | Transparency builds trust and helps candidates self-select. |
+| business_impact | How this role impacts the organization | Shows the significance and influence of the position. |
 | required_skills | Must-have skills for the role | Helps candidates self-select and shows what's truly necessary. |
 | required_experience_years | How much experience is needed | Critical filter - saves everyone time if expectations are clear. |
 | certifications_required | Required licenses/certifications (RN, CPA, PMP, etc.) | Critical for healthcare, legal, finance, trades - often non-negotiable. |
 | languages_required | Languages needed for the role | Essential for global/customer-facing roles. |
 | tech_stack | Technologies used (for tech roles) | Developers care deeply about this - it affects their career trajectory. |
+| tooling_ecosystem | All work tools (CRM, machines, software) | Gives full picture of the work environment beyond just code. |
 | must_haves | Non-negotiable requirements | Honest clarity about deal-breakers builds trust. |
 | nice_to_haves | Preferred but not required | Encourages more candidates to apply if they meet most criteria. |
 | ideal_candidate_description | Who thrives in this role | Paints a picture beyond just skills - personality, work style, values. |
@@ -272,6 +282,9 @@ The actual substance of the job - what candidates will DO, what skills they NEED
 
 **Golden Questions**:
 - "What are the 3-5 main things this person will be doing day-to-day?"
+- "What problems will this person be solving?"
+- "What are the biggest challenges in this role?"
+- "How does this role impact the business?"
 - "What skills or experience are absolute must-haves vs. nice-to-haves?"
 - "What does the ideal candidate look like beyond just the resume?"
 - "What technologies or tools will they be working with?"
@@ -493,11 +506,18 @@ Below is the complete list of all field paths you can extract to. Use these exac
 - \`role_overview.headcount\` (number)
 - \`role_overview.is_new_role\` (boolean)
 - \`role_overview.role_summary\` (string)
+- \`role_overview.hiring_motivation\` (string) - Why this role is open (growth/replacement/new project)
+- \`role_overview.system_scale\` (string) - Company size (small team, mid-size, enterprise, number of employees)
 - \`role_overview.visa_sponsorship\` (boolean)
 - \`role_overview.relocation_assistance\` (boolean)
 
 ### role_content (What the Job Is)
+- \`role_content.role_description\` (string) - Detailed description of the role
 - \`role_content.key_responsibilities\` (string[])
+- \`role_content.core_problems_to_solve\` (string[]) - Main problems this role is hired to solve
+- \`role_content.deliverables_expected\` (string[]) - Tangible outputs (code, reports, plans, presentations)
+- \`role_content.biggest_challenges\` (string[]) - Known challenges and difficulties
+- \`role_content.business_impact\` (string) - How this role impacts the organization
 - \`role_content.typical_projects\` (string)
 - \`role_content.scope_of_role\` (string)
 - \`role_content.required_skills\` (string[])
@@ -507,6 +527,7 @@ Below is the complete list of all field paths you can extract to. Use these exac
 - \`role_content.certifications_required\` (string[])
 - \`role_content.languages_required\` (string[])
 - \`role_content.tech_stack\` (string[])
+- \`role_content.tooling_ecosystem\` (string[]) - All work tools (CRM, machines, management software)
 - \`role_content.frameworks_tools\` (string[])
 - \`role_content.ideal_candidate_description\` (string)
 - \`role_content.must_haves\` (string[])
@@ -666,6 +687,7 @@ Below is the complete list of all field paths you can extract to. Use these exac
 ### humans_and_culture (Team & Culture)
 **team_composition:**
 - \`humans_and_culture.team_composition.team_size\` (number)
+- \`humans_and_culture.team_composition.team_composition_description\` (string) - Who are the people working together day-to-day (e.g., "3 developers, one designer, and a product manager")
 - \`humans_and_culture.team_composition.reporting_to\` (string)
 - \`humans_and_culture.team_composition.direct_reports\` (number)
 - \`humans_and_culture.team_composition.cross_functional_interaction\` (string)
