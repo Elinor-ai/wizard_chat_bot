@@ -162,6 +162,25 @@ Exception: Display-only strings (prompts, suggestions, quickReplies, suggestedQu
 // and example questions for each section.
 
 const GOLDEN_SCHEMA_REFERENCE = `
+## 0. ROLE OVERVIEW (START HERE - MANDATORY FIELDS)
+The foundational information about the role. **These fields MUST be filled first.**
+
+| Field | Description | Why It Matters |
+|-------|-------------|----------------|
+| job_title | The official job title | Foundation of the entire posting - required for search and matching. |
+| company_name | Name of the hiring company | Essential for branding and candidate research. |
+| employment_type | Full-time, part-time, contract, etc. | Critical filter for candidate availability. |
+| location_type | Remote, hybrid, or on-site | Top 3 decision factor for most candidates. |
+| department | Which team/department | Helps candidates understand org structure. |
+| location_city, location_state, location_country | Physical location (if applicable) | Required for on-site or hybrid roles. |
+| role_summary | Brief overview of the role | Sets expectations and helps with search. |
+
+**MANDATORY FIELDS**: \`role_overview.job_title\`, \`role_overview.company_name\`, \`role_overview.employment_type\`, \`role_overview.location_type\` - these CANNOT be skipped.
+
+**Golden Questions**:
+- "What's the official job title for this role?"
+- "Is this fully remote, hybrid, or on-site?"
+
 ## 1. FINANCIAL REALITY
 The complete compensation picture - what candidates actually take home.
 
@@ -907,9 +926,14 @@ A <span class="text-green-600">competitive salary</span> is often the #1 factor 
 - This field is REQUIRED for skip tracking. DO NOT omit it.
 
 Examples:
+- "What's the job title?" → \`role_overview.job_title\` (MANDATORY)
+- "What company is this for?" → \`role_overview.company_name\` (MANDATORY)
+- "Is this full-time or part-time?" → \`role_overview.employment_type\` (MANDATORY)
+- "Is this remote, hybrid, or on-site?" → \`role_overview.location_type\` (MANDATORY)
 - "What's the base salary?" → \`financial_reality.base_compensation.amount_or_range\`
 - "Is that hourly or annual?" → \`financial_reality.base_compensation.pay_frequency\`
-- "What's the job title?" → \`role_overview.job_title\`
+
+**IMPORTANT**: For location/remote questions, use \`role_overview.location_type\` (on_site/remote/hybrid) NOT \`time_and_life.flexibility.remote_frequency\`.
 
 \`\`\`json
 {
@@ -980,9 +1004,15 @@ ${GOLDEN_SCHEMA_REFERENCE}
 
 If this is the first turn:
 1. Greet the user warmly.
-2. Ask an easy, high-level question to get the ball rolling (e.g., Company Name or Role Title).
-3. Use a simple text-based tool (like \`smart_textarea\`).
+2. Ask about one of the MANDATORY fields first: \`role_overview.job_title\`, \`role_overview.company_name\`, \`role_overview.employment_type\`, or \`role_overview.location_type\`.
+3. Use a simple text-based tool (like \`smart_textarea\`) for job_title and company_name.
 4. Provide a compelling \`context_explanation\` about why starting with the basics helps automate the rest of the process.
+
+**MANDATORY FIELD ORDER**: Ask about these 4 fields early in the interview (they cannot be skipped):
+1. \`role_overview.job_title\` - What's the job title?
+2. \`role_overview.company_name\` - What company is hiring? (may be pre-filled)
+3. \`role_overview.employment_type\` - Full-time, part-time, contract?
+4. \`role_overview.location_type\` - Remote, hybrid, or on-site?
 `;
 }
 

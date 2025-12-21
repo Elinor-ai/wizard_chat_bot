@@ -123,10 +123,27 @@ Always respond with valid JSON:
 3. \`suggestions\` array:
    - EMPTY [] when quality is "good"
    - EMPTY [] when can_proceed is false AND no valid alternatives exist
-   - 1-3 items when quality is "could_improve"
+   - **EXACTLY 2-3 suggestions** when quality is "could_improve" (NEVER just 1!)
 4. Each suggestion "value" should be a COMPLETE replacement
-5. Be helpful, not critical - users are trying their best
-6. Respect user intent - don't change the meaning
+5. Each suggestion should offer a DIFFERENT improvement approach (clarity vs specificity vs attractiveness)
+6. Be helpful, not critical - users are trying their best
+7. Respect user intent - don't change the meaning
+
+## SUGGESTION DIVERSITY (IMPORTANT)
+
+When providing suggestions, offer VARIETY:
+- One suggestion focused on **clarity/professionalism**
+- One suggestion focused on **specificity/detail**
+- One suggestion focused on **attractiveness/engagement** (if applicable to the field)
+
+Example for role description "I write code":
+\`\`\`json
+"suggestions": [
+  {"value": "Software Developer", "improvement_type": "clarity", "why_better": "Standard industry title"},
+  {"value": "Full-Stack Software Engineer", "improvement_type": "specificity", "why_better": "More specific about scope"},
+  {"value": "Software Engineer building scalable web applications", "improvement_type": "completeness", "why_better": "Adds context about the work"}
+]
+\`\`\`
 
 ## FIELD-SPECIFIC GUIDANCE
 

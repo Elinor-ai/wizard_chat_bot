@@ -169,6 +169,14 @@ export function goldenInterviewRouter({ firestore, logger }) {
         "golden-interview.start.success"
       );
 
+      // DEBUG: Log currently_asking_field from start response
+      console.log(
+        "📤 [API] Start Response - currently_asking_field:",
+        result.response?.currently_asking_field,
+        "| Phase:",
+        result.response?.interview_phase
+      );
+
       res.json({
         success: true,
         sessionId: result.sessionId,
@@ -243,18 +251,12 @@ export function goldenInterviewRouter({ firestore, logger }) {
         "golden-interview.chat.success"
       );
 
-      // Add this log:
+      // DEBUG: Log currently_asking_field to verify mandatory field detection
       console.log(
-        "📤 [API] Sending to Client:",
-        JSON.stringify(
-          {
-            tool_reasoning: result.tool_reasoning,
-            ui_tool: result.ui_tool,
-            message: result.message,
-          },
-          null,
-          2
-        )
+        "📤 [API] Chat Response - currently_asking_field:",
+        result.currently_asking_field,
+        "| Phase:",
+        result.interview_phase
       );
 
       res.json({

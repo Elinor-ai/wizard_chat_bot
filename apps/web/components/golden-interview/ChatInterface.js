@@ -42,6 +42,15 @@ const PHASE_TO_STEP_INDEX = {
   unique_value: 4,
 };
 
+// Mandatory fields that cannot be skipped
+// Must match backend MANDATORY_FIELDS in golden-schema.js
+const MANDATORY_FIELDS = [
+  "role_overview.job_title",
+  "role_overview.company_name",
+  "role_overview.employment_type",
+  "role_overview.location_type",
+];
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -68,14 +77,20 @@ export default function ChatInterface({
 
   // Refine suggestions state
   const [refineResult, setRefineResult] = useState(null);
+  const [showRewriteInput, setShowRewriteInput] = useState(false);
+  const [rewriteValue, setRewriteValue] = useState("");
 
   // Interview progress state
   const [currentPhase, setCurrentPhase] = useState("opening");
   const [contextExplanation, setContextExplanation] = useState("");
   const [completionPercentage, setCompletionPercentage] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [currentlyAskingField, setCurrentlyAskingField] = useState(null);
 
   const inputRef = useRef(null);
+
+  // Check if current field is mandatory (skip button should be hidden)
+  const isCurrentFieldMandatory = MANDATORY_FIELDS.includes(currentlyAskingField);
   const initRef = useRef(false);
 
   // Derived state
@@ -118,6 +133,10 @@ export default function ChatInterface({
         if (response.ui_tool) {
           setCurrentTool(response.ui_tool);
         }
+        // ALWAYS update currentlyAskingField to avoid stale state
+        setCurrentlyAskingField(response.currently_asking_field ?? null);
+        // DEBUG: Log the currently asking field on session start
+        console.log("[ChatInterface] Session start - currently_asking_field:", response.currently_asking_field, "| isMandatory:", MANDATORY_FIELDS.includes(response.currently_asking_field));
       } catch (err) {
         console.error("Failed to start session:", err);
         setError(err.message || "Failed to start interview. Please try again.");
@@ -193,6 +212,10 @@ export default function ChatInterface({
         if (response.ui_tool) {
           setCurrentTool(response.ui_tool);
         }
+        // ALWAYS update currentlyAskingField (even if null/undefined) to avoid stale state
+        setCurrentlyAskingField(response.currently_asking_field ?? null);
+        // DEBUG: Log the currently asking field to understand skip button behavior
+        console.log("[ChatInterface] Turn response - currently_asking_field:", response.currently_asking_field, "| isMandatory:", MANDATORY_FIELDS.includes(response.currently_asking_field));
         // Check if interview is complete
         if (response.is_complete || response.interview_phase === "complete") {
           setIsComplete(true);
@@ -235,6 +258,8 @@ export default function ChatInterface({
     if (!refineResult || !sessionId || !authToken) return;
 
     setRefineResult(null);
+    setShowRewriteInput(false);
+    setRewriteValue("");
     setIsTyping(true);
     setError(null);
 
@@ -255,6 +280,8 @@ export default function ChatInterface({
       if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
       if (response.message) setCurrentMessage(response.message);
       if (response.ui_tool) setCurrentTool(response.ui_tool);
+      // ALWAYS update currentlyAskingField to avoid stale state
+      setCurrentlyAskingField(response.currently_asking_field ?? null);
       if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
     } catch (err) {
       console.error("Failed to submit suggestion:", err);
@@ -269,6 +296,8 @@ export default function ChatInterface({
     if (!refineResult?.original_value || !sessionId || !authToken) return;
 
     setRefineResult(null);
+    setShowRewriteInput(false);
+    setRewriteValue("");
     setIsTyping(true);
     setError(null);
 
@@ -289,6 +318,8 @@ export default function ChatInterface({
       if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
       if (response.message) setCurrentMessage(response.message);
       if (response.ui_tool) setCurrentTool(response.ui_tool);
+      // ALWAYS update currentlyAskingField to avoid stale state
+      setCurrentlyAskingField(response.currently_asking_field ?? null);
       if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
     } catch (err) {
       console.error("Failed to keep original:", err);
@@ -297,6 +328,57 @@ export default function ChatInterface({
       setIsTyping(false);
     }
   }, [refineResult, sessionId, authToken]);
+
+  // Handle submitting a rewritten answer from suggestions view
+  const handleRewriteSubmit = useCallback(async () => {
+    if (!rewriteValue.trim() || !sessionId || !authToken) return;
+
+    const newValue = rewriteValue.trim();
+    setRefineResult(null);
+    setShowRewriteInput(false);
+    setRewriteValue("");
+    setIsTyping(true);
+    setError(null);
+
+    try {
+      // Submit the new value - go through refine again (user might still make a mistake)
+      const response = await GoldenInterviewApi.sendMessage(
+        {
+          sessionId,
+          userMessage: newValue,
+          // Don't set acceptRefinedValue - let it go through refine check again
+        },
+        { authToken }
+      );
+
+      // Check if we got refine suggestions again
+      if (response.refine_result?.suggestions?.length > 0) {
+        setRefineResult(response.refine_result);
+        return;
+      }
+
+      // Check if validation failed
+      if (response.refine_result?.can_proceed === false) {
+        setError(response.refine_result.validation_issue || "Please provide a valid response.");
+        return;
+      }
+
+      // Process normal response
+      if (response.interview_phase) setCurrentPhase(response.interview_phase);
+      if (response.context_explanation) setContextExplanation(response.context_explanation);
+      if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
+      if (response.message) setCurrentMessage(response.message);
+      if (response.ui_tool) setCurrentTool(response.ui_tool);
+      // ALWAYS update currentlyAskingField to avoid stale state
+      setCurrentlyAskingField(response.currently_asking_field ?? null);
+      if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
+    } catch (err) {
+      console.error("Failed to submit rewrite:", err);
+      setError(err.message || "Failed to submit. Please try again.");
+    } finally {
+      setIsTyping(false);
+    }
+  }, [rewriteValue, sessionId, authToken]);
 
   // ==========================================================================
   // RENDER HELPERS
@@ -392,6 +474,51 @@ export default function ChatInterface({
             </button>
           ))}
         </div>
+
+        {/* Rewrite Input Section */}
+        {showRewriteInput ? (
+          <div className="mb-4 space-y-3">
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Write a different answer
+            </div>
+            <textarea
+              value={rewriteValue}
+              onChange={(e) => setRewriteValue(e.target.value)}
+              placeholder="Type your new answer here..."
+              rows={3}
+              className="w-full resize-none rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleRewriteSubmit}
+                disabled={!rewriteValue.trim()}
+                className="flex-1 rounded-lg bg-gradient-to-r from-primary-600 to-primary-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Submit
+              </button>
+              <button
+                onClick={() => {
+                  setShowRewriteInput(false);
+                  setRewriteValue("");
+                }}
+                className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowRewriteInput(true)}
+            className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/50 px-4 py-3 text-sm font-medium text-slate-500 transition-all hover:bg-slate-100 hover:border-slate-400 hover:text-slate-600"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            Write a different answer
+          </button>
+        )}
 
         {/* Keep Original Button */}
         <button
@@ -730,26 +857,32 @@ export default function ChatInterface({
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <button
-                        onClick={handleSkip}
-                        className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300"
-                      >
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
+                    <div className={clsx(
+                      "flex flex-col-reverse gap-3 sm:flex-row sm:items-center",
+                      isCurrentFieldMandatory ? "sm:justify-end" : "sm:justify-between"
+                    )}>
+                      {/* Skip button - hidden for mandatory fields */}
+                      {!isCurrentFieldMandatory && (
+                        <button
+                          onClick={handleSkip}
+                          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13 5l7 7-7 7M5 5l7 7-7 7"
-                          />
-                        </svg>
-                        Skip for now
-                      </button>
+                          <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M13 5l7 7-7 7M5 5l7 7-7 7"
+                            />
+                          </svg>
+                          Skip for now
+                        </button>
+                      )}
                       <button
                         onClick={handleDynamicSubmit}
                         disabled={
@@ -787,27 +920,33 @@ export default function ChatInterface({
                         className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-100"
                       />
                     </div>
-                    <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <button
-                        type="button"
-                        onClick={handleSkip}
-                        className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300"
-                      >
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
+                    <div className={clsx(
+                      "mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center",
+                      isCurrentFieldMandatory ? "sm:justify-end" : "sm:justify-between"
+                    )}>
+                      {/* Skip button - hidden for mandatory fields */}
+                      {!isCurrentFieldMandatory && (
+                        <button
+                          type="button"
+                          onClick={handleSkip}
+                          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13 5l7 7-7 7M5 5l7 7-7 7"
-                          />
-                        </svg>
-                        Skip for now
-                      </button>
+                          <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M13 5l7 7-7 7M5 5l7 7-7 7"
+                            />
+                          </svg>
+                          Skip for now
+                        </button>
+                      )}
                       <button
                         type="submit"
                         disabled={!inputValue.trim()}

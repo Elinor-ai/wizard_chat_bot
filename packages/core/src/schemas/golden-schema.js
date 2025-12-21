@@ -769,6 +769,72 @@ export const UniversalGoldenSchema = z.object({
 /** @typedef {z.infer<typeof ExtractionMetadataSchema>} ExtractionMetadataData */
 
 // ============================================================================
+// MANDATORY FIELDS: Required for Publishing ANY Job
+// ============================================================================
+
+/**
+ * Fields that MUST be filled before a job can be published.
+ * These are the absolute minimum required for ANY job type.
+ *
+ * Note: These are defined separately from Zod schema because:
+ * 1. Schema fields remain optional() for progressive filling during interview
+ * 2. Validation happens at publish time, not during interview
+ */
+export const MANDATORY_FIELDS = [
+  "role_overview.job_title",
+  "role_overview.company_name",
+  "role_overview.employment_type",
+  "role_overview.location_type",
+];
+
+/**
+ * Helper function to get a nested value from an object using dot notation.
+ * @param {object} obj - The object to traverse
+ * @param {string} path - Dot-notation path (e.g., "role_overview.job_title")
+ * @returns {*} The value at the path, or undefined if not found
+ */
+export function getNestedValue(obj, path) {
+  if (!obj || !path) return undefined;
+
+  const parts = path.split(".");
+  let current = obj;
+
+  for (const part of parts) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+    current = current[part];
+  }
+
+  return current;
+}
+
+/**
+ * Validates that all mandatory fields are filled in a golden schema.
+ * Use this before publishing a job to ensure minimum required data is present.
+ *
+ * @param {object} schema - The golden schema object to validate
+ * @returns {{isValid: boolean, missing: string[], filled: number, total: number}}
+ */
+export function validateMandatoryFields(schema) {
+  const missing = [];
+
+  for (const fieldPath of MANDATORY_FIELDS) {
+    const value = getNestedValue(schema, fieldPath);
+    if (value === null || value === undefined || value === "") {
+      missing.push(fieldPath);
+    }
+  }
+
+  return {
+    isValid: missing.length === 0,
+    missing,
+    filled: MANDATORY_FIELDS.length - missing.length,
+    total: MANDATORY_FIELDS.length,
+  };
+}
+
+// ============================================================================
 // FACTORY FUNCTION: Create Initial Golden Record
 // ============================================================================
 

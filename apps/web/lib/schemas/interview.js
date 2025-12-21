@@ -37,6 +37,8 @@ const goldenInterviewResponseDataSchema = z.object({
   extracted_fields: z.array(z.string()).optional(),
   next_priority_fields: z.array(z.string()).optional(),
   refine_result: goldenRefineResultSchema,
+  // Current field being asked (for frontend to control skip button visibility)
+  currently_asking_field: z.string().optional().nullable(),
 });
 
 const goldenInterviewStartResponseSchema = z
@@ -57,6 +59,7 @@ const goldenInterviewStartResponseSchema = z
         completion_percentage: data.response.completion_percentage,
         interview_phase: data.response.interview_phase,
         context_explanation: data.response.context_explanation,
+        currently_asking_field: data.response.currently_asking_field,
       };
     }
     return {
@@ -66,6 +69,7 @@ const goldenInterviewStartResponseSchema = z
       completion_percentage: undefined,
       interview_phase: undefined,
       context_explanation: undefined,
+      currently_asking_field: undefined,
     };
   });
 

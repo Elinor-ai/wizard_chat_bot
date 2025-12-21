@@ -416,6 +416,8 @@ export class GoldenInterviewerService {
         completion_percentage: firstTurnResponse.completion_percentage || 0,
         interview_phase: firstTurnResponse.interview_phase || "opening",
         next_priority_fields: firstTurnResponse.next_priority_fields,
+        // Current field being asked (for frontend to control skip button visibility)
+        currently_asking_field: currentlyAskingField,
       },
     };
   }
@@ -1160,6 +1162,8 @@ export class GoldenInterviewerService {
       interview_phase: session.metadata.currentPhase,
       extracted_fields: Object.keys(parsed.extraction?.updates || {}),
       next_priority_fields: parsed.next_priority_fields,
+      // Current field being asked (for frontend to control skip button visibility)
+      currently_asking_field: currentlyAskingField,
       // Include friction state for frontend awareness (optional use)
       friction_state: {
         consecutive_skips: friction.consecutiveSkips,
