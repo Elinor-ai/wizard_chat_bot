@@ -406,6 +406,99 @@ export function goldenInterviewRouter({ firestore, logger }) {
   );
 
   // ===========================================================================
+  // NAVIGATION ROUTES
+  // ===========================================================================
+
+  /**
+   * GET /golden-interview/session/:sessionId/turns
+   *
+   * Get turns summary for navigation UI
+   *
+   * Response:
+   * {
+   *   "turns": [{ "index": 0, "field": "role_overview.job_title", ... }, ...],
+   *   "currentIndex": 5,
+   *   "maxIndex": 5
+   * }
+   */
+  router.get(
+    "/session/:sessionId/turns",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const { sessionId } = req.params;
+
+      const sessionStatus = await interviewService.getSessionStatus(sessionId);
+      verifySessionOwnership(sessionStatus, userId);
+
+      const result = await interviewService.getTurnsSummary(sessionId);
+
+      res.json({
+        success: true,
+        ...result,
+      });
+    })
+  );
+
+  /**
+   * POST /golden-interview/session/:sessionId/navigate
+   *
+   * Navigate to a specific turn in the interview history
+   *
+   * Request body:
+   * {
+   *   "targetTurnIndex": 2
+   * }
+   *
+   * Response:
+   * {
+   *   "message": "What's the job title?",
+   *   "ui_tool": { "type": "...", "props": {...} },
+   *   "previous_response": { "content": "...", "uiResponse": {...} },
+   *   "navigation": {
+   *     "currentIndex": 2,
+   *     "maxIndex": 5,
+   *     "canGoBack": true,
+   *     "canGoForward": true,
+   *     "isEditing": true
+   *   }
+   * }
+   */
+  router.post(
+    "/session/:sessionId/navigate",
+    wrapAsync(async (req, res) => {
+      const userId = getAuthenticatedUserId(req);
+      const { sessionId } = req.params;
+      const { targetTurnIndex } = req.body;
+
+      if (typeof targetTurnIndex !== "number") {
+        throw httpError(400, "targetTurnIndex must be a number");
+      }
+
+      const sessionStatus = await interviewService.getSessionStatus(sessionId);
+      verifySessionOwnership(sessionStatus, userId);
+
+      const result = await interviewService.navigateToTurn({
+        sessionId,
+        targetTurnIndex,
+      });
+
+      logger.info(
+        {
+          sessionId,
+          targetTurnIndex,
+          maxIndex: result.navigation.maxIndex,
+        },
+        "golden-interview.navigate.success"
+      );
+
+      res.json({
+        success: true,
+        ...result,
+      });
+    })
+  );
+
+  // ===========================================================================
   // ERROR HANDLING
   // ===========================================================================
 

@@ -41,12 +41,12 @@ export default function ReactionScale({
   return (
     <div className="w-full space-y-6">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {prompt && (
         <div className="text-center px-4">
-          <p className="text-white/70 text-lg">{prompt}</p>
+          <p className="text-slate-600 text-lg">{prompt}</p>
         </div>
       )}
 
@@ -88,7 +88,7 @@ export default function ReactionScale({
               {/* Label */}
               <span
                 className={`text-xs font-medium transition-colors ${
-                  isSelected ? "text-white" : "text-white/50"
+                  isSelected ? "text-slate-900" : "text-slate-500"
                 }`}
               >
                 {reaction.label}
@@ -126,7 +126,7 @@ export default function ReactionScale({
 
       {/* Scale visualization */}
       <div className="pt-4">
-        <div className="relative h-2 bg-white/10 rounded-full overflow-hidden">
+        <div className="relative h-2 bg-slate-200 rounded-full overflow-hidden">
           {/* Gradient background */}
           <div
             className="absolute inset-0"
@@ -150,8 +150,8 @@ export default function ReactionScale({
 
         {/* Scale labels */}
         <div className="flex justify-between mt-2">
-          <span className="text-xs text-white/40">{reactions[0]?.label}</span>
-          <span className="text-xs text-white/40">
+          <span className="text-xs text-slate-400">{reactions[0]?.label}</span>
+          <span className="text-xs text-slate-400">
             {reactions[reactions.length - 1]?.label}
           </span>
         </div>

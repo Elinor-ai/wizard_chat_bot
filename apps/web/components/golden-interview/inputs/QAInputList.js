@@ -65,15 +65,15 @@ export default function QAInputList({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Progress */}
       <div className="flex items-center justify-between text-sm">
-        <span className="text-white/50">
+        <span className="text-slate-500">
           {completePairs.length} complete Q&As
         </span>
-        <span className="text-white/40">
+        <span className="text-slate-400">
           {pairs.length} / {maxPairs}
         </span>
       </div>
@@ -89,13 +89,13 @@ export default function QAInputList({
               key={index}
               className={`rounded-xl border transition-all overflow-hidden ${
                 isComplete
-                  ? "bg-gradient-to-r from-white/5 to-transparent"
-                  : "bg-white/5"
+                  ? "bg-gradient-to-r from-slate-50 to-transparent"
+                  : "bg-slate-50"
               }`}
               style={{
                 borderColor: isComplete
                   ? `${accentColor}40`
-                  : "rgba(255,255,255,0.1)"
+                  : "rgba(0,0,0,0.1)"
               }}
             >
               {/* Header */}
@@ -119,14 +119,14 @@ export default function QAInputList({
                   <div
                     className={`text-sm font-medium truncate ${
                       pair.question?.trim()
-                        ? "text-white"
-                        : "text-white/40 italic"
+                        ? "text-slate-800"
+                        : "text-slate-400 italic"
                     }`}
                   >
                     {pair.question?.trim() || "Question..."}
                   </div>
                   {!isExpanded && pair.answer?.trim() && (
-                    <div className="text-xs text-white/40 truncate mt-0.5">
+                    <div className="text-xs text-slate-400 truncate mt-0.5">
                       A: {pair.answer}
                     </div>
                   )}
@@ -138,7 +138,7 @@ export default function QAInputList({
                       e.stopPropagation();
                       handleRemovePair(index);
                     }}
-                    className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-red-400 transition-colors"
+                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500 transition-colors"
                   >
                     <svg
                       className="w-4 h-4"
@@ -156,7 +156,7 @@ export default function QAInputList({
                   </button>
 
                   <svg
-                    className={`w-4 h-4 text-white/40 transition-transform ${
+                    className={`w-4 h-4 text-slate-400 transition-transform ${
                       isExpanded ? "rotate-180" : ""
                     }`}
                     fill="none"
@@ -178,7 +178,7 @@ export default function QAInputList({
                 <div className="px-4 pb-4 space-y-3">
                   {/* Question input */}
                   <div>
-                    <label className="text-white/50 text-xs block mb-1">
+                    <label className="text-slate-500 text-xs block mb-1">
                       Question
                     </label>
                     <input
@@ -188,13 +188,13 @@ export default function QAInputList({
                         handleUpdatePair(index, "question", e.target.value)
                       }
                       placeholder={questionPlaceholder}
-                      className="w-full px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-white/30"
+                      className="w-full px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-300"
                     />
                   </div>
 
                   {/* Answer input */}
                   <div>
-                    <label className="text-white/50 text-xs block mb-1">
+                    <label className="text-slate-500 text-xs block mb-1">
                       Answer
                     </label>
                     <textarea
@@ -204,7 +204,7 @@ export default function QAInputList({
                       }
                       placeholder={answerPlaceholder}
                       rows={3}
-                      className="w-full px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 resize-none"
+                      className="w-full px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-300 resize-none"
                     />
                   </div>
                 </div>
@@ -218,7 +218,7 @@ export default function QAInputList({
       {canAddMore && (
         <button
           onClick={() => handleAddPair()}
-          className="w-full py-3 rounded-xl border-2 border-dashed border-white/20 text-white/50 text-sm hover:border-white/40 hover:text-white/70 transition-colors flex items-center justify-center gap-2"
+          className="w-full py-3 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 text-sm hover:border-slate-400 hover:text-slate-600 transition-colors flex items-center justify-center gap-2"
         >
           <span>+</span>
           <span>Add Q&A Pair</span>
@@ -227,8 +227,8 @@ export default function QAInputList({
 
       {/* Suggested questions */}
       {availableSuggestions.length > 0 && canAddMore && (
-        <div className="pt-4 border-t border-white/10">
-          <div className="text-white/40 text-xs uppercase tracking-wide mb-2">
+        <div className="pt-4 border-t border-slate-200">
+          <div className="text-slate-400 text-xs uppercase tracking-wide mb-2">
             Suggested Questions
           </div>
           <div className="flex flex-wrap gap-2">
@@ -236,7 +236,7 @@ export default function QAInputList({
               <button
                 key={question}
                 onClick={() => handleAddPair(question)}
-                className="px-3 py-1.5 rounded-full text-xs bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+                className="px-3 py-1.5 rounded-full text-xs bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-700 transition-colors"
               >
                 + {question}
               </button>
@@ -247,20 +247,20 @@ export default function QAInputList({
 
       {/* Summary */}
       {completePairs.length > 0 && (
-        <div className="pt-4 border-t border-white/10">
-          <div className="text-white/40 text-xs uppercase tracking-wide mb-3">
+        <div className="pt-4 border-t border-slate-200">
+          <div className="text-slate-400 text-xs uppercase tracking-wide mb-3">
             Q&A Summary
           </div>
           <div className="space-y-3">
             {completePairs.map((pair, index) => (
               <div
                 key={index}
-                className="p-3 rounded-lg bg-white/5 text-sm"
+                className="p-3 rounded-lg bg-slate-50 text-sm"
               >
-                <div className="font-medium text-white mb-1">
+                <div className="font-medium text-slate-800 mb-1">
                   Q: {pair.question}
                 </div>
-                <div className="text-white/60">A: {pair.answer}</div>
+                <div className="text-slate-600">A: {pair.answer}</div>
               </div>
             ))}
           </div>

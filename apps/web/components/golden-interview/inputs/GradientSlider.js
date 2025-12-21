@@ -83,7 +83,7 @@ export default function GradientSlider({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Current value label */}
@@ -137,7 +137,7 @@ export default function GradientSlider({
         />
 
         {/* Labels */}
-        <div className="absolute -bottom-1 left-0 right-0 flex justify-between text-xs text-white/50">
+        <div className="absolute -bottom-1 left-0 right-0 flex justify-between text-xs text-slate-500">
           <span>{leftLabel}</span>
           <span>{rightLabel}</span>
         </div>
@@ -155,7 +155,7 @@ export default function GradientSlider({
               className="w-2 h-2 rounded-full mb-1"
               style={{ backgroundColor: range.color }}
             />
-            <span className="text-[10px] text-white/40 text-center leading-tight">
+            <span className="text-[10px] text-slate-400 text-center leading-tight">
               {range.label}
             </span>
           </div>
@@ -171,14 +171,14 @@ export default function GradientSlider({
             borderColor: `${currentRange.color}40`
           }}
         >
-          <div className="text-white/60 text-xs mb-3 uppercase tracking-wide">
+          <div className="text-slate-500 text-xs mb-3 uppercase tracking-wide">
             Additional Details
           </div>
           {currentRange.subOptions.map((option) => (
             <div key={option.id} className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-white/80">{option.label}</span>
-                <span className="text-white font-bold">
+                <span className="text-slate-700">{option.label}</span>
+                <span className="text-slate-800 font-bold">
                   {subValue[option.id] || 0}
                 </span>
               </div>
@@ -193,7 +193,7 @@ export default function GradientSlider({
                         className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
                           subValue[option.id] === num
                             ? "text-white shadow-lg"
-                            : "bg-white/5 text-white/60 hover:bg-white/10"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                         }`}
                         style={{
                           backgroundColor:

@@ -126,11 +126,11 @@ export default function MediaUploadPlaceholder({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {prompt && (
-        <p className="text-white/60 text-sm text-center">{prompt}</p>
+        <p className="text-slate-500 text-sm text-center">{prompt}</p>
       )}
 
       {/* Main media area */}
@@ -138,7 +138,7 @@ export default function MediaUploadPlaceholder({
         className={`relative rounded-2xl border-2 border-dashed transition-all ${
           hasMedia
             ? "border-transparent bg-gradient-to-br"
-            : "border-white/20 hover:border-white/40"
+            : "border-slate-300 hover:border-slate-400"
         }`}
         style={{
           background: hasMedia
@@ -168,10 +168,10 @@ export default function MediaUploadPlaceholder({
             </div>
 
             {/* File info */}
-            <div className="text-white font-medium mb-1">
+            <div className="text-slate-800 font-medium mb-1">
               {value.filename}
             </div>
-            <div className="text-white/50 text-sm space-x-3">
+            <div className="text-slate-500 text-sm space-x-3">
               {value.duration && (
                 <span>Duration: {formatTime(value.duration)}</span>
               )}
@@ -211,7 +211,7 @@ export default function MediaUploadPlaceholder({
             {/* Clear button */}
             <button
               onClick={handleClear}
-              className="mt-4 px-4 py-2 rounded-lg bg-white/10 text-white/60 text-sm hover:bg-white/20 hover:text-white transition-colors"
+              className="mt-4 px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm hover:bg-slate-200 hover:text-slate-700 transition-colors"
             >
               Remove & Try Again
             </button>
@@ -228,10 +228,10 @@ export default function MediaUploadPlaceholder({
               </div>
             </div>
 
-            <div className="text-white font-bold text-2xl mb-2">
+            <div className="text-slate-800 font-bold text-2xl mb-2">
               {formatTime(recordingTime)}
             </div>
-            <div className="text-white/50 text-sm mb-4">Recording...</div>
+            <div className="text-slate-500 text-sm mb-4">Recording...</div>
 
             {/* Waveform animation */}
             <div className="flex justify-center gap-1 mb-4">
@@ -265,7 +265,7 @@ export default function MediaUploadPlaceholder({
               <span className="text-4xl">{config.icon}</span>
             </div>
 
-            <div className="text-white/70 mb-4">{config.placeholder}</div>
+            <div className="text-slate-600 mb-4">{config.placeholder}</div>
 
             <div className="flex justify-center gap-3">
               {/* Record button */}
@@ -298,7 +298,7 @@ export default function MediaUploadPlaceholder({
       </div>
 
       {/* Tips */}
-      <div className="text-center text-xs text-white/40">
+      <div className="text-center text-xs text-slate-400">
         {mediaType === "audio" && "Tip: Keep it under 2 minutes for best results"}
         {mediaType === "photo" && "Tip: Good lighting helps"}
         {mediaType === "video" && "Tip: Landscape orientation recommended"}

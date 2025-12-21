@@ -48,7 +48,7 @@ export default function TokenAllocator({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Token pool display */}
@@ -59,7 +59,7 @@ export default function TokenAllocator({
           border: `1px solid ${accentColor}30`
         }}
       >
-        <div className="text-white/60 text-sm mb-2">Tokens Remaining</div>
+        <div className="text-slate-500 text-sm mb-2">Tokens Remaining</div>
         <div className="flex justify-center gap-1 flex-wrap">
           {Array.from({ length: totalTokens }).map((_, i) => (
             <span
@@ -78,7 +78,7 @@ export default function TokenAllocator({
           <span style={{ color: accentColor }} className="font-bold">
             {remainingTokens}
           </span>
-          <span className="text-white/40"> / {totalTokens}</span>
+          <span className="text-slate-400"> / {totalTokens}</span>
         </div>
       </div>
 
@@ -94,11 +94,11 @@ export default function TokenAllocator({
               key={category.id}
               className={`p-4 rounded-xl border transition-all ${
                 allocated > 0
-                  ? "bg-gradient-to-r from-white/5 to-transparent"
-                  : "bg-white/5"
+                  ? "bg-gradient-to-r from-slate-50 to-transparent"
+                  : "bg-slate-50"
               }`}
               style={{
-                borderColor: allocated > 0 ? `${accentColor}40` : "rgba(255,255,255,0.1)"
+                borderColor: allocated > 0 ? `${accentColor}40` : "rgba(0,0,0,0.1)"
               }}
             >
               <div className="flex items-start gap-3">
@@ -109,9 +109,9 @@ export default function TokenAllocator({
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <div className="text-white font-medium">{category.label}</div>
+                  <div className="text-slate-800 font-medium">{category.label}</div>
                   {category.description && (
-                    <div className="text-white/40 text-xs mt-0.5">
+                    <div className="text-slate-400 text-xs mt-0.5">
                       {category.description}
                     </div>
                   )}
@@ -128,7 +128,7 @@ export default function TokenAllocator({
                       </span>
                     ))}
                     {allocated === 0 && (
-                      <span className="text-white/30 text-sm">No tokens allocated</span>
+                      <span className="text-slate-400 text-sm">No tokens allocated</span>
                     )}
                   </div>
                 </div>
@@ -140,8 +140,8 @@ export default function TokenAllocator({
                     disabled={!canDecrement}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl font-bold transition-all ${
                       canDecrement
-                        ? "bg-white/10 text-white hover:bg-white/20 active:scale-95"
-                        : "bg-white/5 text-white/20 cursor-not-allowed"
+                        ? "bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-95"
+                        : "bg-slate-50 text-slate-300 cursor-not-allowed"
                     }`}
                   >
                     −
@@ -150,8 +150,8 @@ export default function TokenAllocator({
                   <div
                     className="w-12 h-10 rounded-xl flex items-center justify-center text-lg font-bold"
                     style={{
-                      backgroundColor: allocated > 0 ? `${accentColor}30` : "rgba(255,255,255,0.05)",
-                      color: allocated > 0 ? accentColor : "rgba(255,255,255,0.4)"
+                      backgroundColor: allocated > 0 ? `${accentColor}30` : "rgba(0,0,0,0.05)",
+                      color: allocated > 0 ? accentColor : "rgba(0,0,0,0.4)"
                     }}
                   >
                     {allocated}
@@ -163,7 +163,7 @@ export default function TokenAllocator({
                     className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl font-bold transition-all ${
                       canIncrement
                         ? "text-white hover:opacity-90 active:scale-95"
-                        : "bg-white/5 text-white/20 cursor-not-allowed"
+                        : "bg-slate-50 text-slate-300 cursor-not-allowed"
                     }`}
                     style={{
                       backgroundColor: canIncrement ? accentColor : undefined
@@ -181,15 +181,15 @@ export default function TokenAllocator({
       {/* Reset button */}
       <button
         onClick={handleReset}
-        className="w-full py-2 rounded-lg bg-white/5 text-white/50 text-sm hover:bg-white/10 hover:text-white/70 transition-all"
+        className="w-full py-2 rounded-lg bg-slate-100 text-slate-500 text-sm hover:bg-slate-200 hover:text-slate-600 transition-all"
       >
         Reset All Tokens
       </button>
 
       {/* Priority ranking */}
       {usedTokens > 0 && (
-        <div className="pt-4 border-t border-white/10">
-          <div className="text-white/50 text-xs uppercase tracking-wide mb-2">
+        <div className="pt-4 border-t border-slate-200">
+          <div className="text-slate-500 text-xs uppercase tracking-wide mb-2">
             Your Priorities
           </div>
           <div className="space-y-2">
@@ -202,18 +202,18 @@ export default function TokenAllocator({
 
                 return (
                   <div key={category.id} className="flex items-center gap-3">
-                    <span className="text-white/40 text-sm w-6">#{index + 1}</span>
+                    <span className="text-slate-400 text-sm w-6">#{index + 1}</span>
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-white/80 text-sm flex items-center gap-1">
+                        <span className="text-slate-700 text-sm flex items-center gap-1">
                           {category.icon && <span>{category.icon}</span>}
                           {category.label}
                         </span>
-                        <span className="text-white/40 text-xs">
+                        <span className="text-slate-400 text-xs">
                           {allocated} tokens ({Math.round(percentage)}%)
                         </span>
                       </div>
-                      <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{

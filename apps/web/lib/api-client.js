@@ -1476,6 +1476,155 @@ export const GoldenInterviewApi = {
     const data = await response.json();
     return goldenInterviewChatResponseSchema.parse(data);
   },
+
+  /**
+   * Navigate to a specific turn in the interview history
+   * POST /golden-interview/session/:sessionId/navigate
+   * @param {string} sessionId - Session ID
+   * @param {number} targetTurnIndex - The turn index to navigate to
+   * @param {Object} options - { authToken, signal }
+   * @returns {Promise<object>} Turn data with navigation state
+   */
+  async navigateToTurn(sessionId, targetTurnIndex, options = {}) {
+    const response = await fetch(
+      `${API_BASE_URL}/golden-interview/session/${sessionId}/navigate`,
+      {
+        method: "POST",
+        signal: options.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(options.authToken),
+        },
+        body: JSON.stringify({ targetTurnIndex }),
+      }
+    );
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(
+        response,
+        "Failed to navigate"
+      );
+      throw new Error(message);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Get turns summary for navigation UI
+   * GET /golden-interview/session/:sessionId/turns
+   * @param {string} sessionId - Session ID
+   * @param {Object} options - { authToken, signal }
+   * @returns {Promise<{turns: array, currentIndex: number, maxIndex: number}>}
+   */
+  async getTurnsSummary(sessionId, options = {}) {
+    const response = await fetch(
+      `${API_BASE_URL}/golden-interview/session/${sessionId}/turns`,
+      {
+        signal: options.signal,
+        headers: {
+          ...authHeaders(options.authToken),
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(
+        response,
+        "Failed to get turns"
+      );
+      throw new Error(message);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Get the current golden schema for a session
+   * GET /golden-interview/session/:sessionId/schema
+   * @param {string} sessionId
+   * @param {Object} options - { authToken, signal }
+   * @returns {Promise<{ success: boolean, sessionId: string, goldenSchema: Object }>}
+   */
+  async getSchema(sessionId, options = {}) {
+    const response = await fetch(
+      `${API_BASE_URL}/golden-interview/session/${sessionId}/schema`,
+      {
+        signal: options.signal,
+        headers: {
+          ...authHeaders(options.authToken),
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(
+        response,
+        "Failed to get schema"
+      );
+      throw new Error(message);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Get conversation history for a session
+   * GET /golden-interview/session/:sessionId/history
+   * @param {string} sessionId
+   * @param {Object} options - { authToken, signal }
+   * @returns {Promise<{ success: boolean, sessionId: string, history: Array }>}
+   */
+  async getHistory(sessionId, options = {}) {
+    const response = await fetch(
+      `${API_BASE_URL}/golden-interview/session/${sessionId}/history`,
+      {
+        signal: options.signal,
+        headers: {
+          ...authHeaders(options.authToken),
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(
+        response,
+        "Failed to get history"
+      );
+      throw new Error(message);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Get session status (for restoring a session after page refresh)
+   * GET /golden-interview/session/:sessionId
+   * @param {string} sessionId
+   * @param {Object} options - { authToken, signal }
+   * @returns {Promise<{ success: boolean, session: Object }>}
+   */
+  async getSessionStatus(sessionId, options = {}) {
+    const response = await fetch(
+      `${API_BASE_URL}/golden-interview/session/${sessionId}`,
+      {
+        signal: options.signal,
+        headers: {
+          ...authHeaders(options.authToken),
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const message = await extractErrorMessage(
+        response,
+        "Failed to get session status"
+      );
+      throw new Error(message);
+    }
+
+    return response.json();
+  },
 };
 
 // =============================================================================

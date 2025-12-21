@@ -68,20 +68,20 @@ export default function ComparisonTableInput({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Progress */}
       <div className="text-center">
-        <span className="text-white/40 text-sm">
+        <span className="text-slate-400 text-sm">
           {filledRowCount} / {allRows.length} rows filled
         </span>
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-white/10 overflow-hidden">
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-2 gap-px bg-white/10">
+        <div className="grid grid-cols-2 gap-px bg-slate-200">
           <div
             className="px-4 py-3 text-center font-semibold text-sm"
             style={{ backgroundColor: `${leftColor}20`, color: leftColor }}
@@ -97,7 +97,7 @@ export default function ComparisonTableInput({
         </div>
 
         {/* Rows */}
-        <div className="divide-y divide-white/10">
+        <div className="divide-y divide-slate-200">
           {allRows.map((row, index) => {
             const rowValue = value[row.id] || { left: "", right: "" };
             const hasLeft = rowValue.left?.trim();
@@ -108,7 +108,7 @@ export default function ComparisonTableInput({
                 {/* Row label */}
                 {row.label && (
                   <div className="absolute left-2 top-2 z-10">
-                    <span className="text-[10px] text-white/30 uppercase tracking-wide">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wide">
                       {row.label}
                     </span>
                   </div>
@@ -124,7 +124,7 @@ export default function ComparisonTableInput({
                   </button>
                 )}
 
-                <div className="grid grid-cols-2 gap-px bg-white/5">
+                <div className="grid grid-cols-2 gap-px bg-slate-100">
                   {/* Left column */}
                   <div
                     className="p-3 transition-colors"
@@ -141,7 +141,7 @@ export default function ComparisonTableInput({
                       }
                       placeholder={leftPlaceholder}
                       rows={2}
-                      className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none resize-none transition-all"
+                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none resize-none transition-all"
                       style={{
                         borderColor: hasLeft ? `${leftColor}30` : undefined
                       }}
@@ -150,7 +150,7 @@ export default function ComparisonTableInput({
 
                   {/* Comparison arrow */}
                   <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-white/30 text-xs">
+                    <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 text-xs">
                       →
                     </div>
                   </div>
@@ -171,7 +171,7 @@ export default function ComparisonTableInput({
                       }
                       placeholder={rightPlaceholder}
                       rows={2}
-                      className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none resize-none transition-all"
+                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none resize-none transition-all"
                       style={{
                         borderColor: hasRight ? `${rightColor}30` : undefined
                       }}
@@ -188,7 +188,7 @@ export default function ComparisonTableInput({
       {allowAddRows && (
         <button
           onClick={handleAddRow}
-          className="w-full py-3 rounded-xl border-2 border-dashed border-white/20 text-white/50 text-sm hover:border-white/40 hover:text-white/70 transition-colors"
+          className="w-full py-3 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 text-sm hover:border-slate-400 hover:text-slate-600 transition-colors"
         >
           + Add Row
         </button>
@@ -196,8 +196,8 @@ export default function ComparisonTableInput({
 
       {/* Summary */}
       {filledRowCount > 0 && (
-        <div className="pt-4 border-t border-white/10">
-          <div className="text-white/40 text-xs uppercase tracking-wide mb-3">
+        <div className="pt-4 border-t border-slate-200">
+          <div className="text-slate-400 text-xs uppercase tracking-wide mb-3">
             Comparison Summary
           </div>
           <div className="space-y-3">
@@ -218,7 +218,7 @@ export default function ComparisonTableInput({
                         className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
                         style={{ backgroundColor: leftColor }}
                       />
-                      <span className="text-white/60 line-clamp-2">
+                      <span className="text-slate-600 line-clamp-2">
                         {rowValue.left || "(empty)"}
                       </span>
                     </div>
@@ -227,7 +227,7 @@ export default function ComparisonTableInput({
                         className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
                         style={{ backgroundColor: rightColor }}
                       />
-                      <span className="text-white/60 line-clamp-2">
+                      <span className="text-slate-600 line-clamp-2">
                         {rowValue.right || "(empty)"}
                       </span>
                     </div>
@@ -242,7 +242,7 @@ export default function ComparisonTableInput({
       {filledRowCount > 0 && (
         <button
           onClick={() => onChange({})}
-          className="w-full py-2 text-white/40 text-sm hover:text-white/60 transition-colors"
+          className="w-full py-2 text-slate-400 text-sm hover:text-slate-600 transition-colors"
         >
           Clear all entries
         </button>

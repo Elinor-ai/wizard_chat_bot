@@ -169,8 +169,16 @@ export default function DialGroup({
                   onChange={(e) =>
                     handleDialChange(index, Number(e.target.value))
                   }
-                  // 4. Hit-Box Fix: appearance-none prevents browser default thumb ghosting
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20 appearance-none m-0 p-0"
+                  // 4. Hit-Box Fix: Full styling for cross-browser compatibility
+                  className="absolute inset-0 w-full cursor-pointer z-20 m-0 p-0"
+                  style={{
+                    height: "100%",
+                    opacity: 0,
+                    WebkitAppearance: "none",
+                    MozAppearance: "none",
+                    appearance: "none",
+                    touchAction: "none",
+                  }}
                 />
               </div>
 

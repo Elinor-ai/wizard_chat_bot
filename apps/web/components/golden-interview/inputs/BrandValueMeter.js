@@ -45,7 +45,7 @@ export default function BrandValueMeter({
   return (
     <div className="w-full space-y-6">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Star Rating Display */}
@@ -87,7 +87,7 @@ export default function BrandValueMeter({
         <div className="text-amber-400 font-bold text-xl">
           {starRating.toFixed(1)} / {maxStars}
         </div>
-        <div className="text-white/50 text-xs">Overall Brand Value Score</div>
+        <div className="text-slate-500 text-xs">Overall Brand Value Score</div>
       </div>
 
       {/* Vertical Bar Chart */}
@@ -101,12 +101,12 @@ export default function BrandValueMeter({
               className="flex flex-col items-center gap-2 flex-1 max-w-20"
             >
               {/* Value label */}
-              <span className="text-white font-bold text-sm">
+              <span className="text-slate-800 font-bold text-sm">
                 {metric.value}
               </span>
 
               {/* Bar container */}
-              <div className="w-full h-36 bg-white/5 rounded-t-lg rounded-b-sm overflow-hidden relative flex items-end">
+              <div className="w-full h-36 bg-slate-100 rounded-t-lg rounded-b-sm overflow-hidden relative flex items-end">
                 {/* Filled bar */}
                 <div
                   className={`w-full bg-gradient-to-t ${getBarGradient(metric.value)} transition-all duration-300 rounded-t-lg`}
@@ -135,7 +135,7 @@ export default function BrandValueMeter({
               )}
 
               {/* Label */}
-              <span className="text-white/60 text-[10px] text-center leading-tight">
+              <span className="text-slate-500 text-[10px] text-center leading-tight">
                 {metric.label}
               </span>
             </div>
@@ -144,20 +144,20 @@ export default function BrandValueMeter({
       </div>
 
       {/* Sliders */}
-      <div className="space-y-4 pt-4 border-t border-white/10">
+      <div className="space-y-4 pt-4 border-t border-slate-200">
         {metrics.map((metric) => (
           <div key={metric.id} className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-white/70 text-sm flex items-center gap-2">
+              <span className="text-slate-600 text-sm flex items-center gap-2">
                 {metric.icon && <span>{metric.icon}</span>}
                 {metric.label}
                 {metric.weight && metric.weight > 1 && (
-                  <span className="text-xs text-white/30">
+                  <span className="text-xs text-slate-400">
                     (×{metric.weight})
                   </span>
                 )}
               </span>
-              <span className="text-white font-bold text-sm">
+              <span className="text-slate-800 font-bold text-sm">
                 {metric.value}
               </span>
             </div>
@@ -172,7 +172,7 @@ export default function BrandValueMeter({
               }
               className="w-full h-2 rounded-full appearance-none cursor-pointer"
               style={{
-                background: `linear-gradient(to right, #f59e0b ${metric.value}%, rgba(255,255,255,0.1) ${metric.value}%)`
+                background: `linear-gradient(to right, #f59e0b ${metric.value}%, rgba(0,0,0,0.1) ${metric.value}%)`
               }}
             />
           </div>

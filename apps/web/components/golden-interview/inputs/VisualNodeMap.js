@@ -57,7 +57,7 @@ export default function VisualNodeMap({
   return (
     <div className="w-full space-y-6">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Node Map Visualization */}
@@ -185,7 +185,7 @@ export default function VisualNodeMap({
                     className="w-4 h-4 rounded-full"
                     style={{ backgroundColor: ring.color }}
                   />
-                  <span className="text-white font-medium">{ring.label}</span>
+                  <span className="text-slate-700 font-medium">{ring.label}</span>
                 </div>
                 <span
                   className="text-lg font-bold"
@@ -206,7 +206,7 @@ export default function VisualNodeMap({
                 }
                 className="w-full h-2 rounded-full appearance-none cursor-pointer"
                 style={{
-                  background: `linear-gradient(to right, ${ring.color} ${(count / ring.maxCount) * 100}%, rgba(255,255,255,0.1) ${(count / ring.maxCount) * 100}%)`
+                  background: `linear-gradient(to right, ${ring.color} ${(count / ring.maxCount) * 100}%, rgba(0,0,0,0.1) ${(count / ring.maxCount) * 100}%)`
                 }}
               />
 
@@ -219,7 +219,7 @@ export default function VisualNodeMap({
                     className={`flex-1 py-1 rounded text-xs font-medium transition-all ${
                       count === preset
                         ? "text-white"
-                        : "bg-white/5 text-white/50 hover:bg-white/10"
+                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                     }`}
                     style={{
                       backgroundColor: count === preset ? ring.color : undefined
@@ -235,9 +235,9 @@ export default function VisualNodeMap({
       </div>
 
       {/* Summary */}
-      <div className="text-center pt-4 border-t border-white/10">
-        <div className="text-white/50 text-sm">Total Connections</div>
-        <div className="text-3xl font-bold text-white">
+      <div className="text-center pt-4 border-t border-slate-200">
+        <div className="text-slate-500 text-sm">Total Connections</div>
+        <div className="text-3xl font-bold text-slate-800">
           {rings.reduce((sum, ring) => sum + (value[ring.id] || 0), 0)}
         </div>
       </div>

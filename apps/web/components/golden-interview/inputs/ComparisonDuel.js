@@ -38,7 +38,7 @@ export default function ComparisonDuel({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       <div className="relative flex gap-4">
@@ -101,12 +101,12 @@ export default function ComparisonDuel({
             )}
             <h4
               className={`text-xl font-bold mb-2 transition-colors ${
-                isASelected ? "text-white" : "text-white/80"
+                isASelected ? "text-slate-900" : "text-slate-700"
               }`}
             >
               {optionA?.title}
             </h4>
-            <p className="text-white/50 text-sm">{optionA?.description}</p>
+            <p className="text-slate-500 text-sm">{optionA?.description}</p>
           </div>
 
           {/* Bottom highlight bar */}
@@ -124,7 +124,7 @@ export default function ComparisonDuel({
             className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 ${
               !value
                 ? "bg-gradient-to-br from-indigo-500 to-pink-500 scale-100"
-                : "bg-white/10 scale-90"
+                : "bg-slate-200 scale-90"
             }`}
             style={{
               boxShadow: !value
@@ -132,7 +132,7 @@ export default function ComparisonDuel({
                 : undefined
             }}
           >
-            <span className="text-white">{vsText}</span>
+            <span className={!value ? "text-white" : "text-slate-600"}>{vsText}</span>
           </div>
         </div>
 
@@ -195,12 +195,12 @@ export default function ComparisonDuel({
             )}
             <h4
               className={`text-xl font-bold mb-2 transition-colors ${
-                isBSelected ? "text-white" : "text-white/80"
+                isBSelected ? "text-slate-900" : "text-slate-700"
               }`}
             >
               {optionB?.title}
             </h4>
-            <p className="text-white/50 text-sm">{optionB?.description}</p>
+            <p className="text-slate-500 text-sm">{optionB?.description}</p>
           </div>
 
           {/* Bottom highlight bar */}
@@ -221,7 +221,7 @@ export default function ComparisonDuel({
           }`}
           style={{ backgroundColor: colorA }}
         />
-        <div className="w-4 h-4 rounded-full bg-white/10 flex-shrink-0" />
+        <div className="w-4 h-4 rounded-full bg-slate-200 flex-shrink-0" />
         <div
           className={`flex-1 h-2 rounded-full transition-all duration-300 ${
             isBSelected ? "opacity-100" : "opacity-20"
@@ -233,9 +233,9 @@ export default function ComparisonDuel({
       {/* Selected feedback */}
       {value && (
         <div className="text-center">
-          <span className="text-white/60 text-sm">
+          <span className="text-slate-500 text-sm">
             You prefer:{" "}
-            <span className="text-white font-medium">
+            <span className="text-slate-800 font-medium">
               {isASelected ? optionA?.title : optionB?.title}
             </span>
           </span>
@@ -246,7 +246,7 @@ export default function ComparisonDuel({
       {value && (
         <button
           onClick={() => onChange(null)}
-          className="w-full py-2 text-white/40 text-sm hover:text-white/60 transition-colors"
+          className="w-full py-2 text-slate-400 text-sm hover:text-slate-600 transition-colors"
         >
           Clear selection
         </button>

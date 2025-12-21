@@ -98,7 +98,7 @@ export default function WeekScheduler({
       onMouseLeave={handleMouseUp}
     >
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Summary */}
@@ -109,11 +109,11 @@ export default function WeekScheduler({
           border: `1px solid ${activeColor}30`
         }}
       >
-        <div className="text-white/60 text-sm">Weekly Hours</div>
+        <div className="text-slate-500 text-sm">Weekly Hours</div>
         <div className="text-3xl font-bold" style={{ color: activeColor }}>
           {hoursPerWeek}
         </div>
-        <div className="text-white/40 text-xs">
+        <div className="text-slate-400 text-xs">
           {((selectedSlots / totalSlots) * 100).toFixed(0)}% of available slots
         </div>
       </div>
@@ -125,11 +125,11 @@ export default function WeekScheduler({
             className="w-4 h-4 rounded"
             style={{ backgroundColor: activeColor }}
           />
-          <span className="text-xs text-white/60">{activeLabel}</span>
+          <span className="text-xs text-slate-600">{activeLabel}</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-white/5 border border-white/10" />
-          <span className="text-xs text-white/60">{inactiveLabel}</span>
+          <div className="w-4 h-4 rounded bg-slate-100 border border-slate-200" />
+          <span className="text-xs text-slate-600">{inactiveLabel}</span>
         </div>
       </div>
 
@@ -142,7 +142,7 @@ export default function WeekScheduler({
             {days.map((day) => (
               <div
                 key={day}
-                className="flex-1 min-w-12 text-center text-xs font-medium text-white/70"
+                className="flex-1 min-w-12 text-center text-xs font-medium text-slate-600"
               >
                 {day}
               </div>
@@ -157,7 +157,7 @@ export default function WeekScheduler({
               return (
                 <div
                   key={day}
-                  className="flex-1 min-w-12 text-center text-[10px] text-white/40"
+                  className="flex-1 min-w-12 text-center text-[10px] text-slate-400"
                 >
                   {dayHours}h
                 </div>
@@ -170,7 +170,7 @@ export default function WeekScheduler({
             {hours.map((hour) => (
               <div key={hour} className="flex items-center gap-0.5">
                 {/* Hour label */}
-                <div className="w-14 flex-shrink-0 text-xs text-white/40 text-right pr-2">
+                <div className="w-14 flex-shrink-0 text-xs text-slate-400 text-right pr-2">
                   {formatHour(hour)}
                 </div>
 
@@ -187,7 +187,7 @@ export default function WeekScheduler({
                       className={`flex-1 min-w-12 h-6 rounded transition-all duration-100 ${
                         isSelected
                           ? "border-transparent"
-                          : "bg-white/5 border border-white/10 hover:bg-white/10"
+                          : "bg-slate-100 border border-slate-200 hover:bg-slate-200"
                       }`}
                       style={{
                         backgroundColor: isSelected ? activeColor : undefined,
@@ -208,7 +208,7 @@ export default function WeekScheduler({
       <div className="flex gap-2">
         <button
           onClick={() => onChange({})}
-          className="flex-1 py-2 rounded-lg bg-white/5 text-white/50 text-sm hover:bg-white/10 transition-colors"
+          className="flex-1 py-2 rounded-lg bg-slate-100 text-slate-500 text-sm hover:bg-slate-200 transition-colors"
         >
           Clear All
         </button>
@@ -222,7 +222,7 @@ export default function WeekScheduler({
             });
             onChange(weekdays);
           }}
-          className="flex-1 py-2 rounded-lg bg-white/5 text-white/50 text-sm hover:bg-white/10 transition-colors"
+          className="flex-1 py-2 rounded-lg bg-slate-100 text-slate-500 text-sm hover:bg-slate-200 transition-colors"
         >
           9-5 Weekdays
         </button>
@@ -244,8 +244,8 @@ export default function WeekScheduler({
       </div>
 
       {/* Per-day breakdown */}
-      <div className="pt-4 border-t border-white/10">
-        <div className="text-white/50 text-xs uppercase tracking-wide mb-2">
+      <div className="pt-4 border-t border-slate-200">
+        <div className="text-slate-500 text-xs uppercase tracking-wide mb-2">
           Hours by Day
         </div>
         <div className="flex gap-1">
@@ -256,7 +256,7 @@ export default function WeekScheduler({
 
             return (
               <div key={day} className="flex-1 text-center">
-                <div className="h-16 bg-white/5 rounded overflow-hidden relative">
+                <div className="h-16 bg-slate-100 rounded overflow-hidden relative">
                   <div
                     className="absolute bottom-0 left-0 right-0 transition-all duration-300"
                     style={{
@@ -265,7 +265,7 @@ export default function WeekScheduler({
                     }}
                   />
                 </div>
-                <div className="mt-1 text-xs text-white/40">{day}</div>
+                <div className="mt-1 text-xs text-slate-400">{day}</div>
               </div>
             );
           })}

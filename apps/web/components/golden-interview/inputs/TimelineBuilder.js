@@ -33,7 +33,7 @@ export default function TimelineBuilder({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Progress indicator */}
@@ -90,25 +90,25 @@ export default function TimelineBuilder({
                 <div
                   className={`ml-4 p-4 rounded-xl border transition-all ${
                     hasContent
-                      ? "bg-gradient-to-r from-white/5 to-transparent"
-                      : "bg-white/5"
+                      ? "bg-white"
+                      : "bg-slate-50"
                   }`}
                   style={{
                     borderColor: hasContent
                       ? `${accentColor}40`
-                      : "rgba(255,255,255,0.1)"
+                      : "#e2e8f0"
                   }}
                 >
                   {/* Time label */}
                   <div className="flex items-center justify-between mb-2">
                     <span
                       className="text-sm font-semibold"
-                      style={{ color: hasContent ? accentColor : "white" }}
+                      style={{ color: hasContent ? accentColor : "#334155" }}
                     >
                       {point.label}
                     </span>
                     {point.sublabel && (
-                      <span className="text-xs text-white/40">
+                      <span className="text-xs text-slate-400">
                         {point.sublabel}
                       </span>
                     )}
@@ -120,13 +120,13 @@ export default function TimelineBuilder({
                     onChange={(e) => handlePointChange(point.id, e.target.value)}
                     placeholder={placeholder}
                     rows={2}
-                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-white/30 resize-none"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100 resize-none"
                   />
 
                   {/* Character count */}
                   {value[point.id]?.length > 0 && (
                     <div className="text-right mt-1">
-                      <span className="text-xs text-white/30">
+                      <span className="text-xs text-slate-400">
                         {value[point.id].length} characters
                       </span>
                     </div>
@@ -136,7 +136,7 @@ export default function TimelineBuilder({
                 {/* Connector arrows */}
                 {!isLast && (
                   <div
-                    className="absolute -left-3 top-12 text-white/20"
+                    className="absolute -left-3 top-12"
                     style={{ color: `${accentColor}40` }}
                   >
                     ↓
@@ -150,8 +150,8 @@ export default function TimelineBuilder({
 
       {/* Summary */}
       {filledCount > 0 && (
-        <div className="pt-4 border-t border-white/10">
-          <div className="text-white/40 text-xs uppercase tracking-wide mb-3">
+        <div className="pt-4 border-t border-slate-200">
+          <div className="text-slate-400 text-xs uppercase tracking-wide mb-3">
             Timeline Summary
           </div>
           <div className="space-y-2">
@@ -168,7 +168,7 @@ export default function TimelineBuilder({
                   >
                     {point.label}:
                   </span>
-                  <span className="text-white/70 line-clamp-1">
+                  <span className="text-slate-600 line-clamp-1">
                     {value[point.id]}
                   </span>
                 </div>
@@ -182,7 +182,7 @@ export default function TimelineBuilder({
         <button
           onClick={() => onChange({})}
           disabled={filledCount === 0}
-          className="flex-1 py-2 rounded-lg bg-white/5 text-white/50 text-sm hover:bg-white/10 disabled:opacity-30 transition-colors"
+          className="flex-1 py-2 rounded-lg bg-slate-100 text-slate-500 text-sm hover:bg-slate-200 disabled:opacity-30 transition-colors"
         >
           Clear All
         </button>

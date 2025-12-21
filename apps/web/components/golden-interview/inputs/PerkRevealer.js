@@ -48,7 +48,7 @@ export default function PerkRevealer({
     <div className="w-full space-y-4">
       {title && (
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
+          <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
           <span
             className="text-sm font-medium px-2 py-1 rounded-full"
             style={{ backgroundColor: `${selectedColor}20`, color: selectedColor }}
@@ -71,7 +71,7 @@ export default function PerkRevealer({
               className={`flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap transition-all duration-200 ${
                 isActive
                   ? "text-white shadow-lg"
-                  : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-700"
               }`}
               style={{
                 backgroundColor: isActive ? selectedColor : undefined,
@@ -83,7 +83,7 @@ export default function PerkRevealer({
               {count > 0 && (
                 <span
                   className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                    isActive ? "bg-white/20" : "bg-white/10"
+                    isActive ? "bg-white/20" : "bg-slate-200"
                   }`}
                 >
                   {count}
@@ -107,7 +107,7 @@ export default function PerkRevealer({
                 className={`p-3 rounded-xl border transition-all duration-200 text-left flex items-center gap-3 ${
                   isSelected
                     ? "border-transparent"
-                    : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                    : "bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
                 }`}
                 style={{
                   backgroundColor: isSelected ? `${selectedColor}15` : undefined,
@@ -118,7 +118,7 @@ export default function PerkRevealer({
                 {/* Checkbox */}
                 <div
                   className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all ${
-                    isSelected ? "" : "border border-white/20"
+                    isSelected ? "" : "border border-slate-300"
                   }`}
                   style={{
                     backgroundColor: isSelected ? selectedColor : "transparent"
@@ -146,7 +146,7 @@ export default function PerkRevealer({
                   <span className="text-lg flex-shrink-0">{item.icon}</span>
                 )}
                 <span
-                  className={`text-sm ${isSelected ? "text-white font-medium" : "text-white/70"}`}
+                  className={`text-sm ${isSelected ? "text-slate-900 font-medium" : "text-slate-700"}`}
                 >
                   {item.label}
                 </span>
@@ -156,7 +156,7 @@ export default function PerkRevealer({
         </div>
 
         {activeItems.length === 0 && (
-          <div className="flex items-center justify-center h-40 text-white/40">
+          <div className="flex items-center justify-center h-40 text-slate-400">
             No items in this category
           </div>
         )}
@@ -164,8 +164,8 @@ export default function PerkRevealer({
 
       {/* Summary */}
       {getTotalSelected() > 0 && (
-        <div className="pt-4 border-t border-white/10">
-          <div className="text-white/50 text-xs uppercase tracking-wide mb-3">
+        <div className="pt-4 border-t border-slate-200">
+          <div className="text-slate-500 text-xs uppercase tracking-wide mb-3">
             All Selected Perks
           </div>
           <div className="flex flex-wrap gap-2">
@@ -175,14 +175,14 @@ export default function PerkRevealer({
                 return (
                   <span
                     key={`${category.id}-${itemId}`}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs"
-                    style={{ backgroundColor: `${selectedColor}20`, color: "white" }}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-slate-700"
+                    style={{ backgroundColor: `${selectedColor}20` }}
                   >
                     {item?.icon && <span>{item.icon}</span>}
                     {item?.label}
                     <button
                       onClick={() => handleItemToggle(category.id, itemId)}
-                      className="ml-1 hover:text-red-400 transition-colors"
+                      className="ml-1 hover:text-red-500 transition-colors"
                     >
                       ×
                     </button>

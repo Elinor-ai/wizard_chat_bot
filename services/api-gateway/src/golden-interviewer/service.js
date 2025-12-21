@@ -21,8 +21,13 @@ import {
   createSession as repoCreateSession,
   getCompanyById,
   buildAssistantMessage,
+  buildSnapshot,
   extractSessionStatus,
   extractConversationHistory,
+  extractTurnsSummary,
+  getTurnByIndex,
+  getUserResponseForTurn,
+  getMaxTurnIndex,
   completeSession as repoCompleteSession,
 } from "../services/repositories/golden-interviewer-repository.js";
 import { getUserById } from "../services/repositories/user-repository.js";
@@ -380,10 +385,18 @@ export class GoldenInterviewerService {
     );
 
     // Update session with first turn via repository
+    // Build snapshot for navigation
+    const snapshot = buildSnapshot({
+      goldenSchema: session.goldenSchema,
+      completionPercentage: firstTurnResponse.completion_percentage || 0,
+      currentPhase: firstTurnResponse.interview_phase || "opening",
+    });
+
     const assistantMessage = buildAssistantMessage({
       content: firstTurnResponse.message,
       uiTool: firstTurnResponse.ui_tool,
       currentlyAskingField: firstTurnResponse.currently_asking_field,
+      snapshot,
     });
 
     // Track lastAskedField from first turn (for skip attribution)
@@ -419,6 +432,14 @@ export class GoldenInterviewerService {
         next_priority_fields: firstTurnResponse.next_priority_fields,
         // Current field being asked (for frontend to control skip button visibility)
         currently_asking_field: currentlyAskingField,
+        // Navigation state - first turn, index 0
+        navigation: {
+          currentIndex: 0,
+          maxIndex: 0,
+          canGoBack: false,
+          canGoForward: false,
+          isEditing: false,
+        },
       },
     };
   }
@@ -432,6 +453,7 @@ export class GoldenInterviewerService {
    * @param {object} [options.uiResponse] - Response from UI component
    * @param {object} [options.skipAction] - Explicit skip signal { isSkip, reason }
    * @param {boolean} [options.acceptRefinedValue] - If true, skip golden_refine (user already saw suggestions)
+   * @param {object} [options.navigationContext] - Navigation context when editing past turns
    * @returns {Promise<object>}
    */
   async processTurn({
@@ -441,6 +463,7 @@ export class GoldenInterviewerService {
     uiResponse,
     skipAction,
     acceptRefinedValue = false,
+    navigationContext = null,
   }) {
     // Load session via repository
     const session = await getSession(this.firestore, sessionId);
@@ -450,6 +473,28 @@ export class GoldenInterviewerService {
 
     if (session.status !== "active") {
       throw new Error(`Session is not active: ${session.status}`);
+    }
+
+    // Check if user is editing a past turn (not at the latest turn)
+    const maxIndex = getMaxTurnIndex(session);
+    const currentNavIndex = session.metadata?.navigationIndex;
+    // Must check both undefined AND null - we set navigationIndex to null when clearing
+    const isEditing = currentNavIndex !== undefined && currentNavIndex !== null && currentNavIndex < maxIndex;
+
+    console.log(`🧭 [processTurn] Loaded session. navigationIndex: ${currentNavIndex}, maxIndex: ${maxIndex}, isEditing: ${isEditing}`);
+
+    // If editing a past turn, handle it specially
+    if (isEditing && (userMessage || uiResponse) && !skipAction?.isSkip) {
+      return this.handleEditTurn({
+        session,
+        sessionId,
+        authToken,
+        userMessage,
+        uiResponse,
+        currentNavIndex,
+        maxIndex,
+        acceptRefinedValue,
+      });
     }
 
     const previousTool = session.metadata?.lastToolUsed;
@@ -1057,11 +1102,19 @@ export class GoldenInterviewerService {
       }
     }
 
+    // Build snapshot for navigation (BEFORE updating session state)
+    const turnSnapshot = buildSnapshot({
+      goldenSchema: session.goldenSchema,
+      completionPercentage: parsed.completion_percentage || session.metadata?.completionPercentage || 0,
+      currentPhase: parsed.interview_phase || session.metadata?.currentPhase || "opening",
+    });
+
     // Add assistant response to history
     const assistantMessage = buildAssistantMessage({
       content: parsed.message,
       uiTool: parsed.ui_tool,
       currentlyAskingField: parsed.currently_asking_field,
+      snapshot: turnSnapshot,
     });
     session.conversationHistory.push(assistantMessage);
 
@@ -1156,6 +1209,9 @@ export class GoldenInterviewerService {
       "golden-interviewer.turn.processed"
     );
 
+    // Calculate navigation state after this turn
+    const newMaxIndex = getMaxTurnIndex(session);
+
     // Build response object
     const response = {
       message: parsed.message,
@@ -1174,6 +1230,14 @@ export class GoldenInterviewerService {
       },
       // Flag for frontend to show completion UI
       is_complete: isInterviewComplete,
+      // Navigation state - user is at the latest turn
+      navigation: {
+        currentIndex: newMaxIndex,
+        maxIndex: newMaxIndex,
+        canGoBack: newMaxIndex > 0,
+        canGoForward: false,
+        isEditing: false,
+      },
     };
 
     // Include refine suggestions if available (for client to show improvement options)
@@ -1185,6 +1249,8 @@ export class GoldenInterviewerService {
         reasoning: refineResult.reasoning,
       };
     }
+
+    console.log(`🧭 [processTurn] RETURNING (normal flow). navigation:`, response.navigation, `| field: ${response.currently_asking_field}, phase: ${response.interview_phase}`);
 
     return response;
   }
@@ -1412,6 +1478,298 @@ export class GoldenInterviewerService {
   async getConversationHistory(sessionId) {
     const session = await getSession(this.firestore, sessionId);
     return extractConversationHistory(session);
+  }
+
+  // ===========================================================================
+  // NAVIGATION METHODS
+  // ===========================================================================
+
+  /**
+   * Get turns summary for navigation UI
+   * @param {string} sessionId
+   * @returns {Promise<{turns: array, currentIndex: number, maxIndex: number}>}
+   */
+  async getTurnsSummary(sessionId) {
+    const session = await getSession(this.firestore, sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    const turns = extractTurnsSummary(session);
+    const maxIndex = getMaxTurnIndex(session);
+    const currentIndex = session.metadata?.navigationIndex ?? maxIndex;
+
+    return {
+      turns,
+      currentIndex,
+      maxIndex,
+    };
+  }
+
+  /**
+   * Navigate to a specific turn in the interview history
+   * Returns the turn's state for the frontend to display
+   * @param {object} options
+   * @param {string} options.sessionId - Session ID
+   * @param {number} options.targetTurnIndex - The turn index to navigate to
+   * @returns {Promise<object>} Turn data with navigation state
+   */
+  async navigateToTurn({ sessionId, targetTurnIndex }) {
+    const session = await getSession(this.firestore, sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    const maxIndex = getMaxTurnIndex(session);
+
+    // Validate target index
+    if (targetTurnIndex < 0 || targetTurnIndex > maxIndex) {
+      throw new Error(`Invalid turn index: ${targetTurnIndex}. Valid range: 0-${maxIndex}`);
+    }
+
+    // Get the target turn
+    const turn = getTurnByIndex(session, targetTurnIndex);
+    if (!turn) {
+      throw new Error(`Turn not found at index: ${targetTurnIndex}`);
+    }
+
+    // Get the user's response for this turn (if any)
+    const userResponse = getUserResponseForTurn(session, turn.historyIndex);
+
+    // Update session's navigation index (track where user is browsing)
+    // IMPORTANT: Only set navigationIndex when editing a past turn (targetTurnIndex < maxIndex)
+    // When navigating to the latest turn, set it to null to avoid falsely entering edit mode
+    const isNavigatingToPast = targetTurnIndex < maxIndex;
+    session.metadata = {
+      ...session.metadata,
+      navigationIndex: isNavigatingToPast ? targetTurnIndex : null,
+    };
+
+    console.log(`🧭 [navigateToTurn] targetTurnIndex: ${targetTurnIndex}, maxIndex: ${maxIndex}, isNavigatingToPast: ${isNavigatingToPast}, navigationIndex set to: ${session.metadata.navigationIndex}`);
+
+    await saveSession({
+      firestore: this.firestore,
+      sessionId,
+      session,
+    });
+
+    this.logger.info(
+      {
+        sessionId,
+        targetTurnIndex,
+        maxIndex,
+        field: turn.message.currentlyAskingField,
+      },
+      "golden-interviewer.navigation.navigated"
+    );
+
+    return {
+      message: turn.message.content,
+      ui_tool: turn.message.uiTool,
+      currently_asking_field: turn.message.currentlyAskingField,
+      completion_percentage: turn.message.snapshot?.completionPercentage || 0,
+      interview_phase: turn.message.snapshot?.currentPhase || "opening",
+      // User's previous response for this turn (to pre-fill the UI)
+      previous_response: userResponse ? {
+        content: userResponse.content,
+        uiResponse: userResponse.uiResponse,
+      } : null,
+      // Navigation state
+      navigation: {
+        currentIndex: targetTurnIndex,
+        maxIndex,
+        canGoBack: targetTurnIndex > 0,
+        canGoForward: targetTurnIndex < maxIndex,
+        isEditing: targetTurnIndex < maxIndex, // User is editing a past turn
+      },
+    };
+  }
+
+  /**
+   * Clear navigation index when user submits a new response
+   * This is called from processTurn when user is not at the latest turn
+   * @param {Object} session - Session object
+   * @returns {boolean} True if navigation was cleared
+   */
+  clearNavigationIfNeeded(session) {
+    if (session.metadata?.navigationIndex !== undefined && session.metadata?.navigationIndex !== null) {
+      session.metadata.navigationIndex = null;
+      console.log(`🧭 [clearNavigationIfNeeded] Cleared navigationIndex to null`);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Handle editing a past turn (user is not at the latest turn)
+   * Updates the field value in the schema without calling LLM for next question
+   * @param {object} options
+   * @returns {Promise<object>}
+   */
+  async handleEditTurn({
+    session,
+    sessionId,
+    authToken,
+    userMessage,
+    uiResponse,
+    currentNavIndex,
+    maxIndex,
+    acceptRefinedValue,
+  }) {
+    console.log(`🧭 [handleEditTurn] ENTER. currentNavIndex: ${currentNavIndex}, maxIndex: ${maxIndex}, hasMessage: ${!!userMessage}, hasUiResponse: ${uiResponse !== undefined}`);
+
+    // Get the turn being edited
+    const turn = getTurnByIndex(session, currentNavIndex);
+    if (!turn) {
+      throw new Error(`Turn not found at index: ${currentNavIndex}`);
+    }
+
+    const fieldToUpdate = turn.message.currentlyAskingField;
+    const valueToSave = uiResponse !== undefined && uiResponse !== null
+      ? uiResponse
+      : userMessage || null;
+
+    this.logger.info(
+      {
+        sessionId,
+        turnIndex: currentNavIndex,
+        field: fieldToUpdate,
+        valueType: typeof valueToSave,
+      },
+      "golden-interviewer.edit_turn.start"
+    );
+
+    // Update the schema with the new value
+    if (fieldToUpdate && valueToSave !== null) {
+      const update = { [fieldToUpdate]: valueToSave };
+      session.goldenSchema = this.applySchemaUpdates(
+        session.goldenSchema || {},
+        update
+      );
+
+      this.logger.info(
+        {
+          sessionId,
+          field: fieldToUpdate,
+          updated: true,
+        },
+        "golden-interviewer.edit_turn.schema_updated"
+      );
+    }
+
+    // Update the user response in conversation history
+    const userResponseInHistory = getUserResponseForTurn(session, turn.historyIndex);
+    if (userResponseInHistory) {
+      // Update existing user response
+      userResponseInHistory.content = userMessage || "";
+      userResponseInHistory.uiResponse = uiResponse;
+      userResponseInHistory.editedAt = new Date();
+    } else {
+      // No existing response - add one after the assistant message
+      const newUserMessage = {
+        role: "user",
+        content: userMessage || "",
+        timestamp: new Date(),
+        uiResponse,
+      };
+      // Insert after the assistant message
+      session.conversationHistory.splice(turn.historyIndex + 1, 0, newUserMessage);
+    }
+
+    // Recalculate completion percentage
+    const newCompletionPercentage = estimateSchemaCompletion(session.goldenSchema);
+    session.metadata.completionPercentage = newCompletionPercentage;
+    session.updatedAt = new Date();
+
+    // Save the session
+    await saveSession({
+      firestore: this.firestore,
+      sessionId,
+      session,
+    });
+
+    this.logger.info(
+      {
+        sessionId,
+        turnIndex: currentNavIndex,
+        field: fieldToUpdate,
+        newCompletion: newCompletionPercentage,
+      },
+      "golden-interviewer.edit_turn.complete"
+    );
+
+    // After editing, advance to the next turn (or the latest turn if at the end)
+    // This matches user expectation: "edit this answer, then continue"
+    const nextIndex = Math.min(currentNavIndex + 1, maxIndex);
+    const nextTurn = getTurnByIndex(session, nextIndex);
+
+    // Clear navigation index since user is moving forward
+    // NOTE: Using null instead of delete to ensure Firestore properly clears the field
+    session.metadata.navigationIndex = null;
+
+    console.log(`🧭 [handleEditTurn] Clearing navigationIndex. Before: ${currentNavIndex}, After: ${session.metadata.navigationIndex}`);
+
+    await saveSession({
+      firestore: this.firestore,
+      sessionId,
+      session,
+    });
+
+    console.log(`🧭 [handleEditTurn] Session saved. Returning nextIndex: ${nextIndex}, maxIndex: ${maxIndex}`);
+
+    // If there's a next turn, return its content
+    // Otherwise, user is at the latest turn and should continue normally
+    if (nextTurn && nextIndex <= maxIndex) {
+      const nextUserResponse = getUserResponseForTurn(session, nextTurn.historyIndex);
+      const navState = {
+        currentIndex: nextIndex,
+        maxIndex,
+        canGoBack: nextIndex > 0,
+        canGoForward: nextIndex < maxIndex,
+        isEditing: nextIndex < maxIndex,
+      };
+
+      console.log(`🧭 [handleEditTurn] RETURNING (next turn). navigation:`, navState, `| field: ${nextTurn.message.currentlyAskingField}`);
+
+      return {
+        message: nextTurn.message.content,
+        ui_tool: nextTurn.message.uiTool,
+        currently_asking_field: nextTurn.message.currentlyAskingField,
+        completion_percentage: newCompletionPercentage,
+        interview_phase: nextTurn.message.snapshot?.currentPhase || session.metadata?.currentPhase || "opening",
+        extracted_fields: fieldToUpdate ? [fieldToUpdate] : [],
+        next_priority_fields: [],
+        was_edit: true,
+        // Pre-fill previous response if available
+        previous_response: nextUserResponse ? {
+          content: nextUserResponse.content,
+          uiResponse: nextUserResponse.uiResponse,
+        } : null,
+        // Navigation state - moved to next turn
+        navigation: navState,
+      };
+    }
+
+    console.log(`🧭 [handleEditTurn] RETURNING (fallback - no next turn). maxIndex: ${maxIndex}, field: ${fieldToUpdate}`);
+
+    // Fallback - return the edited turn (shouldn't happen normally)
+    return {
+      message: turn.message.content,
+      ui_tool: turn.message.uiTool,
+      currently_asking_field: fieldToUpdate,
+      completion_percentage: newCompletionPercentage,
+      interview_phase: session.metadata?.currentPhase || "opening",
+      extracted_fields: fieldToUpdate ? [fieldToUpdate] : [],
+      next_priority_fields: [],
+      was_edit: true,
+      navigation: {
+        currentIndex: maxIndex,
+        maxIndex,
+        canGoBack: maxIndex > 0,
+        canGoForward: false,
+        isEditing: false,
+      },
+    };
   }
 
   // ===========================================================================

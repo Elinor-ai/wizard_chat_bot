@@ -67,7 +67,7 @@ export default function HeatMapGrid({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Legend */}
@@ -78,7 +78,7 @@ export default function HeatMapGrid({
               className="w-4 h-4 rounded"
               style={{ backgroundColor: state.color }}
             />
-            <span className="text-xs text-white/60">{state.label}</span>
+            <span className="text-xs text-slate-600">{state.label}</span>
           </div>
         ))}
       </div>
@@ -92,7 +92,7 @@ export default function HeatMapGrid({
             {columns.map((col) => (
               <div
                 key={col}
-                className="flex-1 min-w-10 text-center text-xs text-white/50 pb-2 px-0.5"
+                className="flex-1 min-w-10 text-center text-xs text-slate-500 pb-2 px-0.5"
               >
                 {col}
               </div>
@@ -101,7 +101,7 @@ export default function HeatMapGrid({
 
           {/* Column axis label */}
           {columnLabel && (
-            <div className="text-center text-xs text-white/30 mb-2">
+            <div className="text-center text-xs text-slate-400 mb-2">
               {columnLabel}
             </div>
           )}
@@ -111,7 +111,7 @@ export default function HeatMapGrid({
             {rows.map((row) => (
               <div key={row} className="flex items-center gap-1">
                 {/* Row label */}
-                <div className="w-20 flex-shrink-0 text-xs text-white/50 text-right pr-2">
+                <div className="w-20 flex-shrink-0 text-xs text-slate-500 text-right pr-2">
                   {row}
                 </div>
 
@@ -147,7 +147,7 @@ export default function HeatMapGrid({
 
           {/* Row axis label */}
           {rowLabel && (
-            <div className="w-20 text-center text-xs text-white/30 mt-2">
+            <div className="w-20 text-center text-xs text-slate-400 mt-2">
               {rowLabel}
             </div>
           )}
@@ -155,10 +155,10 @@ export default function HeatMapGrid({
       </div>
 
       {/* Statistics */}
-      <div className="pt-4 border-t border-white/10">
+      <div className="pt-4 border-t border-slate-200">
         <div className="flex justify-between items-center mb-3">
-          <span className="text-white/50 text-sm">Coverage</span>
-          <span className="text-white font-medium">
+          <span className="text-slate-500 text-sm">Coverage</span>
+          <span className="text-slate-800 font-medium">
             {filledCells} / {totalCells} cells
           </span>
         </div>
@@ -177,7 +177,7 @@ export default function HeatMapGrid({
               >
                 {stats[state.value] || 0}
               </div>
-              <div className="text-xs text-white/50">{state.label}</div>
+              <div className="text-xs text-slate-500">{state.label}</div>
             </div>
           ))}
         </div>
@@ -187,7 +187,7 @@ export default function HeatMapGrid({
       <div className="flex gap-2">
         <button
           onClick={() => onChange({})}
-          className="flex-1 py-2 rounded-lg bg-white/5 text-white/50 text-sm hover:bg-white/10 transition-colors"
+          className="flex-1 py-2 rounded-lg bg-slate-100 text-slate-500 text-sm hover:bg-slate-200 transition-colors"
         >
           Clear All
         </button>
@@ -201,7 +201,7 @@ export default function HeatMapGrid({
             });
             onChange(filled);
           }}
-          className="flex-1 py-2 rounded-lg bg-white/5 text-white/50 text-sm hover:bg-white/10 transition-colors"
+          className="flex-1 py-2 rounded-lg bg-slate-100 text-slate-500 text-sm hover:bg-slate-200 transition-colors"
         >
           Fill Low
         </button>

@@ -53,7 +53,7 @@ export default function RadarChartInput({
   return (
     <div className="w-full space-y-6">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Radar Chart */}
@@ -85,7 +85,7 @@ export default function RadarChartInput({
                 })
                 .join(" ")}
               fill="none"
-              stroke="rgba(255,255,255,0.1)"
+              stroke="rgba(0,0,0,0.1)"
               strokeWidth="1"
             />
           ))}
@@ -100,7 +100,7 @@ export default function RadarChartInput({
                 y1={center}
                 x2={center + maxRadius * Math.cos(angle)}
                 y2={center + maxRadius * Math.sin(angle)}
-                stroke="rgba(255,255,255,0.1)"
+                stroke="rgba(0,0,0,0.1)"
                 strokeWidth="1"
               />
             );
@@ -154,7 +154,7 @@ export default function RadarChartInput({
                   x={point.labelX}
                   y={point.labelY + (dim.icon ? 8 : 0)}
                   textAnchor={isRight ? "start" : isLeft ? "end" : "middle"}
-                  className="fill-white/70 text-xs font-medium"
+                  className="fill-slate-600 text-xs font-medium"
                 >
                   {dim.label}
                 </text>
@@ -162,7 +162,7 @@ export default function RadarChartInput({
                   x={point.labelX}
                   y={point.labelY + (dim.icon ? 22 : 14)}
                   textAnchor={isRight ? "start" : isLeft ? "end" : "middle"}
-                  className="fill-white text-xs font-bold"
+                  className="fill-slate-800 text-xs font-bold"
                 >
                   {dim.value}%
                 </text>
@@ -177,11 +177,11 @@ export default function RadarChartInput({
         {dimensions.map((dim) => (
           <div key={dim.id} className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-white/70 text-sm flex items-center gap-1">
+              <span className="text-slate-600 text-sm flex items-center gap-1">
                 {dim.icon && <span>{dim.icon}</span>}
                 {dim.label}
               </span>
-              <span className="text-white font-bold text-sm">{dim.value}%</span>
+              <span className="text-slate-800 font-bold text-sm">{dim.value}%</span>
             </div>
             <input
               type="range"
@@ -193,7 +193,7 @@ export default function RadarChartInput({
               }
               className="w-full h-2 rounded-full appearance-none cursor-pointer"
               style={{
-                background: `linear-gradient(to right, ${strokeColor} ${dim.value}%, rgba(255,255,255,0.1) ${dim.value}%)`
+                background: `linear-gradient(to right, ${strokeColor} ${dim.value}%, rgba(0,0,0,0.1) ${dim.value}%)`
               }}
             />
           </div>
@@ -201,8 +201,8 @@ export default function RadarChartInput({
       </div>
 
       {/* Average Score */}
-      <div className="text-center pt-4 border-t border-white/10">
-        <div className="text-white/50 text-sm">Average Score</div>
+      <div className="text-center pt-4 border-t border-slate-200">
+        <div className="text-slate-500 text-sm">Average Score</div>
         <div
           className="text-3xl font-bold"
           style={{ color: strokeColor }}

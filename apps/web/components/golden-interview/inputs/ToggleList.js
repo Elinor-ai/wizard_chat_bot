@@ -44,7 +44,7 @@ export default function ToggleList({
     <div className="w-full space-y-4">
       {title && (
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
+          <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
           {!singleSelect && value.length > 0 && (
             <span
               className="text-sm font-medium px-2 py-1 rounded-full"
@@ -67,7 +67,7 @@ export default function ToggleList({
               className={`w-full p-4 rounded-xl border transition-all duration-200 flex items-center gap-3 text-left group ${
                 isSelected
                   ? "border-transparent"
-                  : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                  : "bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
               }`}
               style={{
                 backgroundColor: isSelected ? `${color}15` : undefined,
@@ -78,7 +78,7 @@ export default function ToggleList({
               {/* Toggle indicator */}
               <div
                 className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
-                  isSelected ? "" : "border-2 border-white/20"
+                  isSelected ? "" : "border-2 border-slate-300"
                 }`}
                 style={{
                   backgroundColor: isSelected ? color : "transparent"
@@ -116,13 +116,13 @@ export default function ToggleList({
               <div className="flex-1 min-w-0">
                 <span
                   className={`font-medium transition-colors ${
-                    isSelected ? "text-white" : "text-white/80"
+                    isSelected ? "text-slate-900" : "text-slate-700"
                   }`}
                 >
                   {item.label}
                 </span>
                 {item.description && (
-                  <p className="text-white/40 text-sm mt-0.5 truncate">
+                  <p className="text-slate-400 text-sm mt-0.5 truncate">
                     {item.description}
                   </p>
                 )}
@@ -130,7 +130,7 @@ export default function ToggleList({
 
               {/* Hover indicator */}
               {!isSelected && (
-                <div className="w-6 h-6 rounded-full bg-white/5 group-hover:bg-white/10 transition-colors flex-shrink-0" />
+                <div className="w-6 h-6 rounded-full bg-slate-100 group-hover:bg-slate-200 transition-colors flex-shrink-0" />
               )}
             </button>
           );
@@ -141,7 +141,7 @@ export default function ToggleList({
       {!singleSelect && value.length > 0 && (
         <button
           onClick={() => onChange([])}
-          className="w-full py-2 text-sm text-white/50 hover:text-white/70 transition-colors"
+          className="w-full py-2 text-sm text-slate-500 hover:text-slate-600 transition-colors"
         >
           Clear all
         </button>

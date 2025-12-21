@@ -402,6 +402,462 @@ The "X-Factor" differentiators.
 **Golden Questions**:
 - "What's the one story you tell your friends about working here?"
 - "Why did YOU choose to join (and stay)?"
+
+## VALID ENUM VALUES (Use ONLY these values for enum fields)
+
+When extracting data for enum fields, you MUST use ONLY the exact values listed below.
+Using any other value will cause validation errors.
+
+### Role Overview Enums
+| Field Path | Valid Values |
+|------------|--------------|
+| \`role_overview.employment_type\` | full_time, part_time, contract, freelance, internship, temporary, seasonal |
+| \`role_overview.location_type\` | on_site, remote, hybrid |
+
+### Role Content Enums
+| Field Path | Valid Values |
+|------------|--------------|
+| \`role_content.customer_interaction_level\` | none, occasional, frequent, primary |
+
+### Financial Reality Enums
+| Field Path | Valid Values |
+|------------|--------------|
+| \`financial_reality.base_compensation.pay_frequency\` | hourly, daily, weekly, biweekly, monthly, annual, per_unit, per_task |
+| \`financial_reality.variable_compensation.type\` | tips, commission, bonus, profit_sharing, equity, none |
+| \`financial_reality.variable_compensation.frequency\` | per_shift, weekly, monthly, quarterly, annual |
+| \`financial_reality.equity.type\` | options, RSUs, phantom, profit_interest, none |
+| \`financial_reality.payment_reliability.payment_method\` | direct_deposit, check, cash, mixed |
+
+### Time and Life Enums
+| Field Path | Valid Values |
+|------------|--------------|
+| \`time_and_life.schedule_pattern.type\` | fixed, rotating, flexible, project_based, on_call, mixed |
+| \`time_and_life.flexibility.remote_frequency\` | full, hybrid, occasional, rare, never |
+| \`time_and_life.time_off.pto_structure\` | unlimited, accrued, fixed, none |
+| \`time_and_life.overtime_reality.overtime_expected\` | never, rare, occasional, frequent, constant |
+
+### Environment Enums
+| Field Path | Valid Values |
+|------------|--------------|
+| \`environment.physical_space.type\` | office, retail, restaurant, warehouse, hospital, outdoor, home, hybrid, other |
+| \`environment.workspace_quality.noise_level\` | quiet, moderate, loud, varies |
+
+### Humans and Culture Enums
+| Field Path | Valid Values |
+|------------|--------------|
+| \`humans_and_culture.management_style.management_approach\` | hands_off, collaborative, structured, mentorship_heavy |
+| \`humans_and_culture.social_dynamics.social_pressure\` | none, low, moderate, high |
+| \`humans_and_culture.communication_culture.meeting_load\` | minimal, moderate, heavy |
+
+### Stability Signals Enums
+| Field Path | Valid Values |
+|------------|--------------|
+| \`stability_signals.company_health.company_stage\` | startup, growth, mature, turnaround, declining |
+| \`stability_signals.company_health.revenue_trend\` | growing, stable, declining, unknown |
+| \`stability_signals.job_security.position_type\` | permanent, contract, temp, seasonal, project |
+| \`stability_signals.legal_protections.employment_type\` | W2, 1099, corp_to_corp |
+
+### Role Reality Enums
+| Field Path | Valid Values |
+|------------|--------------|
+| \`role_reality.day_to_day.variety_level\` | repetitive, some_variety, high_variety |
+| \`role_reality.autonomy.decision_authority\` | none, low, moderate, high, full |
+| \`role_reality.autonomy.supervision_level\` | constant, regular, occasional, minimal, none |
+| \`role_reality.workload.intensity\` | relaxed, moderate, demanding, intense |
+| \`role_reality.workload.workload_predictability\` | steady, variable, seasonal, chaotic |
+
+### Extraction Metadata Enums
+| Field Path | Valid Values |
+|------------|--------------|
+| \`extraction_metadata.seniority_detected\` | entry, junior, mid, senior, lead, executive |
+
+**CRITICAL**: When the user provides information that maps to an enum field:
+1. Match their input to the CLOSEST valid enum value
+2. Use the exact enum value in your extraction (e.g., "per_unit" not "per-unit" or "per unit")
+3. If uncertain, ask a clarifying question with the valid options
+
+## COMPLETE FIELD PATHS (All Available Schema Fields)
+
+Below is the complete list of all field paths you can extract to. Use these exact paths in \`currently_asking_field\` and \`extraction.updates\`.
+
+### role_overview (Basic Job Info)
+- \`role_overview.job_title\` (string) - **MANDATORY**
+- \`role_overview.company_name\` (string) - **MANDATORY**
+- \`role_overview.department\` (string)
+- \`role_overview.employment_type\` (enum) - **MANDATORY**
+- \`role_overview.location_city\` (string)
+- \`role_overview.location_state\` (string)
+- \`role_overview.location_country\` (string)
+- \`role_overview.location_type\` (enum: on_site/remote/hybrid) - **MANDATORY**
+- \`role_overview.reports_to\` (string)
+- \`role_overview.headcount\` (number)
+- \`role_overview.is_new_role\` (boolean)
+- \`role_overview.role_summary\` (string)
+- \`role_overview.visa_sponsorship\` (boolean)
+- \`role_overview.relocation_assistance\` (boolean)
+
+### role_content (What the Job Is)
+- \`role_content.key_responsibilities\` (string[])
+- \`role_content.typical_projects\` (string)
+- \`role_content.scope_of_role\` (string)
+- \`role_content.required_skills\` (string[])
+- \`role_content.required_experience_years\` (string)
+- \`role_content.preferred_qualifications\` (string[])
+- \`role_content.education_requirements\` (string)
+- \`role_content.certifications_required\` (string[])
+- \`role_content.languages_required\` (string[])
+- \`role_content.tech_stack\` (string[])
+- \`role_content.frameworks_tools\` (string[])
+- \`role_content.ideal_candidate_description\` (string)
+- \`role_content.must_haves\` (string[])
+- \`role_content.nice_to_haves\` (string[])
+- \`role_content.first_30_60_90_days\` (string)
+- \`role_content.key_deliverables\` (string[])
+- \`role_content.travel_percentage\` (string)
+- \`role_content.customer_interaction_level\` (enum: none/occasional/frequent/primary)
+- \`role_content.target_start_date\` (string)
+
+### financial_reality (Compensation)
+**base_compensation:**
+- \`financial_reality.base_compensation.amount_or_range\` (string)
+- \`financial_reality.base_compensation.pay_frequency\` (enum)
+- \`financial_reality.base_compensation.currency\` (string)
+
+**variable_compensation:**
+- \`financial_reality.variable_compensation.exists\` (boolean)
+- \`financial_reality.variable_compensation.type\` (enum)
+- \`financial_reality.variable_compensation.structure\` (string)
+- \`financial_reality.variable_compensation.average_realized\` (string)
+- \`financial_reality.variable_compensation.frequency\` (enum)
+- \`financial_reality.variable_compensation.guarantee_minimum\` (boolean)
+- \`financial_reality.variable_compensation.guarantee_details\` (string)
+
+**equity:**
+- \`financial_reality.equity.offered\` (boolean)
+- \`financial_reality.equity.type\` (enum)
+- \`financial_reality.equity.vesting_schedule\` (string)
+- \`financial_reality.equity.cliff\` (string)
+
+**bonuses:**
+- \`financial_reality.bonuses.signing_bonus\` (string)
+- \`financial_reality.bonuses.retention_bonus\` (string)
+- \`financial_reality.bonuses.performance_bonus\` (string)
+- \`financial_reality.bonuses.referral_bonus\` (string)
+- \`financial_reality.bonuses.holiday_bonus\` (string)
+
+**raises_and_reviews:**
+- \`financial_reality.raises_and_reviews.review_frequency\` (string)
+- \`financial_reality.raises_and_reviews.typical_raise_percentage\` (string)
+- \`financial_reality.raises_and_reviews.promotion_raise_typical\` (string)
+
+**hidden_financial_value:**
+- \`financial_reality.hidden_financial_value.meals_provided\` (boolean)
+- \`financial_reality.hidden_financial_value.meals_details\` (string)
+- \`financial_reality.hidden_financial_value.discounts\` (string)
+- \`financial_reality.hidden_financial_value.equipment_provided\` (string)
+- \`financial_reality.hidden_financial_value.wellness_budget\` (string)
+- \`financial_reality.hidden_financial_value.commuter_benefits\` (string)
+- \`financial_reality.hidden_financial_value.phone_stipend\` (string)
+- \`financial_reality.hidden_financial_value.internet_stipend\` (string)
+
+**payment_reliability:**
+- \`financial_reality.payment_reliability.payment_method\` (enum)
+- \`financial_reality.payment_reliability.payment_timing\` (string)
+- \`financial_reality.payment_reliability.overtime_policy\` (string)
+- \`financial_reality.payment_reliability.overtime_rate\` (string)
+
+### time_and_life (Schedule & Flexibility)
+**schedule_pattern:**
+- \`time_and_life.schedule_pattern.type\` (enum)
+- \`time_and_life.schedule_pattern.typical_hours_per_week\` (number)
+- \`time_and_life.schedule_pattern.days_per_week\` (number)
+- \`time_and_life.schedule_pattern.shift_types\` (string[])
+- \`time_and_life.schedule_pattern.shift_length_typical\` (string)
+- \`time_and_life.schedule_pattern.weekend_frequency\` (string)
+- \`time_and_life.schedule_pattern.holiday_policy\` (string)
+
+**schedule_predictability:**
+- \`time_and_life.schedule_predictability.advance_notice\` (string)
+- \`time_and_life.schedule_predictability.shift_swapping_allowed\` (boolean)
+- \`time_and_life.schedule_predictability.self_scheduling\` (boolean)
+- \`time_and_life.schedule_predictability.schedule_stability\` (string)
+
+**flexibility:**
+- \`time_and_life.flexibility.remote_allowed\` (boolean)
+- \`time_and_life.flexibility.remote_frequency\` (enum)
+- \`time_and_life.flexibility.remote_details\` (string)
+- \`time_and_life.flexibility.async_friendly\` (boolean)
+- \`time_and_life.flexibility.core_hours\` (string)
+- \`time_and_life.flexibility.location_flexibility\` (string)
+
+**time_off:**
+- \`time_and_life.time_off.pto_days\` (number)
+- \`time_and_life.time_off.pto_structure\` (enum)
+- \`time_and_life.time_off.sick_days\` (number)
+- \`time_and_life.time_off.sick_days_separate\` (boolean)
+- \`time_and_life.time_off.parental_leave\` (string)
+- \`time_and_life.time_off.bereavement_policy\` (string)
+- \`time_and_life.time_off.mental_health_days\` (boolean)
+- \`time_and_life.time_off.sabbatical_available\` (boolean)
+- \`time_and_life.time_off.sabbatical_details\` (string)
+
+**commute_reality:**
+- \`time_and_life.commute_reality.address\` (string)
+- \`time_and_life.commute_reality.neighborhood_description\` (string)
+- \`time_and_life.commute_reality.public_transit_proximity\` (string)
+- \`time_and_life.commute_reality.parking_situation\` (string)
+- \`time_and_life.commute_reality.bike_friendly\` (boolean)
+- \`time_and_life.commute_reality.bike_storage\` (boolean)
+
+**break_reality:**
+- \`time_and_life.break_reality.paid_breaks\` (boolean)
+- \`time_and_life.break_reality.break_duration\` (string)
+- \`time_and_life.break_reality.break_flexibility\` (string)
+
+**overtime_reality:**
+- \`time_and_life.overtime_reality.overtime_expected\` (enum)
+- \`time_and_life.overtime_reality.overtime_voluntary\` (boolean)
+- \`time_and_life.overtime_reality.overtime_notice\` (string)
+- \`time_and_life.overtime_reality.crunch_periods\` (string)
+
+### environment (Physical Workspace)
+**physical_space:**
+- \`environment.physical_space.type\` (enum)
+- \`environment.physical_space.description\` (string)
+- \`environment.physical_space.size_context\` (string)
+
+**workspace_quality:**
+- \`environment.workspace_quality.dedicated_workspace\` (boolean)
+- \`environment.workspace_quality.workspace_description\` (string)
+- \`environment.workspace_quality.equipment_quality\` (string)
+- \`environment.workspace_quality.natural_light\` (boolean)
+- \`environment.workspace_quality.noise_level\` (enum)
+- \`environment.workspace_quality.temperature_control\` (string)
+
+**amenities:**
+- \`environment.amenities.kitchen\` (boolean)
+- \`environment.amenities.kitchen_quality\` (string)
+- \`environment.amenities.bathroom_quality\` (string)
+- \`environment.amenities.lounge_area\` (boolean)
+- \`environment.amenities.outdoor_space\` (boolean)
+- \`environment.amenities.gym\` (boolean)
+- \`environment.amenities.showers\` (boolean)
+- \`environment.amenities.nap_room\` (boolean)
+- \`environment.amenities.mother_room\` (boolean)
+
+**safety_and_comfort:**
+- \`environment.safety_and_comfort.physical_demands\` (string)
+- \`environment.safety_and_comfort.safety_measures\` (string)
+- \`environment.safety_and_comfort.dress_code\` (string)
+- \`environment.safety_and_comfort.uniform_provided\` (boolean)
+- \`environment.safety_and_comfort.uniform_cost\` (string)
+
+**accessibility:**
+- \`environment.accessibility.wheelchair_accessible\` (boolean)
+- \`environment.accessibility.accessibility_details\` (string)
+- \`environment.accessibility.accommodation_friendly\` (boolean)
+
+**neighborhood:**
+- \`environment.neighborhood.area_description\` (string)
+- \`environment.neighborhood.food_options_nearby\` (string)
+- \`environment.neighborhood.safety_perception\` (string)
+- \`environment.neighborhood.vibe\` (string)
+
+### humans_and_culture (Team & Culture)
+**team_composition:**
+- \`humans_and_culture.team_composition.team_size\` (number)
+- \`humans_and_culture.team_composition.reporting_to\` (string)
+- \`humans_and_culture.team_composition.direct_reports\` (number)
+- \`humans_and_culture.team_composition.cross_functional_interaction\` (string)
+
+**team_demographics:**
+- \`humans_and_culture.team_demographics.experience_distribution\` (string)
+- \`humans_and_culture.team_demographics.tenure_distribution\` (string)
+- \`humans_and_culture.team_demographics.age_range_vibe\` (string)
+- \`humans_and_culture.team_demographics.diversity_description\` (string)
+
+**management_style:**
+- \`humans_and_culture.management_style.manager_description\` (string)
+- \`humans_and_culture.management_style.management_approach\` (enum)
+- \`humans_and_culture.management_style.feedback_frequency\` (string)
+- \`humans_and_culture.management_style.one_on_ones\` (boolean)
+- \`humans_and_culture.management_style.one_on_one_frequency\` (string)
+
+**social_dynamics:**
+- \`humans_and_culture.social_dynamics.team_bonding\` (string)
+- \`humans_and_culture.social_dynamics.social_pressure\` (enum)
+- \`humans_and_culture.social_dynamics.after_work_culture\` (string)
+- \`humans_and_culture.social_dynamics.remote_social\` (string)
+
+**communication_culture:**
+- \`humans_and_culture.communication_culture.primary_channels\` (string[])
+- \`humans_and_culture.communication_culture.meeting_load\` (enum)
+- \`humans_and_culture.communication_culture.meeting_description\` (string)
+- \`humans_and_culture.communication_culture.async_vs_sync\` (string)
+- \`humans_and_culture.communication_culture.documentation_culture\` (string)
+
+**conflict_and_feedback:**
+- \`humans_and_culture.conflict_and_feedback.feedback_culture\` (string)
+- \`humans_and_culture.conflict_and_feedback.conflict_resolution\` (string)
+- \`humans_and_culture.conflict_and_feedback.psychological_safety\` (string)
+
+**values_in_practice:**
+- \`humans_and_culture.values_in_practice.stated_values\` (string[])
+- \`humans_and_culture.values_in_practice.values_evidence\` (string)
+- \`humans_and_culture.values_in_practice.decision_making_style\` (string)
+
+**turnover_context:**
+- \`humans_and_culture.turnover_context.average_tenure\` (string)
+- \`humans_and_culture.turnover_context.why_people_stay\` (string)
+- \`humans_and_culture.turnover_context.why_people_leave\` (string)
+- \`humans_and_culture.turnover_context.recent_departures_context\` (string)
+
+### growth_trajectory (Career Growth)
+**learning_opportunities:**
+- \`growth_trajectory.learning_opportunities.mentorship_available\` (boolean)
+- \`growth_trajectory.learning_opportunities.mentorship_structure\` (string)
+- \`growth_trajectory.learning_opportunities.learning_from_whom\` (string)
+- \`growth_trajectory.learning_opportunities.skill_development\` (string[])
+- \`growth_trajectory.learning_opportunities.exposure_to\` (string[])
+
+**formal_development:**
+- \`growth_trajectory.formal_development.training_provided\` (boolean)
+- \`growth_trajectory.formal_development.training_description\` (string)
+- \`growth_trajectory.formal_development.certifications_supported\` (boolean)
+- \`growth_trajectory.formal_development.certifications_details\` (string)
+- \`growth_trajectory.formal_development.conferences\` (boolean)
+- \`growth_trajectory.formal_development.conference_budget\` (string)
+- \`growth_trajectory.formal_development.education_reimbursement\` (boolean)
+- \`growth_trajectory.formal_development.education_details\` (string)
+
+**career_path:**
+- \`growth_trajectory.career_path.promotion_path\` (string)
+- \`growth_trajectory.career_path.promotion_timeline_typical\` (string)
+- \`growth_trajectory.career_path.promotion_criteria\` (string)
+- \`growth_trajectory.career_path.internal_mobility\` (boolean)
+
+**growth_signals:**
+- \`growth_trajectory.growth_signals.company_growth_rate\` (string)
+- \`growth_trajectory.growth_signals.new_roles_being_created\` (boolean)
+- \`growth_trajectory.growth_signals.expansion_plans\` (string)
+
+**skill_building:**
+- \`growth_trajectory.skill_building.technologies_used\` (string[])
+- \`growth_trajectory.skill_building.tools_used\` (string[])
+- \`growth_trajectory.skill_building.processes_learned\` (string)
+- \`growth_trajectory.skill_building.transferable_skills\` (string[])
+
+**leadership_opportunities:**
+- \`growth_trajectory.leadership_opportunities.lead_projects\` (boolean)
+- \`growth_trajectory.leadership_opportunities.manage_others\` (boolean)
+- \`growth_trajectory.leadership_opportunities.client_facing\` (boolean)
+- \`growth_trajectory.leadership_opportunities.decision_authority\` (string)
+
+### stability_signals (Job Security & Benefits)
+**company_health:**
+- \`stability_signals.company_health.company_age\` (string)
+- \`stability_signals.company_health.company_stage\` (enum)
+- \`stability_signals.company_health.funding_status\` (string)
+- \`stability_signals.company_health.revenue_trend\` (enum)
+- \`stability_signals.company_health.recent_layoffs\` (boolean)
+- \`stability_signals.company_health.layoff_context\` (string)
+
+**job_security:**
+- \`stability_signals.job_security.position_type\` (enum)
+- \`stability_signals.job_security.contract_length\` (string)
+- \`stability_signals.job_security.conversion_possibility\` (boolean)
+- \`stability_signals.job_security.probation_period\` (string)
+- \`stability_signals.job_security.background_check_required\` (boolean)
+- \`stability_signals.job_security.clearance_required\` (string)
+
+**benefits_security:**
+- \`stability_signals.benefits_security.health_insurance\` (boolean)
+- \`stability_signals.benefits_security.health_insurance_details\` (string)
+- \`stability_signals.benefits_security.health_insurance_start\` (string)
+- \`stability_signals.benefits_security.dental\` (boolean)
+- \`stability_signals.benefits_security.vision\` (boolean)
+- \`stability_signals.benefits_security.life_insurance\` (boolean)
+- \`stability_signals.benefits_security.disability\` (boolean)
+- \`stability_signals.benefits_security.retirement_plan\` (boolean)
+- \`stability_signals.benefits_security.retirement_match\` (string)
+- \`stability_signals.benefits_security.retirement_vesting\` (string)
+
+**legal_protections:**
+- \`stability_signals.legal_protections.employment_type\` (enum: W2/1099/corp_to_corp)
+- \`stability_signals.legal_protections.union\` (boolean)
+- \`stability_signals.legal_protections.union_details\` (string)
+- \`stability_signals.legal_protections.at_will\` (boolean)
+- \`stability_signals.legal_protections.contract_terms\` (string)
+
+### role_reality (Day-to-Day Work)
+**day_to_day:**
+- \`role_reality.day_to_day.typical_day_description\` (string)
+- \`role_reality.day_to_day.variety_level\` (enum)
+- \`role_reality.day_to_day.task_breakdown\` (string)
+
+**autonomy:**
+- \`role_reality.autonomy.decision_authority\` (enum)
+- \`role_reality.autonomy.supervision_level\` (enum)
+- \`role_reality.autonomy.creativity_allowed\` (boolean)
+- \`role_reality.autonomy.process_flexibility\` (string)
+
+**workload:**
+- \`role_reality.workload.intensity\` (enum)
+- \`role_reality.workload.workload_predictability\` (enum)
+- \`role_reality.workload.staffing_level\` (string)
+- \`role_reality.workload.support_available\` (string)
+
+**resources_and_tools:**
+- \`role_reality.resources_and_tools.tools_provided\` (string[])
+- \`role_reality.resources_and_tools.tools_quality\` (string)
+- \`role_reality.resources_and_tools.budget_authority\` (string)
+- \`role_reality.resources_and_tools.resource_constraints\` (string)
+
+**success_metrics:**
+- \`role_reality.success_metrics.how_measured\` (string)
+- \`role_reality.success_metrics.performance_visibility\` (string)
+- \`role_reality.success_metrics.feedback_loop\` (string)
+
+**pain_points_honesty:**
+- \`role_reality.pain_points_honesty.challenges\` (string)
+- \`role_reality.pain_points_honesty.frustrations_common\` (string)
+- \`role_reality.pain_points_honesty.what_changed_would_help\` (string)
+
+**impact_visibility:**
+- \`role_reality.impact_visibility.who_benefits\` (string)
+- \`role_reality.impact_visibility.impact_tangibility\` (string)
+- \`role_reality.impact_visibility.recognition_culture\` (string)
+
+### unique_value (Differentiators)
+**hidden_perks:**
+- \`unique_value.hidden_perks.list\` (string[])
+
+**convenience_factors:**
+- \`unique_value.convenience_factors.list\` (string[])
+
+**lifestyle_enablers:**
+- \`unique_value.lifestyle_enablers.list\` (string[])
+
+**status_signals:**
+- \`unique_value.status_signals.brand_value\` (string)
+- \`unique_value.status_signals.network_access\` (string)
+- \`unique_value.status_signals.credential_value\` (string)
+
+**personal_meaning:**
+- \`unique_value.personal_meaning.mission_connection\` (string)
+- \`unique_value.personal_meaning.impact_story\` (string)
+- \`unique_value.personal_meaning.pride_factor\` (string)
+
+**rare_offerings:**
+- \`unique_value.rare_offerings.what_competitors_dont_have\` (string)
+- \`unique_value.rare_offerings.what_makes_this_special\` (string)
+
+### extraction_metadata (System Use)
+- \`extraction_metadata.source_text\` (string)
+- \`extraction_metadata.industry_detected\` (string)
+- \`extraction_metadata.role_category_detected\` (string)
+- \`extraction_metadata.seniority_detected\` (enum)
+- \`extraction_metadata.role_archetype\` (string)
 `;
 
 // =============================================================================
@@ -547,9 +1003,14 @@ function formatTimezoneAsLocation(timezone) {
 // =============================================================================
 
 /**
- * Builds the friction awareness section for the system prompt
+ * Builds a COMPACT friction state section for the user prompt.
+ *
+ * NOTE: The full FRICTION PROTOCOL is in the STATIC system prompt.
+ * This section only provides the CURRENT STATE so the LLM knows which level to apply.
+ * This avoids duplicating ~300 tokens of protocol instructions.
+ *
  * @param {object} frictionState - Current friction state from service
- * @returns {string} - Friction context section or empty string
+ * @returns {string} - Friction state section or empty string
  */
 function buildFrictionContextSection(frictionState) {
   if (!frictionState || frictionState.totalSkips === 0) {
@@ -559,74 +1020,26 @@ function buildFrictionContextSection(frictionState) {
   const { consecutiveSkips, totalSkips, currentStrategy, skippedField } =
     frictionState;
 
-  return `## FRICTION AWARENESS
-
-**Current Friction State:**
-- Consecutive Skips: ${consecutiveSkips}
-- Total Skips This Session: ${totalSkips}
-- Current Strategy: **${currentStrategy.toUpperCase()}**
-${skippedField ? `- Last Skipped Field: ${skippedField}` : ""}
-
-**FRICTION PROTOCOL (You MUST follow this):**
-
-### Level 1: Single Skip (consecutiveSkips = 1)
-- Acknowledge gracefully: "No problem! Let's try something else."
-- Pivot to a DIFFERENT category entirely
-- Use an easier UI tool (text input or simple yes/no)
-
-### Level 2: Double Skip (consecutiveSkips = 2)
-- Show empathy: "I understand some details are harder to share."
-- Offer a LOW-DISCLOSURE alternative:
-  - Instead of exact salary → Use \`range_slider\` with broad ranges
-  - Instead of detailed equity → Ask "Do you offer equity? Yes/No"
-  - Instead of turnover reasons → Ask "Would you describe retention as stable?"
-
-### Level 3: Triple Skip or More (consecutiveSkips >= 3)
-- **STOP interrogating. START educating.**
-- Your message should explain WHY this data helps them:
-  - "I want to share why candidates care about [topic]..."
-  - "Companies that share [X] see 40% more qualified applicants..."
-- DO NOT ask a direct question. Offer a soft re-entry:
-  - "Whenever you're ready, we can revisit this. For now, let's move on to something easier."
-
-### Sensitive Topic Protocol
-When the skipped field involves: [compensation, equity, revenue, turnover]
-- ALWAYS offer ranges/brackets instead of exact numbers
-- Lead with validation: "Many companies prefer to share ranges rather than exact figures."
-- Use \`range_slider\` or \`multi_select\` instead of open text
-
-### Strategy-Specific Instructions:
-${
-  currentStrategy === "education"
-    ? `
-**CURRENT: EDUCATION MODE**
-- Your primary goal is to EXPLAIN VALUE, not extract data
-- Lead with "Here's why this matters to candidates..."
-- Share a brief insight about what job seekers care about
-- End with a soft invitation: "Would you like to share anything about this?"
-`
-    : ""
-}${
-    currentStrategy === "low_disclosure"
-      ? `
-**CURRENT: LOW DISCLOSURE MODE**
-- Offer RANGES instead of exact values
-- Use yes/no or multiple choice instead of open text
-- Example: "Would you say compensation is below average, competitive, or above market?"
-- Make it easy to answer without revealing sensitive specifics
-`
-      : ""
-  }${
-    currentStrategy === "defer"
-      ? `
-**CURRENT: DEFER MODE**
-- This topic is causing too much friction
-- Acknowledge: "We can skip this section entirely - no problem at all."
-- Move to a completely different, easier category
-- Do NOT return to this topic unless the user brings it up
-`
-      : ""
+  // Build strategy-specific reminder (just the key action, not the full protocol)
+  let strategyReminder = "";
+  if (currentStrategy === "education") {
+    strategyReminder = "→ EXPLAIN VALUE first, then soft invitation to share.";
+  } else if (currentStrategy === "low_disclosure") {
+    strategyReminder = "→ Offer RANGES or yes/no instead of exact values.";
+  } else if (currentStrategy === "defer") {
+    strategyReminder = "→ SKIP this topic entirely. Move to something else.";
   }
+
+  return `## FRICTION STATE
+
+**Current Metrics:**
+- Consecutive Skips: **${consecutiveSkips}**
+- Total Skips: ${totalSkips}
+- Strategy Level: **${currentStrategy.toUpperCase()}**
+${skippedField ? `- Last Skipped: \`${skippedField}\`` : ""}
+
+**Action Required:** Follow the FRICTION PROTOCOL (Level ${Math.min(consecutiveSkips, 3)}) from the system prompt.
+${strategyReminder}
 `;
 }
 
@@ -770,17 +1183,19 @@ function truncateText(text, maxLength) {
 // =============================================================================
 
 /**
- * Builds the main system prompt for the Golden Extraction Agent
- * @param {object} options
- * @param {object} [options.currentSchema] - Current golden schema state
- * @param {object} [options.companyData] - Company data for context (name, industry, description, employeeCountBucket, toneOfVoice)
- * @param {string[]} [options.priorityFields] - Fields to prioritize
- * @param {object} [options.frictionState] - Current friction state for skip handling
- * @returns {string}
+ * Returns the STATIC system prompt for the Golden Extraction Agent.
+ *
+ * ARCHITECTURE NOTE:
+ * This prompt is intentionally STATIC (no parameters) to enable LLM context caching.
+ * All session-specific data is injected via the USER prompt instead:
+ * - Company context → buildCompanyContextSection() in user prompt
+ * - User context → buildUserContextSection() in user prompt
+ * - Friction state → buildFrictionContextSection() in user prompt
+ * - Schema state → filterNonNullFields() in user prompt
+ *
+ * @returns {string} - The static system prompt (~4,500 tokens)
  */
 export function buildSystemPrompt() {
-  // STATIC system prompt - no dynamic injections
-  // All session-specific data (company, user, friction) is injected via USER prompt
   return `# ROLE: Golden Information Extraction Agent
 
 **Your Mission:**

@@ -89,16 +89,16 @@ export default function SwipeDeck({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Progress bar */}
       <div className="space-y-1">
-        <div className="flex justify-between text-xs text-white/50">
+        <div className="flex justify-between text-xs text-slate-500">
           <span>{processedIds.length} / {cards.length}</span>
           <span>{Math.round(progress * 100)}%</span>
         </div>
-        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+        <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
             style={{ width: `${progress * 100}%` }}
@@ -110,7 +110,7 @@ export default function SwipeDeck({
       <div className="relative h-80 perspective-1000">
         {/* Next card (behind) */}
         {nextCard && (
-          <div className="absolute inset-x-4 top-4 bottom-0 rounded-2xl bg-white/5 border border-white/10 opacity-50 scale-95" />
+          <div className="absolute inset-x-4 top-4 bottom-0 rounded-2xl bg-slate-100 border border-slate-200 opacity-50 scale-95" />
         )}
 
         {/* Current card */}
@@ -124,13 +124,13 @@ export default function SwipeDeck({
                   : ""
             }`}
             style={{
-              backgroundColor: "rgba(30, 30, 40, 0.95)",
+              backgroundColor: "rgba(255, 255, 255, 0.95)",
               borderColor:
                 swipeDirection === "left"
                   ? leftColor
                   : swipeDirection === "right"
                     ? rightColor
-                    : "rgba(255,255,255,0.1)",
+                    : "rgba(0,0,0,0.1)",
               boxShadow:
                 swipeDirection === "left"
                   ? `0 0 30px ${leftColor}50`
@@ -142,16 +142,16 @@ export default function SwipeDeck({
             {/* Card content */}
             <div className="p-6 h-full flex flex-col">
               {currentCard.title && (
-                <h4 className="text-xl font-bold text-white mb-2">
+                <h4 className="text-xl font-bold text-slate-800 mb-2">
                   {currentCard.title}
                 </h4>
               )}
               {currentCard.subtitle && (
-                <p className="text-white/50 text-sm mb-4">
+                <p className="text-slate-500 text-sm mb-4">
                   {currentCard.subtitle}
                 </p>
               )}
-              <div className="flex-1 flex items-center justify-center text-white">
+              <div className="flex-1 flex items-center justify-center text-slate-800">
                 {currentCard.content}
               </div>
             </div>
@@ -178,13 +178,13 @@ export default function SwipeDeck({
           /* Completed state */
           <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/30 flex flex-col items-center justify-center">
             <div className="text-4xl mb-4">🎉</div>
-            <div className="text-white font-bold text-lg">All Done!</div>
-            <div className="text-white/50 text-sm mt-2">
+            <div className="text-slate-800 font-bold text-lg">All Done!</div>
+            <div className="text-slate-500 text-sm mt-2">
               {value.right?.length || 0} yes, {value.left?.length || 0} no
             </div>
             <button
               onClick={handleReset}
-              className="mt-4 px-6 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
+              className="mt-4 px-6 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
             >
               Start Over
             </button>
@@ -211,7 +211,7 @@ export default function SwipeDeck({
           <button
             onClick={handleUndo}
             disabled={processedIds.length === 0}
-            className="w-12 h-12 rounded-full bg-white/10 text-white/60 flex items-center justify-center text-lg hover:bg-white/20 transition-all disabled:opacity-30"
+            className="w-12 h-12 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-lg hover:bg-slate-200 transition-all disabled:opacity-30"
           >
             ↩
           </button>
@@ -233,26 +233,26 @@ export default function SwipeDeck({
 
       {/* Results summary */}
       {(value.left?.length > 0 || value.right?.length > 0) && (
-        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <div
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: rightColor }}
               />
-              <span className="text-white/60 text-sm">{rightLabel}</span>
+              <span className="text-slate-600 text-sm">{rightLabel}</span>
             </div>
             <div className="space-y-1">
               {(value.right || []).slice(0, 3).map((id) => {
                 const card = cards.find((c) => c.id === id);
                 return (
-                  <div key={id} className="text-xs text-white/40 truncate">
+                  <div key={id} className="text-xs text-slate-400 truncate">
                     {card?.title || card?.id}
                   </div>
                 );
               })}
               {(value.right?.length || 0) > 3 && (
-                <div className="text-xs text-white/30">
+                <div className="text-xs text-slate-400">
                   +{value.right.length - 3} more
                 </div>
               )}
@@ -264,19 +264,19 @@ export default function SwipeDeck({
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: leftColor }}
               />
-              <span className="text-white/60 text-sm">{leftLabel}</span>
+              <span className="text-slate-600 text-sm">{leftLabel}</span>
             </div>
             <div className="space-y-1">
               {(value.left || []).slice(0, 3).map((id) => {
                 const card = cards.find((c) => c.id === id);
                 return (
-                  <div key={id} className="text-xs text-white/40 truncate">
+                  <div key={id} className="text-xs text-slate-400 truncate">
                     {card?.title || card?.id}
                   </div>
                 );
               })}
               {(value.left?.length || 0) > 3 && (
-                <div className="text-xs text-white/30">
+                <div className="text-xs text-slate-400">
                   +{value.left.length - 3} more
                 </div>
               )}

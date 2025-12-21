@@ -54,7 +54,7 @@ export default function CircularGauge({
       const x = clientX - rect.left - center;
       const y = clientY - rect.top - center;
       let angle = Math.atan2(y, x) * (180 / Math.PI);
-      angle = angle + 135;
+      angle = angle - 135;
       if (angle < 0) angle += 360;
       if (angle > 270) angle = angle > 315 ? 0 : 270;
       const newPercentage = Math.min(Math.max(angle / 270, 0), 1);
@@ -97,7 +97,7 @@ export default function CircularGauge({
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
   // Knob Position
-  const knobAngle = -135 + percentage * 270;
+  const knobAngle = 135 + percentage * 270;
   const knobX = center + radius * Math.cos((knobAngle * Math.PI) / 180);
   const knobY = center + radius * Math.sin((knobAngle * Math.PI) / 180);
 

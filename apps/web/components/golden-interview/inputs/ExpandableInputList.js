@@ -60,7 +60,7 @@ export default function ExpandableInputList({
     <div className="w-full space-y-4">
       {title && (
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
+          <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
           {selectedCount > 0 && (
             <span
               className="text-sm font-medium px-2 py-1 rounded-full"
@@ -85,7 +85,7 @@ export default function ExpandableInputList({
               className={`rounded-xl border transition-all duration-300 overflow-hidden ${
                 isSelected
                   ? "border-transparent"
-                  : "bg-white/5 border-white/10"
+                  : "bg-slate-50 border-slate-200"
               }`}
               style={{
                 backgroundColor: isSelected ? `${selectedColor}10` : undefined,
@@ -98,7 +98,7 @@ export default function ExpandableInputList({
                 <button
                   onClick={() => handleItemToggle(item.id)}
                   className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
-                    isSelected ? "" : "border-2 border-white/20 hover:border-white/40"
+                    isSelected ? "" : "border-2 border-slate-300 hover:border-slate-400"
                   }`}
                   style={{
                     backgroundColor: isSelected ? selectedColor : "transparent"
@@ -129,7 +129,7 @@ export default function ExpandableInputList({
                 {/* Label */}
                 <span
                   className={`flex-1 font-medium transition-colors ${
-                    isSelected ? "text-white" : "text-white/70"
+                    isSelected ? "text-slate-900" : "text-slate-700"
                   }`}
                 >
                   {item.label}
@@ -137,7 +137,7 @@ export default function ExpandableInputList({
 
                 {/* Evidence indicator */}
                 {hasEvidence && !isExpanded && (
-                  <span className="text-xs text-white/40 flex items-center gap-1">
+                  <span className="text-xs text-slate-400 flex items-center gap-1">
                     <svg
                       className="w-3 h-3"
                       fill="currentColor"
@@ -155,12 +155,12 @@ export default function ExpandableInputList({
                     onClick={() => handleExpandToggle(item.id)}
                     className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
                       isExpanded
-                        ? "bg-white/20"
-                        : "bg-white/5 hover:bg-white/10"
+                        ? "bg-slate-200"
+                        : "bg-slate-100 hover:bg-slate-200"
                     }`}
                   >
                     <svg
-                      className={`w-4 h-4 text-white/60 transition-transform duration-200 ${
+                      className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${
                         isExpanded ? "rotate-180" : ""
                       }`}
                       fill="none"
@@ -182,7 +182,7 @@ export default function ExpandableInputList({
               {isSelected && isExpanded && (
                 <div className="px-4 pb-4 pt-0">
                   <div className="pl-9">
-                    <label className="text-white/50 text-xs block mb-2">
+                    <label className="text-slate-500 text-xs block mb-2">
                       {evidenceLabel}
                     </label>
                     <textarea
@@ -192,10 +192,10 @@ export default function ExpandableInputList({
                       }
                       placeholder={item.placeholder || "Describe how this applies..."}
                       rows={3}
-                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 resize-none text-sm"
+                      className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-300 resize-none text-sm"
                     />
                     <div className="flex justify-end mt-2">
-                      <span className="text-xs text-white/30">
+                      <span className="text-xs text-slate-400">
                         {itemValue.evidence?.length || 0} characters
                       </span>
                     </div>
@@ -209,8 +209,8 @@ export default function ExpandableInputList({
 
       {/* Summary of items with evidence */}
       {Object.entries(value).filter(([_, v]) => v.selected && v.evidence?.trim()).length > 0 && (
-        <div className="pt-4 border-t border-white/10">
-          <div className="text-white/50 text-xs uppercase tracking-wide mb-2">
+        <div className="pt-4 border-t border-slate-200">
+          <div className="text-slate-500 text-xs uppercase tracking-wide mb-2">
             Items with evidence
           </div>
           <div className="space-y-2">
@@ -221,13 +221,13 @@ export default function ExpandableInputList({
                 return (
                   <div
                     key={itemId}
-                    className="p-3 rounded-lg bg-white/5 text-sm"
+                    className="p-3 rounded-lg bg-slate-50 text-sm"
                   >
-                    <div className="font-medium text-white/80 flex items-center gap-2">
+                    <div className="font-medium text-slate-700 flex items-center gap-2">
                       {item?.icon && <span>{item.icon}</span>}
                       {item?.label}
                     </div>
-                    <div className="text-white/50 mt-1 text-xs line-clamp-2">
+                    <div className="text-slate-500 mt-1 text-xs line-clamp-2">
                       {itemValue.evidence}
                     </div>
                   </div>

@@ -251,15 +251,17 @@ export function buildUserMessage({ content, uiResponse }) {
  * @param {string} params.content - Message content
  * @param {Object} [params.uiTool] - UI tool to display
  * @param {string} [params.currentlyAskingField] - Schema field this question targets
+ * @param {Object} [params.snapshot] - State snapshot for navigation
  * @returns {Object} Assistant message object
  */
-export function buildAssistantMessage({ content, uiTool, currentlyAskingField }) {
+export function buildAssistantMessage({ content, uiTool, currentlyAskingField, snapshot }) {
   return {
     role: "assistant",
     content,
     timestamp: new Date(),
     uiTool,
     currentlyAskingField: currentlyAskingField || null,
+    snapshot: snapshot || null,
   };
 }
 
@@ -298,4 +300,119 @@ export function extractConversationHistory(session) {
     uiTool: msg.uiTool ? { type: msg.uiTool.type } : undefined,
     hasUiResponse: !!msg.uiResponse,
   }));
+}
+
+// =============================================================================
+// NAVIGATION OPERATIONS
+// =============================================================================
+
+/**
+ * Get assistant turns with their indices for navigation
+ * Returns only assistant messages (which represent interview turns)
+ * @param {Object} session - Session document
+ * @returns {Array<{index: number, message: Object}>} Array of turns with indices
+ */
+export function getAssistantTurns(session) {
+  if (!session?.conversationHistory) return [];
+
+  const turns = [];
+  let turnIndex = 0;
+
+  for (let i = 0; i < session.conversationHistory.length; i++) {
+    const msg = session.conversationHistory[i];
+    if (msg.role === "assistant") {
+      turns.push({
+        index: turnIndex,
+        historyIndex: i,
+        message: msg,
+      });
+      turnIndex++;
+    }
+  }
+
+  return turns;
+}
+
+/**
+ * Get a specific turn by its navigation index
+ * @param {Object} session - Session document
+ * @param {number} turnIndex - The turn index (0-based)
+ * @returns {Object|null} The turn with its history index, or null if not found
+ */
+export function getTurnByIndex(session, turnIndex) {
+  const turns = getAssistantTurns(session);
+  return turns[turnIndex] || null;
+}
+
+/**
+ * Get the user response that follows a specific assistant turn
+ * @param {Object} session - Session document
+ * @param {number} historyIndex - The history index of the assistant message
+ * @returns {Object|null} The user message that follows, or null if not found
+ */
+export function getUserResponseForTurn(session, historyIndex) {
+  if (!session?.conversationHistory) return null;
+
+  // Look for the next user message after this assistant message
+  for (let i = historyIndex + 1; i < session.conversationHistory.length; i++) {
+    const msg = session.conversationHistory[i];
+    if (msg.role === "user") {
+      return msg;
+    }
+    // If we hit another assistant message, there's no user response for this turn
+    if (msg.role === "assistant") {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get the maximum turn index (0-based)
+ * @param {Object} session - Session document
+ * @returns {number} The max turn index, or -1 if no turns
+ */
+export function getMaxTurnIndex(session) {
+  const turns = getAssistantTurns(session);
+  return turns.length - 1;
+}
+
+/**
+ * Build a snapshot object for navigation
+ * @param {Object} params
+ * @param {Object} params.goldenSchema - Current schema state
+ * @param {number} params.completionPercentage - Current completion percentage
+ * @param {string} params.currentPhase - Current interview phase
+ * @returns {Object} Snapshot object
+ */
+export function buildSnapshot({ goldenSchema, completionPercentage, currentPhase }) {
+  return {
+    goldenSchema: JSON.parse(JSON.stringify(goldenSchema || {})),
+    completionPercentage: completionPercentage || 0,
+    currentPhase: currentPhase || "opening",
+    timestamp: new Date(),
+  };
+}
+
+/**
+ * Extract turns summary for navigation UI
+ * @param {Object} session - Session document
+ * @returns {Array} Array of turn summaries
+ */
+export function extractTurnsSummary(session) {
+  const turns = getAssistantTurns(session);
+
+  return turns.map((turn) => {
+    const userResponse = getUserResponseForTurn(session, turn.historyIndex);
+
+    return {
+      index: turn.index,
+      field: turn.message.currentlyAskingField || null,
+      phase: turn.message.snapshot?.currentPhase || null,
+      hasUserResponse: !!userResponse,
+      uiToolType: turn.message.uiTool?.type || null,
+      timestamp: turn.message.timestamp,
+    };
+  });
 }

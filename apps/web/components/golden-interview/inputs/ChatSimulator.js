@@ -136,20 +136,20 @@ export default function ChatSimulator({
   return (
     <div className="w-full space-y-4">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Chat container */}
-      <div className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+      <div className="rounded-2xl bg-slate-50 border border-slate-200 overflow-hidden">
         {/* Chat header */}
         <div
-          className="px-4 py-3 border-b border-white/10 flex items-center gap-3"
+          className="px-4 py-3 border-b border-slate-200 flex items-center gap-3"
           style={{ backgroundColor: `${accentColor}10` }}
         >
           <span className="text-2xl">{botAvatar}</span>
           <div>
-            <div className="text-white font-medium text-sm">{botName}</div>
-            <div className="text-white/40 text-xs">
+            <div className="text-slate-800 font-medium text-sm">{botName}</div>
+            <div className="text-slate-400 text-xs">
               {isTyping ? "Typing..." : "Online"}
             </div>
           </div>
@@ -176,7 +176,7 @@ export default function ChatSimulator({
                 className={`max-w-[80%] px-4 py-2 rounded-2xl text-sm ${
                   message.type === "user"
                     ? "bg-gradient-to-r text-white rounded-tr-sm"
-                    : "bg-white/10 text-white/90 rounded-tl-sm"
+                    : "bg-white text-slate-800 rounded-tl-sm border border-slate-200"
                 }`}
                 style={{
                   background:
@@ -194,11 +194,11 @@ export default function ChatSimulator({
           {isTyping && (
             <div className="flex gap-2">
               <span className="text-lg">{botAvatar}</span>
-              <div className="bg-white/10 px-4 py-2 rounded-2xl rounded-tl-sm">
+              <div className="bg-white border border-slate-200 px-4 py-2 rounded-2xl rounded-tl-sm">
                 <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                 </div>
               </div>
             </div>
@@ -229,7 +229,7 @@ export default function ChatSimulator({
 
         {/* Input area */}
         {!isComplete ? (
-          <div className="p-3 border-t border-white/10">
+          <div className="p-3 border-t border-slate-200">
             <div className="flex gap-2">
               <input
                 type="text"
@@ -243,7 +243,7 @@ export default function ChatSimulator({
                 }}
                 disabled={isTyping}
                 placeholder="Type a message..."
-                className="flex-1 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-white/30 disabled:opacity-50"
+                className="flex-1 px-4 py-2 rounded-full bg-white border border-slate-200 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:border-slate-300 disabled:opacity-50"
               />
               <button
                 onClick={() => handleSendMessage(inputText)}
@@ -256,11 +256,11 @@ export default function ChatSimulator({
             </div>
           </div>
         ) : (
-          <div className="p-4 border-t border-white/10 text-center">
-            <div className="text-green-400 text-sm mb-2">✓ Conversation complete</div>
+          <div className="p-4 border-t border-slate-200 text-center">
+            <div className="text-green-500 text-sm mb-2">✓ Conversation complete</div>
             <button
               onClick={handleReset}
-              className="text-white/50 text-xs hover:text-white/70 transition-colors"
+              className="text-slate-500 text-xs hover:text-slate-600 transition-colors"
             >
               Start over
             </button>
@@ -278,7 +278,7 @@ export default function ChatSimulator({
                 ? ""
                 : index === value.currentStep
                   ? "scale-125"
-                  : "bg-white/20"
+                  : "bg-slate-200"
             }`}
             style={{
               backgroundColor:
@@ -290,15 +290,15 @@ export default function ChatSimulator({
 
       {/* Collected responses summary */}
       {Object.keys(value.responses || {}).length > 0 && (
-        <div className="pt-4 border-t border-white/10">
-          <div className="text-white/40 text-xs uppercase tracking-wide mb-2">
+        <div className="pt-4 border-t border-slate-200">
+          <div className="text-slate-400 text-xs uppercase tracking-wide mb-2">
             Your Responses
           </div>
           <div className="space-y-1">
             {Object.entries(value.responses).map(([step, response]) => (
               <div key={step} className="text-sm">
-                <span className="text-white/40">Q{parseInt(step) + 1}: </span>
-                <span className="text-white/70">{response}</span>
+                <span className="text-slate-400">Q{parseInt(step) + 1}: </span>
+                <span className="text-slate-600">{response}</span>
               </div>
             ))}
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import DOMPurify from "isomorphic-dompurify";
 import { GoldenInterviewApi } from "../../lib/api-client";
 import { useUser } from "../user-context";
@@ -61,6 +61,8 @@ export default function ChatInterface({
 }) {
   const { user } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const authToken = user?.authToken;
 
   // Session state
@@ -87,11 +89,27 @@ export default function ChatInterface({
   const [isComplete, setIsComplete] = useState(false);
   const [currentlyAskingField, setCurrentlyAskingField] = useState(null);
 
+  // Completion screen state
+  const [completionTab, setCompletionTab] = useState("message"); // "message" | "results"
+  const [fullSchema, setFullSchema] = useState(null);
+  const [conversationHistory, setConversationHistory] = useState([]);
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  // Navigation state
+  const [navigationState, setNavigationState] = useState({
+    currentIndex: 0,
+    maxIndex: 0,
+    canGoBack: false,
+    canGoForward: false,
+    isEditing: false,
+  });
+
   const inputRef = useRef(null);
 
   // Check if current field is mandatory (skip button should be hidden)
   const isCurrentFieldMandatory = MANDATORY_FIELDS.includes(currentlyAskingField);
   const initRef = useRef(false);
+  const initialNavDoneRef = useRef(false); // Track if initial navigation from URL is done
 
   // Derived state
   const currentStepIndex = PHASE_TO_STEP_INDEX[currentPhase] ?? 0;
@@ -99,6 +117,9 @@ export default function ChatInterface({
   // ==========================================================================
   // INITIALIZATION
   // ==========================================================================
+
+  // Storage key for session persistence
+  const STORAGE_KEY = "golden_interview_session";
 
   useEffect(() => {
     if (!authToken || initRef.current) return;
@@ -108,6 +129,103 @@ export default function ChatInterface({
       setIsInitializing(true);
       setError(null);
 
+      // Check for existing session in URL or localStorage
+      const urlSessionId = searchParams.get("session");
+      const storedSessionId = typeof window !== "undefined"
+        ? localStorage.getItem(STORAGE_KEY)
+        : null;
+      const existingSessionId = urlSessionId || storedSessionId;
+
+      // Try to restore existing session
+      if (existingSessionId) {
+        try {
+          console.log("[ChatInterface] Attempting to restore session:", existingSessionId);
+
+          // Check if session exists and is active
+          const statusResponse = await GoldenInterviewApi.getSessionStatus(
+            existingSessionId,
+            { authToken }
+          );
+
+          if (statusResponse.session?.status === "active") {
+            console.log("[ChatInterface] Session is active, restoring...");
+            setSessionId(existingSessionId);
+
+            // Get turns to know the maxIndex
+            const turnsResponse = await GoldenInterviewApi.getTurnsSummary(
+              existingSessionId,
+              { authToken }
+            );
+
+            const maxIndex = turnsResponse.turns?.length - 1 || 0;
+
+            // Check if there's a q parameter to navigate to a specific turn
+            const qParam = searchParams.get("q");
+            let targetIndex = maxIndex;
+            if (qParam) {
+              const requestedIndex = parseInt(qParam, 10) - 1; // Convert 1-based to 0-based
+              if (!isNaN(requestedIndex) && requestedIndex >= 0 && requestedIndex <= maxIndex) {
+                targetIndex = requestedIndex;
+              }
+            }
+
+            // Navigate to the target turn
+            const navResponse = await GoldenInterviewApi.navigateToTurn(
+              existingSessionId,
+              targetIndex,
+              { authToken }
+            );
+
+            // Update UI with restored state
+            if (navResponse.message) setCurrentMessage(navResponse.message);
+            if (navResponse.ui_tool) setCurrentTool(navResponse.ui_tool);
+            if (navResponse.currently_asking_field !== undefined) {
+              setCurrentlyAskingField(navResponse.currently_asking_field);
+            }
+            if (navResponse.interview_phase) setCurrentPhase(navResponse.interview_phase);
+            if (navResponse.completion_percentage !== undefined) {
+              setCompletionPercentage(navResponse.completion_percentage);
+            }
+            if (navResponse.navigation) {
+              setNavigationState(navResponse.navigation);
+            }
+            if (navResponse.previous_response) {
+              if (navResponse.previous_response.uiResponse !== undefined) {
+                setDynamicValue(navResponse.previous_response.uiResponse);
+              }
+              if (navResponse.previous_response.content) {
+                setInputValue(navResponse.previous_response.content);
+              }
+            }
+
+            // Update URL with session
+            const params = new URLSearchParams(searchParams.toString());
+            params.set("session", existingSessionId);
+            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+
+            // Mark initial navigation as done (we already navigated to the right turn)
+            initialNavDoneRef.current = true;
+
+            console.log("[ChatInterface] Session restored successfully");
+            setIsInitializing(false);
+            return;
+          } else {
+            console.log("[ChatInterface] Session not active, starting new one");
+            // Clear stored session
+            if (typeof window !== "undefined") {
+              localStorage.removeItem(STORAGE_KEY);
+            }
+          }
+        } catch (err) {
+          console.error("[ChatInterface] Failed to restore session:", err);
+          // Clear stored session on error
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(STORAGE_KEY);
+          }
+        }
+      }
+
+      // Start new session
       try {
         const initialData = companyId ? { companyId } : {};
         const response = await GoldenInterviewApi.startSession({
@@ -116,6 +234,14 @@ export default function ChatInterface({
         });
 
         setSessionId(response.sessionId);
+
+        // Store session ID in localStorage and URL
+        if (typeof window !== "undefined") {
+          localStorage.setItem(STORAGE_KEY, response.sessionId);
+        }
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("session", response.sessionId);
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
 
         // Map snake_case API response to camelCase state
         if (response.interview_phase) {
@@ -135,6 +261,14 @@ export default function ChatInterface({
         }
         // ALWAYS update currentlyAskingField to avoid stale state
         setCurrentlyAskingField(response.currently_asking_field ?? null);
+        // Initialize navigation state (first turn = index 0, can only go forward after first response)
+        setNavigationState({
+          currentIndex: 0,
+          maxIndex: 0,
+          canGoBack: false,
+          canGoForward: false,
+          isEditing: false,
+        });
         // DEBUG: Log the currently asking field on session start
         console.log("[ChatInterface] Session start - currently_asking_field:", response.currently_asking_field, "| isMandatory:", MANDATORY_FIELDS.includes(response.currently_asking_field));
       } catch (err) {
@@ -146,7 +280,73 @@ export default function ChatInterface({
     };
 
     initSession();
-  }, [authToken, companyId]);
+  }, [authToken, companyId, pathname, router, searchParams]);
+
+  // Sync navigation state with URL parameter (q=questionNumber)
+  useEffect(() => {
+    if (isInitializing || !sessionId) return;
+
+    // Update URL when navigation changes (use currentIndex + 1 for 1-based display)
+    const currentQ = searchParams.get("q");
+    const newQ = String(navigationState.currentIndex + 1);
+
+    if (currentQ !== newQ) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("q", newQ);
+      // Use replace to avoid adding to browser history on every navigation
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [navigationState.currentIndex, isInitializing, sessionId, pathname, searchParams, router]);
+
+  // Handle initial load with q parameter (navigate to specific question)
+  // Note: initialNavDoneRef is defined at the top with other refs
+  useEffect(() => {
+    if (isInitializing || !sessionId || !authToken || initialNavDoneRef.current) return;
+
+    const qParam = searchParams.get("q");
+    if (qParam) {
+      const targetIndex = parseInt(qParam, 10) - 1; // Convert 1-based to 0-based
+      if (!isNaN(targetIndex) && targetIndex >= 0 && targetIndex !== navigationState.currentIndex) {
+        initialNavDoneRef.current = true;
+        // Navigate to the specified question
+        (async () => {
+          try {
+            const response = await GoldenInterviewApi.navigateToTurn(
+              sessionId,
+              targetIndex,
+              { authToken }
+            );
+            if (response.message) setCurrentMessage(response.message);
+            if (response.ui_tool) setCurrentTool(response.ui_tool);
+            if (response.currently_asking_field !== undefined) {
+              setCurrentlyAskingField(response.currently_asking_field);
+            }
+            if (response.interview_phase) setCurrentPhase(response.interview_phase);
+            if (response.completion_percentage !== undefined) {
+              setCompletionPercentage(response.completion_percentage);
+            }
+            if (response.navigation) {
+              setNavigationState(response.navigation);
+            }
+            if (response.previous_response) {
+              if (response.previous_response.uiResponse !== undefined) {
+                setDynamicValue(response.previous_response.uiResponse);
+              }
+              if (response.previous_response.content) {
+                setInputValue(response.previous_response.content);
+              }
+            }
+          } catch (err) {
+            console.error("Failed to navigate to initial question:", err);
+          }
+        })();
+      } else {
+        initialNavDoneRef.current = true;
+      }
+    } else {
+      initialNavDoneRef.current = true;
+    }
+  }, [isInitializing, sessionId, authToken, searchParams, navigationState.currentIndex]);
 
   // Focus input when ready
   useEffect(() => {
@@ -154,6 +354,40 @@ export default function ChatInterface({
       inputRef.current.focus();
     }
   }, [isInitializing, currentTool]);
+
+  // Fetch full data when interview is complete
+  useEffect(() => {
+    if (!isComplete || !sessionId || !authToken) return;
+
+    const fetchCompletionData = async () => {
+      try {
+        // Fetch schema and history in parallel
+        const [schemaResponse, historyResponse] = await Promise.all([
+          GoldenInterviewApi.getSchema(sessionId, { authToken }),
+          GoldenInterviewApi.getHistory(sessionId, { authToken }),
+        ]);
+
+        if (schemaResponse.goldenSchema) {
+          setFullSchema(schemaResponse.goldenSchema);
+        }
+        if (historyResponse.history) {
+          setConversationHistory(historyResponse.history);
+        }
+      } catch (err) {
+        console.error("Failed to fetch completion data:", err);
+      }
+    };
+
+    fetchCompletionData();
+  }, [isComplete, sessionId, authToken]);
+
+  // Clear localStorage when interview is complete (so next visit starts fresh)
+  useEffect(() => {
+    if (isComplete && typeof window !== "undefined") {
+      localStorage.removeItem(STORAGE_KEY);
+      console.log("[ChatInterface] Interview complete, cleared localStorage");
+    }
+  }, [isComplete]);
 
   // ==========================================================================
   // MESSAGE HANDLING
@@ -163,8 +397,8 @@ export default function ChatInterface({
     async (messageContent, value = null, skipAction = null) => {
       if (!sessionId || !authToken) return;
 
-      setInputValue("");
-      setDynamicValue(null);
+      console.log(`🧭 [Frontend] sendMessage - BEFORE. navigationState:`, navigationState, `| hasMessage: ${!!messageContent}, hasValue: ${value !== null}, isSkip: ${skipAction?.isSkip}`);
+
       setCurrentTool(null);
       setRefineResult(null);
       setIsTyping(true);
@@ -214,6 +448,44 @@ export default function ChatInterface({
         }
         // ALWAYS update currentlyAskingField (even if null/undefined) to avoid stale state
         setCurrentlyAskingField(response.currently_asking_field ?? null);
+
+        // Log key response fields for debugging
+        console.log(`🧭 [Frontend] sendMessage - RESPONSE. was_edit: ${response.was_edit}, phase: ${response.interview_phase}, field: ${response.currently_asking_field}, navigation:`, response.navigation);
+
+        // Update navigation state from response
+        if (response.navigation) {
+          console.log(`🧭 [Frontend] sendMessage - setting navigationState from response`);
+          setNavigationState(response.navigation);
+        } else {
+          // Normal turn progression - update maxIndex
+          setNavigationState(prev => ({
+            ...prev,
+            currentIndex: prev.maxIndex + 1,
+            maxIndex: prev.maxIndex + 1,
+            canGoBack: true,
+            canGoForward: false,
+            isEditing: false,
+          }));
+        }
+
+        // Handle input values based on response type
+        if (response.was_edit && response.previous_response) {
+          // After edit, pre-fill the next question's previous answer (if any)
+          if (response.previous_response.uiResponse !== undefined) {
+            setDynamicValue(response.previous_response.uiResponse);
+          } else {
+            setDynamicValue(null);
+          }
+          if (response.previous_response.content) {
+            setInputValue(response.previous_response.content);
+          } else {
+            setInputValue("");
+          }
+        } else {
+          // Normal flow or edit without previous_response - clear inputs
+          setDynamicValue(null);
+          setInputValue("");
+        }
         // DEBUG: Log the currently asking field to understand skip button behavior
         console.log("[ChatInterface] Turn response - currently_asking_field:", response.currently_asking_field, "| isMandatory:", MANDATORY_FIELDS.includes(response.currently_asking_field));
         // Check if interview is complete
@@ -234,6 +506,122 @@ export default function ChatInterface({
     // Send explicit machine-readable skip signal (not locale-dependent text)
     sendMessage(null, null, { isSkip: true, reason: "unknown" });
   }, [sendMessage]);
+
+  // ==========================================================================
+  // NAVIGATION HANDLERS
+  // ==========================================================================
+
+  const handleGoBack = useCallback(async () => {
+    if (!navigationState.canGoBack || !sessionId || !authToken) return;
+
+    const targetIndex = navigationState.currentIndex - 1;
+    console.log(`🧭 [Frontend] handleGoBack - from index ${navigationState.currentIndex} to ${targetIndex}, maxIndex: ${navigationState.maxIndex}`);
+
+    setIsTyping(true);
+    setError(null);
+
+    try {
+      const response = await GoldenInterviewApi.navigateToTurn(
+        sessionId,
+        targetIndex,
+        { authToken }
+      );
+
+      console.log(`🧭 [Frontend] handleGoBack - response navigation:`, response.navigation);
+
+      // Update UI with the previous turn's data
+      if (response.message) setCurrentMessage(response.message);
+      if (response.ui_tool) setCurrentTool(response.ui_tool);
+      if (response.currently_asking_field !== undefined) {
+        setCurrentlyAskingField(response.currently_asking_field);
+      }
+      if (response.interview_phase) setCurrentPhase(response.interview_phase);
+      if (response.completion_percentage !== undefined) {
+        setCompletionPercentage(response.completion_percentage);
+      }
+      if (response.navigation) {
+        setNavigationState(response.navigation);
+      }
+
+      // Pre-fill the user's previous response if available
+      if (response.previous_response) {
+        if (response.previous_response.uiResponse !== undefined) {
+          setDynamicValue(response.previous_response.uiResponse);
+        }
+        if (response.previous_response.content) {
+          setInputValue(response.previous_response.content);
+        }
+      } else {
+        // No previous response - clear the input
+        setDynamicValue(null);
+        setInputValue("");
+      }
+
+      // Clear any refine suggestions
+      setRefineResult(null);
+    } catch (err) {
+      console.error("Failed to navigate back:", err);
+      setError(err.message || "Failed to go back. Please try again.");
+    } finally {
+      setIsTyping(false);
+    }
+  }, [sessionId, authToken, navigationState.canGoBack, navigationState.currentIndex]);
+
+  const handleGoForward = useCallback(async () => {
+    if (!navigationState.canGoForward || !sessionId || !authToken) return;
+
+    const targetIndex = navigationState.currentIndex + 1;
+    console.log(`🧭 [Frontend] handleGoForward - from index ${navigationState.currentIndex} to ${targetIndex}, maxIndex: ${navigationState.maxIndex}`);
+
+    setIsTyping(true);
+    setError(null);
+
+    try {
+      const response = await GoldenInterviewApi.navigateToTurn(
+        sessionId,
+        targetIndex,
+        { authToken }
+      );
+
+      console.log(`🧭 [Frontend] handleGoForward - response navigation:`, response.navigation);
+
+      // Update UI with the next turn's data
+      if (response.message) setCurrentMessage(response.message);
+      if (response.ui_tool) setCurrentTool(response.ui_tool);
+      if (response.currently_asking_field !== undefined) {
+        setCurrentlyAskingField(response.currently_asking_field);
+      }
+      if (response.interview_phase) setCurrentPhase(response.interview_phase);
+      if (response.completion_percentage !== undefined) {
+        setCompletionPercentage(response.completion_percentage);
+      }
+      if (response.navigation) {
+        setNavigationState(response.navigation);
+      }
+
+      // Pre-fill the user's previous response if available
+      if (response.previous_response) {
+        if (response.previous_response.uiResponse !== undefined) {
+          setDynamicValue(response.previous_response.uiResponse);
+        }
+        if (response.previous_response.content) {
+          setInputValue(response.previous_response.content);
+        }
+      } else {
+        // No previous response - clear the input
+        setDynamicValue(null);
+        setInputValue("");
+      }
+
+      // Clear any refine suggestions
+      setRefineResult(null);
+    } catch (err) {
+      console.error("Failed to navigate forward:", err);
+      setError(err.message || "Failed to go forward. Please try again.");
+    } finally {
+      setIsTyping(false);
+    }
+  }, [sessionId, authToken, navigationState.canGoForward, navigationState.currentIndex]);
 
   const handleTextSubmit = (e) => {
     e.preventDefault();
@@ -328,6 +716,18 @@ export default function ChatInterface({
       setIsTyping(false);
     }
   }, [refineResult, sessionId, authToken]);
+
+  // Copy schema to clipboard
+  const handleCopySchema = useCallback(async () => {
+    if (!fullSchema) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(fullSchema, null, 2));
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  }, [fullSchema]);
 
   // Handle submitting a rewritten answer from suggestions view
   const handleRewriteSubmit = useCallback(async () => {
@@ -615,58 +1015,211 @@ export default function ChatInterface({
 
   if (isComplete) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F8F7FC] p-4">
-        <div className="w-full max-w-lg rounded-2xl border border-green-100 bg-white p-8 text-center shadow-xl shadow-slate-200/50">
-          {/* Success Icon */}
-          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-500 shadow-lg shadow-green-500/25">
-            <CheckIcon className="h-10 w-10 text-white" />
+      <div className="min-h-screen bg-[#F8F7FC] p-4">
+        <div className="mx-auto max-w-4xl">
+          {/* Header */}
+          <div className="mb-6 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-500 shadow-lg shadow-green-500/25">
+              <CheckIcon className="h-8 w-8 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900">Interview Complete!</h1>
+            <p className="mt-1 text-sm text-slate-500">{completionPercentage}% completed</p>
           </div>
 
-          {/* Title & Message */}
-          <h2 className="mb-3 text-2xl font-bold text-slate-900">
-            Interview Complete!
-          </h2>
-          <p className="mb-2 text-base text-slate-600">
-            {currentMessage || "Great work! We've captured everything we need about this role."}
-          </p>
-          <p className="mb-8 text-sm text-slate-400">
-            Your Golden Schema has been saved and is ready to use.
-          </p>
+          {/* Tabs */}
+          <div className="mb-6 flex justify-center gap-2">
+            <button
+              onClick={() => setCompletionTab("message")}
+              className={clsx(
+                "rounded-lg px-6 py-2.5 text-sm font-medium transition-all",
+                completionTab === "message"
+                  ? "bg-primary-600 text-white shadow-md"
+                  : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
+              )}
+            >
+              Summary
+            </button>
+            <button
+              onClick={() => setCompletionTab("results")}
+              className={clsx(
+                "rounded-lg px-6 py-2.5 text-sm font-medium transition-all",
+                completionTab === "results"
+                  ? "bg-primary-600 text-white shadow-md"
+                  : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
+              )}
+            >
+              Review Results
+            </button>
+          </div>
 
-          {/* Progress Summary */}
-          <div className="mb-8 rounded-xl bg-slate-50 p-4">
-            <div className="flex items-center justify-center gap-4">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">
-                  {completionPercentage}%
+          {/* Tab Content */}
+          {completionTab === "message" ? (
+            <div className="rounded-2xl border border-green-100 bg-white p-8 text-center shadow-xl shadow-slate-200/50">
+              <div
+                className="mb-4 text-base text-slate-600 [&>h3]:text-lg [&>h3]:font-semibold [&>h3]:text-slate-700 [&>h3]:mb-2 [&>h3]:block"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(
+                    currentMessage || "Great work! We've captured everything we need about this role.",
+                    {
+                      ALLOWED_TAGS: ["h3", "b", "strong", "span", "em"],
+                      ALLOWED_ATTR: ["class"],
+                    }
+                  ),
+                }}
+              />
+              <p className="mb-8 text-sm text-slate-400">
+                Your Golden Schema has been saved and is ready to use.
+              </p>
+
+              {/* Progress Summary */}
+              <div className="mb-8 rounded-xl bg-slate-50 p-4">
+                <div className="flex items-center justify-center gap-4">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-green-600">
+                      {completionPercentage}%
+                    </div>
+                    <div className="text-xs text-slate-400">Complete</div>
+                  </div>
+                  <div className="h-10 w-px bg-slate-200" />
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-primary-600">
+                      {STEPS.length}
+                    </div>
+                    <div className="text-xs text-slate-400">Phases Covered</div>
+                  </div>
                 </div>
-                <div className="text-xs text-slate-400">Complete</div>
               </div>
-              <div className="h-10 w-px bg-slate-200" />
-              <div className="text-center">
-                <div className="text-3xl font-bold text-primary-600">
-                  {STEPS.length}
-                </div>
-                <div className="text-xs text-slate-400">Phases Covered</div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+                <button
+                  onClick={() => router.push("/dashboard")}
+                  className="rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-xl hover:shadow-primary-500/30"
+                >
+                  Go to Dashboard
+                </button>
+                <button
+                  onClick={() => router.push("/wizard")}
+                  className="rounded-xl border border-slate-200 px-8 py-3 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300"
+                >
+                  Create Job Posting
+                </button>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Full Schema Section */}
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
+                <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-800">Full Golden Schema</h2>
+                    <p className="text-sm text-slate-500">Complete data captured during the interview</p>
+                  </div>
+                  <button
+                    onClick={handleCopySchema}
+                    className={clsx(
+                      "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                      copySuccess
+                        ? "bg-green-100 text-green-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    )}
+                  >
+                    {copySuccess ? (
+                      <>
+                        <CheckIcon className="h-4 w-4" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Copy All
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="max-h-[500px] overflow-auto p-6">
+                  {fullSchema ? (
+                    <pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-xs text-slate-700 font-mono">
+                      {JSON.stringify(fullSchema, null, 2)}
+                    </pre>
+                  ) : (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+                    </div>
+                  )}
+                </div>
+              </div>
 
-          {/* Actions */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <button
-              onClick={() => router.push("/dashboard")}
-              className="rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-xl hover:shadow-primary-500/30"
-            >
-              Go to Dashboard
-            </button>
-            <button
-              onClick={() => router.push("/wizard")}
-              className="rounded-xl border border-slate-200 px-8 py-3 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300"
-            >
-              Create Job Posting
-            </button>
-          </div>
+              {/* Conversation History Section */}
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
+                <div className="border-b border-slate-100 px-6 py-4">
+                  <h2 className="text-lg font-semibold text-slate-800">Conversation History</h2>
+                  <p className="text-sm text-slate-500">{conversationHistory.length} messages exchanged</p>
+                </div>
+                <div className="max-h-[400px] overflow-auto p-6">
+                  {conversationHistory.length > 0 ? (
+                    <div className="space-y-4">
+                      {conversationHistory.map((msg, idx) => (
+                        <div
+                          key={idx}
+                          className={clsx(
+                            "rounded-lg p-4",
+                            msg.role === "assistant"
+                              ? "bg-primary-50 border border-primary-100"
+                              : "bg-slate-50 border border-slate-100"
+                          )}
+                        >
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className={clsx(
+                              "text-xs font-semibold uppercase",
+                              msg.role === "assistant" ? "text-primary-600" : "text-slate-500"
+                            )}>
+                              {msg.role === "assistant" ? "Interviewer" : "You"}
+                            </span>
+                            {msg.uiTool?.type && (
+                              <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-400 border">
+                                {msg.uiTool.type}
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            className="text-sm text-slate-700 [&>h3]:font-semibold [&>h3]:text-slate-800"
+                            dangerouslySetInnerHTML={{
+                              __html: DOMPurify.sanitize(msg.content || "(UI response)", {
+                                ALLOWED_TAGS: ["h3", "b", "strong", "span", "em"],
+                                ALLOWED_ATTR: ["class"],
+                              }),
+                            }}
+                          />
+                          {msg.hasUiResponse && (
+                            <div className="mt-2 text-xs text-slate-400">
+                              + UI component response
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Back to Dashboard */}
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={() => router.push("/dashboard")}
+                  className="rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-xl hover:shadow-primary-500/30"
+                >
+                  Go to Dashboard
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -847,6 +1400,61 @@ export default function ChatInterface({
               </div>
             )}
 
+            {/* Navigation Controls - shown when user can navigate */}
+            {!isTyping && (navigationState.canGoBack || navigationState.canGoForward) && (
+              <div className="mb-6 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                {/* Back Button */}
+                <button
+                  onClick={handleGoBack}
+                  disabled={!navigationState.canGoBack || isTyping}
+                  className={clsx(
+                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                    navigationState.canGoBack
+                      ? "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-sm"
+                      : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  )}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Back
+                </button>
+
+                {/* Position Indicator */}
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <span className="font-medium text-slate-700">
+                    Question {navigationState.currentIndex + 1}
+                  </span>
+                  <span>of</span>
+                  <span className="font-medium text-slate-700">
+                    {navigationState.maxIndex + 1}
+                  </span>
+                  {navigationState.isEditing && (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                      Editing
+                    </span>
+                  )}
+                </div>
+
+                {/* Forward Button */}
+                <button
+                  onClick={handleGoForward}
+                  disabled={!navigationState.canGoForward || isTyping}
+                  className={clsx(
+                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                    navigationState.canGoForward
+                      ? "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-sm"
+                      : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  )}
+                >
+                  Forward
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
             {/* Dynamic Input OR Text Input - hidden when showing suggestions */}
             {!isTyping && !refineResult?.suggestions?.length && (
               <div className="space-y-6">
@@ -890,7 +1498,7 @@ export default function ChatInterface({
                         }
                         className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-xl hover:shadow-primary-500/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
                       >
-                        Continue
+                        {navigationState.isEditing ? "Update" : "Continue"}
                         <svg
                           className="h-4 w-4"
                           fill="none"
@@ -901,7 +1509,7 @@ export default function ChatInterface({
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             strokeWidth={2}
-                            d="M14 5l7 7m0 0l-7 7m7-7H3"
+                            d={navigationState.isEditing ? "M5 13l4 4L19 7" : "M14 5l7 7m0 0l-7 7m7-7H3"}
                           />
                         </svg>
                       </button>
@@ -952,7 +1560,7 @@ export default function ChatInterface({
                         disabled={!inputValue.trim()}
                         className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-xl hover:shadow-primary-500/30 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
                       >
-                        Continue
+                        {navigationState.isEditing ? "Update" : "Continue"}
                         <svg
                           className="h-4 w-4"
                           fill="none"
@@ -963,7 +1571,7 @@ export default function ChatInterface({
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             strokeWidth={2}
-                            d="M14 5l7 7m0 0l-7 7m7-7H3"
+                            d={navigationState.isEditing ? "M5 13l4 4L19 7" : "M14 5l7 7m0 0l-7 7m7-7H3"}
                           />
                         </svg>
                       </button>
@@ -973,7 +1581,7 @@ export default function ChatInterface({
                       <kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px]">
                         Enter
                       </kbd>{" "}
-                      to submit
+                      to {navigationState.isEditing ? "update" : "submit"}
                     </p>
                   </form>
                 )}

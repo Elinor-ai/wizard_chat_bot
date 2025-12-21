@@ -77,7 +77,7 @@ export default function EquityBuilder({
   return (
     <div className="w-full space-y-6">
       {title && (
-        <h3 className="text-lg font-semibold text-white text-center">{title}</h3>
+        <h3 className="text-lg font-semibold text-slate-800 text-center">{title}</h3>
       )}
 
       {/* Step indicators */}
@@ -92,7 +92,7 @@ export default function EquityBuilder({
           1
         </div>
         <div
-          className={`w-12 h-1 rounded ${step >= 2 ? "bg-purple-500" : "bg-white/10"}`}
+          className={`w-12 h-1 rounded ${step >= 2 ? "bg-purple-500" : "bg-slate-200"}`}
         />
         <div
           className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
@@ -115,14 +115,14 @@ export default function EquityBuilder({
               className={`p-4 rounded-xl border transition-all text-left ${
                 value?.type === option.id
                   ? "bg-gradient-to-br from-indigo-500/30 to-purple-500/30 border-purple-400 shadow-lg shadow-purple-500/20"
-                  : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                  : "bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
               }`}
             >
               <div className="text-2xl mb-2">{option.icon}</div>
-              <div className="text-white font-semibold text-sm">
+              <div className="text-slate-800 font-semibold text-sm">
                 {option.label}
               </div>
-              <div className="text-white/50 text-xs mt-1">
+              <div className="text-slate-500 text-xs mt-1">
                 {option.description}
               </div>
             </button>
@@ -136,18 +136,18 @@ export default function EquityBuilder({
           {/* Selected type badge */}
           <button
             onClick={handleBack}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors mx-auto"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors mx-auto"
           >
             <span className="text-xl">{selectedType?.icon}</span>
-            <span className="text-white font-medium">{selectedType?.label}</span>
-            <span className="text-white/40 text-sm">← Change</span>
+            <span className="text-slate-800 font-medium">{selectedType?.label}</span>
+            <span className="text-slate-400 text-sm">← Change</span>
           </button>
 
           {/* Percentage Slider */}
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
-              <span className="text-white/60">Equity Percentage</span>
-              <span className="text-white font-bold">
+              <span className="text-slate-500">Equity Percentage</span>
+              <span className="text-slate-800 font-bold">
                 {value?.percentage?.toFixed(2)}%
               </span>
             </div>
@@ -168,7 +168,7 @@ export default function EquityBuilder({
               />
             </div>
 
-            <div className="flex justify-between text-xs text-white/40">
+            <div className="flex justify-between text-xs text-slate-400">
               <span>0%</span>
               <span>{maxPercentage}%</span>
             </div>
@@ -177,8 +177,8 @@ export default function EquityBuilder({
           {/* Vesting Schedule */}
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
-              <span className="text-white/60">Vesting Period</span>
-              <span className="text-white font-bold">
+              <span className="text-slate-500">Vesting Period</span>
+              <span className="text-slate-800 font-bold">
                 {value?.vestingYears} years
               </span>
             </div>
@@ -191,7 +191,7 @@ export default function EquityBuilder({
                   className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
                     value?.vestingYears === years
                       ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg"
-                      : "bg-white/5 text-white/60 hover:bg-white/10"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
                   {years}y
@@ -201,10 +201,10 @@ export default function EquityBuilder({
           </div>
 
           {/* Cliff Toggle */}
-          <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+          <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200">
             <div>
-              <div className="text-white font-medium">1-Year Cliff</div>
-              <div className="text-white/50 text-xs">
+              <div className="text-slate-800 font-medium">1-Year Cliff</div>
+              <div className="text-slate-500 text-xs">
                 No vesting until first year complete
               </div>
             </div>
@@ -213,7 +213,7 @@ export default function EquityBuilder({
               className={`relative w-14 h-8 rounded-full transition-all ${
                 value?.cliff
                   ? "bg-gradient-to-r from-indigo-500 to-purple-500"
-                  : "bg-white/10"
+                  : "bg-slate-200"
               }`}
             >
               <div
@@ -226,8 +226,8 @@ export default function EquityBuilder({
 
           {/* Summary */}
           <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-purple-500/20">
-            <div className="text-white/60 text-sm mb-2">Summary</div>
-            <div className="text-white">
+            <div className="text-slate-500 text-sm mb-2">Summary</div>
+            <div className="text-slate-800">
               <span className="font-bold">{value?.percentage?.toFixed(2)}%</span>{" "}
               {selectedType?.label} vesting over{" "}
               <span className="font-bold">{value?.vestingYears} years</span>
