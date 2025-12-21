@@ -102,6 +102,11 @@ config[LLM_CORE_TASK.GOLDEN_REFINE] = {
   model: GEMINI_FLASH_MODEL
 };
 
+config[LLM_CORE_TASK.GOLDEN_INTERVIEWER] = {
+  provider: "gemini",
+  model: "gemini-2.5-pro"  //  instead of GEMINI_DEFAULT_MODEL
+};
+
 // Video render still goes through the shared LLM usage pipeline for pricing/logging.
 // The model here is used for Veo logging; Sora uses its own model from VIDEO_RENDER_CONFIG.
 // Note: This is primarily for usage tracking - actual video generation uses VIDEO_RENDER_CONFIG.

@@ -41,7 +41,6 @@ export default function GradientCardGrid({
     4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
   };
 
-  // פלטת צבעים תוססת ומודרנית יותר
   const defaultGradients = [
     "from-blue-500 via-indigo-500 to-purple-600",
     "from-rose-400 via-fuchsia-500 to-indigo-500",
@@ -68,7 +67,6 @@ export default function GradientCardGrid({
           if (!option || !option.id) return null;
 
           const isSelected = selectedIds.includes(option.id);
-          // אם אין גרדיאנט מוגדר, ניקח אחד מהרשימה לפי הסדר
           const gradientClass =
             option.gradient ||
             defaultGradients[index % defaultGradients.length];

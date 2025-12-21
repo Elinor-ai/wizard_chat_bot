@@ -250,14 +250,16 @@ export function buildUserMessage({ content, uiResponse }) {
  * @param {Object} params
  * @param {string} params.content - Message content
  * @param {Object} [params.uiTool] - UI tool to display
+ * @param {string} [params.currentlyAskingField] - Schema field this question targets
  * @returns {Object} Assistant message object
  */
-export function buildAssistantMessage({ content, uiTool }) {
+export function buildAssistantMessage({ content, uiTool, currentlyAskingField }) {
   return {
     role: "assistant",
     content,
     timestamp: new Date(),
     uiTool,
+    currentlyAskingField: currentlyAskingField || null,
   };
 }
 

@@ -383,6 +383,7 @@ export class GoldenInterviewerService {
     const assistantMessage = buildAssistantMessage({
       content: firstTurnResponse.message,
       uiTool: firstTurnResponse.ui_tool,
+      currentlyAskingField: firstTurnResponse.currently_asking_field,
     });
 
     // Track lastAskedField from first turn (for skip attribution)
@@ -1060,6 +1061,7 @@ export class GoldenInterviewerService {
     const assistantMessage = buildAssistantMessage({
       content: parsed.message,
       uiTool: parsed.ui_tool,
+      currentlyAskingField: parsed.currently_asking_field,
     });
     session.conversationHistory.push(assistantMessage);
 

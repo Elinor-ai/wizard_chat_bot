@@ -12,6 +12,8 @@ export const PayFrequencyEnum = z.enum([
   "biweekly",
   "monthly",
   "annual",
+  "per_unit",
+  "per_task",
 ]);
 
 export const VariableCompensationTypeEnum = z.enum([
@@ -542,6 +544,8 @@ export const JobSecuritySchema = z.object({
   contract_length: z.string().optional(),
   conversion_possibility: z.boolean().optional(),
   probation_period: z.string().optional(),
+  background_check_required: z.boolean().optional(),
+  clearance_required: z.string().optional(),
 });
 
 export const BenefitsSecuritySchema = z.object({
@@ -706,6 +710,53 @@ export const RoleOverviewSchema = z.object({
   headcount: z.number().optional(),
   is_new_role: z.boolean().optional(),
   role_summary: z.string().optional(),
+  visa_sponsorship: z.boolean().optional(),
+  relocation_assistance: z.boolean().optional(),
+});
+
+// ============================================================================
+// SUB-SCHEMAS: Role Content (What the Job Actually Is)
+// ============================================================================
+
+// Customer interaction level enum
+export const CustomerInteractionLevelEnum = z.enum([
+  "none",
+  "occasional",
+  "frequent",
+  "primary",
+]);
+
+export const RoleContentSchema = z.object({
+  // What you'll do
+  key_responsibilities: z.array(z.string()).optional(),
+  typical_projects: z.string().optional(),
+  scope_of_role: z.string().optional(),
+
+  // Who you are (requirements)
+  required_skills: z.array(z.string()).optional(),
+  required_experience_years: z.string().optional(),
+  preferred_qualifications: z.array(z.string()).optional(),
+  education_requirements: z.string().optional(),
+  certifications_required: z.array(z.string()).optional(),
+  languages_required: z.array(z.string()).optional(),
+
+  // Tech-specific (for technical roles)
+  tech_stack: z.array(z.string()).optional(),
+  frameworks_tools: z.array(z.string()).optional(),
+
+  // The ideal candidate
+  ideal_candidate_description: z.string().optional(),
+  must_haves: z.array(z.string()).optional(),
+  nice_to_haves: z.array(z.string()).optional(),
+
+  // What success looks like
+  first_30_60_90_days: z.string().optional(),
+  key_deliverables: z.array(z.string()).optional(),
+
+  // Role logistics
+  travel_percentage: z.string().optional(),
+  customer_interaction_level: CustomerInteractionLevelEnum.optional(),
+  target_start_date: z.string().optional(),
 });
 
 // ============================================================================
@@ -739,6 +790,11 @@ export const UniversalGoldenSchema = z.object({
   // Core role information (THE BASICS)
   role_overview: RoleOverviewSchema.optional().describe(
     "Basic job information: title, location, employment type"
+  ),
+
+  // Role content (WHAT THE JOB ACTUALLY IS - responsibilities, requirements, skills)
+  role_content: RoleContentSchema.optional().describe(
+    "The core job content: responsibilities, requirements, skills, and success criteria"
   ),
 
   // Detailed sections
@@ -887,6 +943,44 @@ export function createInitialGoldenRecord(sessionId, companyId = null, companyNa
       headcount: null,
       is_new_role: null,
       role_summary: null,
+      visa_sponsorship: null,
+      relocation_assistance: null,
+    },
+
+    // =========================================================================
+    // ROLE CONTENT - What the job actually is (HIGH PRIORITY)
+    // =========================================================================
+    role_content: {
+      // What you'll do
+      key_responsibilities: null,
+      typical_projects: null,
+      scope_of_role: null,
+
+      // Who you are (requirements)
+      required_skills: null,
+      required_experience_years: null,
+      preferred_qualifications: null,
+      education_requirements: null,
+      certifications_required: null,
+      languages_required: null,
+
+      // Tech-specific (for technical roles)
+      tech_stack: null,
+      frameworks_tools: null,
+
+      // The ideal candidate
+      ideal_candidate_description: null,
+      must_haves: null,
+      nice_to_haves: null,
+
+      // What success looks like
+      first_30_60_90_days: null,
+      key_deliverables: null,
+
+      // Role logistics
+      travel_percentage: null,
+      customer_interaction_level: null,
+      target_start_date: null,
     },
 
     // =========================================================================
@@ -1167,6 +1261,8 @@ export function createInitialGoldenRecord(sessionId, companyId = null, companyNa
         contract_length: null,
         conversion_possibility: null,
         probation_period: null,
+        background_check_required: null,
+        clearance_required: null,
       },
       benefits_security: {
         health_insurance: null,

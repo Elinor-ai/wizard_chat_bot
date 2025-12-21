@@ -2,6 +2,30 @@ import { llmLogger } from "./logger.js";
 import { safePreview } from "./utils/parsing.js";
 import { getRequestContext } from "./request-context.js";
 
+// Exponential backoff delays in milliseconds: [1s, 3s]
+const RETRY_DELAYS_MS = [1000, 3000];
+
+/**
+ * Check if an error is a rate limit error (HTTP 429)
+ */
+function isRateLimitError(error) {
+  if (!error) return false;
+  const errorStr = String(error?.message ?? error);
+  return (
+    errorStr.includes("429") ||
+    errorStr.includes("RESOURCE_EXHAUSTED") ||
+    errorStr.includes("rate limit") ||
+    errorStr.includes("quota")
+  );
+}
+
+/**
+ * Sleep for a given number of milliseconds
+ */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class LlmOrchestrator {
   constructor({ adapters, policy, tasks }) {
     this.adapters = adapters;
@@ -43,11 +67,12 @@ export class LlmOrchestrator {
       throw new Error(`No adapter registered for provider ${selection.provider}`);
     }
 
-    const retries = task.retries ?? 1;
+    // Default to 3 attempts (initial + 2 retries with exponential backoff)
+    const maxAttempts = task.retries ?? 3;
     let attempt = 0;
     let lastError = null;
 
-    while (attempt < retries) {
+    while (attempt < maxAttempts) {
       const strictMode = Boolean(task.strictOnRetry && attempt > 0);
       const builderContext = { ...context, attempt, strictMode };
       const userPrompt = task.builder(builderContext);
@@ -111,6 +136,22 @@ export class LlmOrchestrator {
           "LLM adapter invocation failed"
         );
         attempt += 1;
+
+        // Apply exponential backoff delay before retry (especially for rate limits)
+        if (attempt < maxAttempts) {
+          const delayMs = RETRY_DELAYS_MS[attempt - 1] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
+          const isRateLimit = isRateLimitError(error);
+          llmLogger.info(
+            {
+              task: taskName,
+              attempt,
+              delayMs,
+              isRateLimit,
+            },
+            `Retrying after ${delayMs}ms delay`
+          );
+          await sleep(delayMs);
+        }
         continue;
       }
 
@@ -170,6 +211,20 @@ export class LlmOrchestrator {
       );
 
       attempt += 1;
+
+      // Apply exponential backoff delay before retry
+      if (attempt < maxAttempts) {
+        const delayMs = RETRY_DELAYS_MS[attempt - 1] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
+        llmLogger.info(
+          {
+            task: taskName,
+            attempt,
+            delayMs,
+          },
+          `Retrying after ${delayMs}ms delay (parser failure)`
+        );
+        await sleep(delayMs);
+      }
     }
 
     return {

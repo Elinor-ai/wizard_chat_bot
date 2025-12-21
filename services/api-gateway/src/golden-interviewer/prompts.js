@@ -239,14 +239,46 @@ The foundational information about the role. **These fields MUST be filled first
 | department | Which team/department | Helps candidates understand org structure. |
 | location_city, location_state, location_country | Physical location (if applicable) | Required for on-site or hybrid roles. |
 | role_summary | Brief overview of the role | Sets expectations and helps with search. |
+| visa_sponsorship | Whether company sponsors work visas | Critical for international candidates - often a deal-breaker. |
+| relocation_assistance | Whether company helps with relocation | Important for out-of-area candidates considering the role. |
 
 **MANDATORY FIELDS**: \`role_overview.job_title\`, \`role_overview.company_name\`, \`role_overview.employment_type\`, \`role_overview.location_type\` - these CANNOT be skipped.
 
 **Golden Questions**:
 - "What's the official job title for this role?"
 - "Is this fully remote, hybrid, or on-site?"
+- "Do you offer visa sponsorship or relocation assistance?"
 
-## 1. FINANCIAL REALITY
+## 1. ROLE CONTENT (HIGH PRIORITY - Ask After Mandatory Fields)
+The actual substance of the job - what candidates will DO, what skills they NEED, and what makes someone ideal for this role.
+
+| Field | Description | Why It Matters |
+|-------|-------------|----------------|
+| key_responsibilities | Main duties and tasks | The #1 thing candidates want to know: "What will I actually be doing?" |
+| required_skills | Must-have skills for the role | Helps candidates self-select and shows what's truly necessary. |
+| required_experience_years | How much experience is needed | Critical filter - saves everyone time if expectations are clear. |
+| certifications_required | Required licenses/certifications (RN, CPA, PMP, etc.) | Critical for healthcare, legal, finance, trades - often non-negotiable. |
+| languages_required | Languages needed for the role | Essential for global/customer-facing roles. |
+| tech_stack | Technologies used (for tech roles) | Developers care deeply about this - it affects their career trajectory. |
+| must_haves | Non-negotiable requirements | Honest clarity about deal-breakers builds trust. |
+| nice_to_haves | Preferred but not required | Encourages more candidates to apply if they meet most criteria. |
+| ideal_candidate_description | Who thrives in this role | Paints a picture beyond just skills - personality, work style, values. |
+| typical_projects | Examples of projects they'll work on | Brings the role to life with concrete examples. |
+| first_30_60_90_days | Onboarding expectations | Shows the company has a plan and cares about success. |
+| key_deliverables | What success looks like | Helps candidates understand how they'll be measured. |
+| travel_percentage | How much travel is required (0%, 10-25%, 50%+) | Major lifestyle factor - often a deal-breaker if unexpected. |
+| customer_interaction_level | How much customer/client facing (none/occasional/frequent/primary) | Personality fit - introverts vs extroverts self-select based on this. |
+| target_start_date | When does the company need someone to start | Helps candidates plan and shows urgency level. |
+
+**Golden Questions**:
+- "What are the 3-5 main things this person will be doing day-to-day?"
+- "What skills or experience are absolute must-haves vs. nice-to-haves?"
+- "What does the ideal candidate look like beyond just the resume?"
+- "What technologies or tools will they be working with?"
+- "Are there any required certifications or licenses?"
+- "How much travel is involved, if any?"
+
+## 2. FINANCIAL REALITY
 The complete compensation picture - what candidates actually take home.
 
 | Field | Description | Why It Matters |
@@ -263,7 +295,7 @@ The complete compensation picture - what candidates actually take home.
 - "Walk me through the total compensation - base, variable, and any extras?"
 - "What perks do employees usually forget have real dollar value?"
 
-## 2. TIME AND LIFE
+## 3. TIME AND LIFE
 How this job fits into someone's actual life.
 
 | Field | Description | Why It Matters |
@@ -280,7 +312,7 @@ How this job fits into someone's actual life.
 - "When does the schedule come out, and how much say do people have in it?"
 - "If I have a doctor's appointment on Tuesday morning, how hard is it to make that work?"
 
-## 3. ENVIRONMENT
+## 4. ENVIRONMENT
 The physical context where work happens.
 
 | Field | Description | Why It Matters |
@@ -295,7 +327,7 @@ The physical context where work happens.
 - "Describe the vibe of the space when you walk in - is it buzzing, quiet, industrial?"
 - "What's the best lunch spot within walking distance?"
 
-## 4. HUMANS AND CULTURE
+## 5. HUMANS AND CULTURE
 The social fabric of the team.
 
 | Field | Description | Why It Matters |
@@ -311,7 +343,7 @@ The social fabric of the team.
 - "What's the one thing the team bonds over?"
 - "How does the manager handle it when someone makes a mistake?"
 
-## 5. GROWTH TRAJECTORY
+## 6. GROWTH TRAJECTORY
 The future version of the candidate.
 
 | Field | Description | Why It Matters |
@@ -326,7 +358,7 @@ The future version of the candidate.
 - "Who is the most successful person on the team, and how did they get there?"
 - "What new skills will someone definitely learn in their first 6 months?"
 
-## 6. STABILITY SIGNALS
+## 7. STABILITY SIGNALS
 Safety and security.
 
 | Field | Description | Why It Matters |
@@ -334,12 +366,15 @@ Safety and security.
 | company_health | Stage (startup/mature), revenue trend, funding | Job security anxiety is real; data kills fear. |
 | job_security | Contract type, probation, permanence | Fundamental hierarchy of needs. |
 | benefits_security | Health, dental, retirement matching | Long-term security for self and family. |
+| background_check_required | Whether background check is required | Sets expectations and avoids surprises late in process. |
+| clearance_required | Security clearance level needed (none/secret/top_secret) | Critical for government/defense roles - major filter. |
 
 **Golden Questions**:
 - "How has the team changed in size over the last year?"
 - "Is this a new role or a backfill?"
+- "Does this role require any background checks or security clearances?"
 
-## 7. ROLE REALITY
+## 8. ROLE REALITY
 The actual work, devoid of fluff.
 
 | Field | Description | Why It Matters |
@@ -354,7 +389,7 @@ The actual work, devoid of fluff.
 - "What's the hardest part of this job that usually surprises people?"
 - "If I crush it in this role, what does that look like numerically?"
 
-## 8. UNIQUE VALUE
+## 9. UNIQUE VALUE
 The "X-Factor" differentiators.
 
 | Field | Description | Why It Matters |
@@ -593,6 +628,141 @@ ${
       : ""
   }
 `;
+}
+
+// =============================================================================
+// CONVERSATION HISTORY BUILDER
+// =============================================================================
+
+/**
+ * Builds a formatted conversation history section for the prompt.
+ * Shows what questions were asked (with target field) and what the user answered.
+ *
+ * @param {array} conversationHistory - Array of conversation messages
+ * @returns {string} - Formatted conversation history section
+ */
+function buildConversationHistorySection(conversationHistory) {
+  if (!conversationHistory || conversationHistory.length === 0) {
+    return "";
+  }
+
+  const turns = [];
+  let turnNumber = 0;
+
+  for (let i = 0; i < conversationHistory.length; i++) {
+    const msg = conversationHistory[i];
+
+    if (msg.role === "assistant") {
+      turnNumber++;
+      const turn = {
+        number: turnNumber,
+        question: msg.content,
+        field: msg.currentlyAskingField || null,
+        uiToolType: msg.uiTool?.type || null,
+        userResponse: null,
+      };
+
+      // Look for the next user message as the response
+      if (i + 1 < conversationHistory.length) {
+        const nextMsg = conversationHistory[i + 1];
+        if (nextMsg.role === "user") {
+          // Format user response based on what's available
+          if (nextMsg.skipAction?.isSkip) {
+            turn.userResponse = "[SKIPPED]";
+          } else if (nextMsg.uiResponse !== undefined && nextMsg.uiResponse !== null) {
+            // Format UI response (could be string, array, or object)
+            turn.userResponse = formatUserResponse(nextMsg.uiResponse);
+          } else if (nextMsg.content && nextMsg.content.trim()) {
+            turn.userResponse = nextMsg.content;
+          } else {
+            turn.userResponse = "[No response]";
+          }
+        }
+      }
+
+      turns.push(turn);
+    }
+  }
+
+  if (turns.length === 0) {
+    return "";
+  }
+
+  // Build the formatted output
+  let output = `## CONVERSATION HISTORY
+
+Below is the full conversation so far. Use this to maintain context and avoid repeating questions.
+
+`;
+
+  for (const turn of turns) {
+    output += `### Turn ${turn.number}\n`;
+    output += `**You asked:** "${truncateText(turn.question, 200)}"\n`;
+    if (turn.field) {
+      output += `**Target field:** \`${turn.field}\`\n`;
+    }
+    if (turn.uiToolType) {
+      output += `**UI Tool:** ${turn.uiToolType}\n`;
+    }
+    if (turn.userResponse) {
+      output += `**User answered:** ${turn.userResponse}\n`;
+    }
+    output += "\n";
+  }
+
+  return output;
+}
+
+/**
+ * Format user response for display in history
+ * @param {*} response - The UI response (string, array, or object)
+ * @returns {string} - Formatted response string
+ */
+function formatUserResponse(response) {
+  if (response === null || response === undefined) {
+    return "[No response]";
+  }
+
+  if (typeof response === "string") {
+    return `"${truncateText(response, 150)}"`;
+  }
+
+  if (Array.isArray(response)) {
+    if (response.length === 0) {
+      return "[Empty selection]";
+    }
+    // For arrays, show the values (could be strings or objects with labels)
+    const items = response.map((item) => {
+      if (typeof item === "string") return item;
+      if (item?.label) return item.label;
+      if (item?.id) return item.id;
+      return JSON.stringify(item);
+    });
+    return `[${items.join(", ")}]`;
+  }
+
+  if (typeof response === "object") {
+    // For objects, try to get a meaningful representation
+    if (response.label) return `"${response.label}"`;
+    if (response.value !== undefined) return `${response.value}`;
+    // Fallback to compact JSON
+    return JSON.stringify(response);
+  }
+
+  return String(response);
+}
+
+/**
+ * Truncate text to a maximum length with ellipsis
+ * @param {string} text - Text to truncate
+ * @param {number} maxLength - Maximum length
+ * @returns {string} - Truncated text
+ */
+function truncateText(text, maxLength) {
+  if (!text || text.length <= maxLength) {
+    return text || "";
+  }
+  return text.substring(0, maxLength - 3) + "...";
 }
 
 // =============================================================================
@@ -1060,10 +1230,19 @@ ${GOLDEN_SCHEMA_REFERENCE}
 
 ## INTERVIEW STRATEGY
 
-1. **Start Broad, Then Drill Down**: Begin with the basics (Overview), then move to high-impact areas (Rewards, Lifestyle).
-2. **Use the "Golden Questions"**: Model your questions after the examples in the schema reference. They are designed to elicit rich, non-generic answers.
-3. **Validate with UI**: Use the UI tools to confirm complex data (like salary ranges or equity) so the user just has to adjust a slider rather than typing numbers.
-4. **Handling Skips**: If a user skips a question, follow the Friction Protocol defined above.
+1. **Start with Mandatory Fields**: Get the basics first (job_title, company_name, employment_type, location_type).
+2. **THEN Ask About Role Content**: After mandatory fields, PRIORITIZE role_content fields - responsibilities, required skills, tech stack, what success looks like. This is what candidates care about MOST.
+3. **Financial and Lifestyle Later**: Only after understanding WHAT the job is, ask about compensation, schedule, and benefits.
+4. **Use the "Golden Questions"**: Model your questions after the examples in the schema reference. They are designed to elicit rich, non-generic answers.
+5. **Validate with UI**: Use the UI tools to confirm complex data (like salary ranges or equity) so the user just has to adjust a slider rather than typing numbers.
+6. **Handling Skips**: If a user skips a question, follow the Friction Protocol defined above.
+
+**PRIORITY ORDER:**
+1. Mandatory fields (role_overview basics)
+2. **Role Content** (what you'll do, skills needed, tech stack)
+3. Financial Reality (compensation, benefits)
+4. Time and Life (schedule, flexibility)
+5. Everything else (environment, culture, growth)
 
 ## FIRST TURN INSTRUCTIONS
 
@@ -1078,6 +1257,14 @@ If this is the first turn:
 2. \`role_overview.company_name\` - What company is hiring? (may be pre-filled)
 3. \`role_overview.employment_type\` - Full-time, part-time, contract?
 4. \`role_overview.location_type\` - Remote, hybrid, or on-site?
+
+**AFTER MANDATORY FIELDS**: Immediately move to ROLE CONTENT questions:
+- \`role_content.key_responsibilities\` - What will this person actually DO?
+- \`role_content.required_skills\` - What skills are must-haves?
+- \`role_content.tech_stack\` - What technologies will they work with? (for tech roles)
+- \`role_content.ideal_candidate_description\` - Who thrives in this role?
+
+**DO NOT** jump straight to compensation after mandatory fields. Candidates want to know WHAT the job is before they care about pay.
 `;
 }
 
@@ -1150,7 +1337,7 @@ export function buildContinueTurnPrompt({
   const companyContext = buildCompanyContextSection(companyData);
   const userContext = buildUserContextSection(currentSchema);
   const frictionContext = buildFrictionContextSection(frictionState);
-  const historyContext = ""; // TODO: Add conversation history if needed
+  const historyContext = buildConversationHistorySection(conversationHistory);
 
   // Get context-aware field analysis
   const { missing, skipped, archetype } = identifyMissingFields(currentSchema);
@@ -1332,6 +1519,7 @@ function estimateSchemaCompletion(schema) {
   if (!schema || typeof schema !== "object") return 0;
 
   const topLevelSections = [
+    "role_content",
     "financial_reality",
     "time_and_life",
     "environment",
@@ -1394,7 +1582,28 @@ function countFilledFields(obj) {
  */
 function identifyMissingFields(schema, roleArchetype = null) {
   // All possible priority fields
+  // ROLE CONTENT fields are at the TOP - they should be asked first after mandatory fields
   const allPriorityFields = [
+    // === ROLE OVERVIEW (non-mandatory but important) ===
+    "role_overview.visa_sponsorship",
+    "role_overview.relocation_assistance",
+    // === ROLE CONTENT (HIGH PRIORITY - Ask these first!) ===
+    "role_content.key_responsibilities",
+    "role_content.required_skills",
+    "role_content.required_experience_years",
+    "role_content.certifications_required",
+    "role_content.languages_required",
+    "role_content.tech_stack",
+    "role_content.must_haves",
+    "role_content.nice_to_haves",
+    "role_content.ideal_candidate_description",
+    "role_content.typical_projects",
+    "role_content.first_30_60_90_days",
+    "role_content.key_deliverables",
+    "role_content.travel_percentage",
+    "role_content.customer_interaction_level",
+    "role_content.target_start_date",
+    // === FINANCIAL REALITY ===
     "financial_reality.base_compensation.amount_or_range",
     "financial_reality.base_compensation.pay_frequency",
     "financial_reality.variable_compensation.tips",
@@ -1404,6 +1613,7 @@ function identifyMissingFields(schema, roleArchetype = null) {
     "financial_reality.raises_and_reviews.review_frequency",
     "financial_reality.hidden_financial_value.meals_provided",
     "financial_reality.payment_reliability.payment_method",
+    // === TIME AND LIFE ===
     "time_and_life.schedule_pattern.type",
     "time_and_life.schedule_pattern.typical_hours_per_week",
     "time_and_life.schedule_predictability.advance_notice",
@@ -1414,27 +1624,35 @@ function identifyMissingFields(schema, roleArchetype = null) {
     "time_and_life.commute_reality.parking_situation",
     "time_and_life.break_reality.paid_breaks",
     "time_and_life.overtime_reality.overtime_expected",
+    // === ENVIRONMENT ===
     "environment.physical_space.type",
     "environment.workspace_quality.noise_level",
     "environment.amenities.kitchen",
     "environment.safety_and_comfort.physical_demands",
+    // === HUMANS AND CULTURE ===
     "humans_and_culture.team_composition.team_size",
     "humans_and_culture.management_style.management_approach",
     "humans_and_culture.social_dynamics.team_bonding",
     "humans_and_culture.communication_culture.meeting_load",
     "humans_and_culture.turnover_context.average_tenure",
+    // === GROWTH TRAJECTORY ===
     "growth_trajectory.learning_opportunities.mentorship_available",
     "growth_trajectory.formal_development.training_provided",
     "growth_trajectory.career_path.promotion_path",
     "growth_trajectory.skill_building.technologies_used",
+    // === STABILITY SIGNALS ===
     "stability_signals.company_health.company_stage",
     "stability_signals.job_security.position_type",
+    "stability_signals.job_security.background_check_required",
+    "stability_signals.job_security.clearance_required",
     "stability_signals.benefits_security.health_insurance",
+    // === ROLE REALITY ===
     "role_reality.day_to_day.typical_day_description",
     "role_reality.autonomy.decision_authority",
     "role_reality.workload.intensity",
     "role_reality.success_metrics.how_measured",
     "role_reality.pain_points_honesty.challenges",
+    // === UNIQUE VALUE ===
     "unique_value.hidden_perks.list",
     "unique_value.status_signals.brand_value",
     "unique_value.personal_meaning.mission_connection",

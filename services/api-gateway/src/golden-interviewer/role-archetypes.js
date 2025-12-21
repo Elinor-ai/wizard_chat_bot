@@ -148,6 +148,82 @@ export const ROLE_ARCHETYPES = {
  */
 export const FIELD_RELEVANCE_MAP = {
   // =========================================================================
+  // ROLE OVERVIEW
+  // =========================================================================
+  "role_overview.visa_sponsorship": {
+    hourly_service: "skip",        // Rarely relevant
+    hourly_skilled: "optional",    // Some trades may need
+    salaried_entry: "optional",
+    salaried_professional: "optional",
+    tech_startup: "required",      // Common question for global talent
+    executive: "optional",
+    gig_contract: "skip",
+  },
+
+  "role_overview.relocation_assistance": {
+    hourly_service: "skip",
+    hourly_skilled: "skip",
+    salaried_entry: "optional",
+    salaried_professional: "optional",
+    tech_startup: "optional",
+    executive: "required",         // Often part of exec packages
+    gig_contract: "skip",
+  },
+
+  // =========================================================================
+  // ROLE CONTENT
+  // =========================================================================
+  "role_content.certifications_required": {
+    hourly_service: "optional",    // Food handler, etc.
+    hourly_skilled: "required",    // CDL, forklift, certifications critical
+    salaried_entry: "optional",
+    salaried_professional: "required",  // CPA, PMP, etc.
+    tech_startup: "optional",      // Some certs (AWS, etc.)
+    executive: "skip",
+    gig_contract: "optional",
+  },
+
+  "role_content.languages_required": {
+    hourly_service: "required",    // Customer-facing, bilingual needs
+    hourly_skilled: "optional",
+    salaried_entry: "optional",
+    salaried_professional: "optional",
+    tech_startup: "optional",
+    executive: "optional",
+    gig_contract: "optional",
+  },
+
+  "role_content.travel_percentage": {
+    hourly_service: "skip",        // No travel
+    hourly_skilled: "optional",    // Some delivery/driving
+    salaried_entry: "optional",
+    salaried_professional: "required",  // Sales, consulting travel
+    tech_startup: "optional",
+    executive: "required",         // Often heavy travel
+    gig_contract: "optional",
+  },
+
+  "role_content.customer_interaction_level": {
+    hourly_service: "required",    // Core to the job
+    hourly_skilled: "optional",
+    salaried_entry: "optional",
+    salaried_professional: "required",  // Many client-facing roles
+    tech_startup: "optional",
+    executive: "required",
+    gig_contract: "optional",
+  },
+
+  "role_content.target_start_date": {
+    hourly_service: "required",    // Often need to start soon
+    hourly_skilled: "required",
+    salaried_entry: "optional",
+    salaried_professional: "optional",
+    tech_startup: "optional",
+    executive: "optional",
+    gig_contract: "required",      // Project timelines
+  },
+
+  // =========================================================================
   // FINANCIAL REALITY
   // =========================================================================
   "financial_reality.base_compensation": {
@@ -483,6 +559,26 @@ export const FIELD_RELEVANCE_MAP = {
     tech_startup: "optional",      // Inherent risk accepted
     executive: "optional",
     gig_contract: "required",      // Contract terms matter
+  },
+
+  "stability_signals.job_security.background_check_required": {
+    hourly_service: "optional",    // Some retail/cash handling
+    hourly_skilled: "required",    // Warehouse, driving often require
+    salaried_entry: "optional",
+    salaried_professional: "optional",
+    tech_startup: "optional",
+    executive: "required",         // Almost always checked
+    gig_contract: "optional",
+  },
+
+  "stability_signals.job_security.clearance_required": {
+    hourly_service: "skip",
+    hourly_skilled: "optional",    // Some government contractors
+    salaried_entry: "optional",
+    salaried_professional: "optional",
+    tech_startup: "optional",
+    executive: "optional",
+    gig_contract: "optional",
   },
 
   "stability_signals.benefits_security": {
