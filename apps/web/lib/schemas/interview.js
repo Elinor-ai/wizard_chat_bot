@@ -28,6 +28,28 @@ const goldenRefineResultSchema = z.object({
   reasoning: z.string().optional(),
 }).optional().nullable();
 
+// Navigation state schema - tracks position in interview history
+const goldenNavigationSchema = z.object({
+  currentIndex: z.number(),
+  maxIndex: z.number(),
+  canGoBack: z.boolean(),
+  canGoForward: z.boolean(),
+  isEditing: z.boolean(),
+}).optional().nullable();
+
+// Previous response schema - for editing flow
+const goldenPreviousResponseSchema = z.object({
+  message: z.string().optional(),
+  uiResponse: z.unknown().optional(),
+}).optional().nullable();
+
+// Friction state schema - for skip tracking
+const goldenFrictionStateSchema = z.object({
+  consecutive_skips: z.number().optional(),
+  total_skips: z.number().optional(),
+  current_strategy: z.string().optional(),
+}).optional().nullable();
+
 const goldenInterviewResponseDataSchema = z.object({
   message: z.string().optional(),
   ui_tool: goldenInterviewUiToolSchema,
@@ -39,6 +61,16 @@ const goldenInterviewResponseDataSchema = z.object({
   refine_result: goldenRefineResultSchema,
   // Current field being asked (for frontend to control skip button visibility)
   currently_asking_field: z.string().optional().nullable(),
+  // Navigation state - tracks position in interview history
+  navigation: goldenNavigationSchema,
+  // Previous response - for editing flow (pre-fill user's old answer)
+  previous_response: goldenPreviousResponseSchema,
+  // Friction state - for skip tracking
+  friction_state: goldenFrictionStateSchema,
+  // Flag for frontend to show completion UI
+  is_complete: z.boolean().optional(),
+  // Flag indicating this was an edit of a previous turn
+  was_edit: z.boolean().optional(),
 });
 
 const goldenInterviewStartResponseSchema = z
@@ -60,6 +92,7 @@ const goldenInterviewStartResponseSchema = z
         interview_phase: data.response.interview_phase,
         context_explanation: data.response.context_explanation,
         currently_asking_field: data.response.currently_asking_field,
+        navigation: data.response.navigation,
       };
     }
     return {
@@ -70,6 +103,7 @@ const goldenInterviewStartResponseSchema = z
       interview_phase: undefined,
       context_explanation: undefined,
       currently_asking_field: undefined,
+      navigation: undefined,
     };
   });
 

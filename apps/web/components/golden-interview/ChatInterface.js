@@ -129,9 +129,18 @@ export default function ChatInterface({
       setIsInitializing(true);
       setError(null);
 
-      // Check for existing session in URL or localStorage
+      // Check if this is an explicit "new interview" request
+      const isNewRequest = searchParams.get("new") === "true";
+
+      // If new=true, clear any stored session and start fresh
+      if (isNewRequest && typeof window !== "undefined") {
+        localStorage.removeItem(STORAGE_KEY);
+        console.log("[ChatInterface] New interview requested, cleared stored session");
+      }
+
+      // Check for existing session in URL or localStorage (skip localStorage if new=true)
       const urlSessionId = searchParams.get("session");
-      const storedSessionId = typeof window !== "undefined"
+      const storedSessionId = (!isNewRequest && typeof window !== "undefined")
         ? localStorage.getItem(STORAGE_KEY)
         : null;
       const existingSessionId = urlSessionId || storedSessionId;
@@ -241,6 +250,7 @@ export default function ChatInterface({
         }
         const params = new URLSearchParams(searchParams.toString());
         params.set("session", response.sessionId);
+        params.delete("new"); // Remove the new=true param after session is created
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
 
         // Map snake_case API response to camelCase state

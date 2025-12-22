@@ -8,7 +8,8 @@
  * - Uses (item.id || index) for React keys to prevent duplicate key warnings
  */
 export default function BipolarScaleList({
-  items,
+  items: initialItems,
+  value,
   onChange,
   min = -50,
   max = 50,
@@ -17,8 +18,8 @@ export default function BipolarScaleList({
   rightColor = "#ef4444",
   showValues = false,
 }) {
-  // 1. Safety Check: Prevent crash if items is null/undefined
-  const safeItems = items || [];
+  // 1. Safety Check: Use value (user's response) if available, otherwise use initialItems from LLM
+  const safeItems = value || initialItems || [];
 
   // FIX: Use index-based update to handle items without IDs
   const handleItemChange = (index, newValue) => {

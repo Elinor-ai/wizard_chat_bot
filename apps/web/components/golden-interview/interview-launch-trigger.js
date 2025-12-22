@@ -45,14 +45,17 @@ export function InterviewLaunchTrigger({ children }) {
     (company) => {
       setIsOpen(false);
 
+      // Build URL with new=true to force a new session (don't restore old one)
+      const params = new URLSearchParams();
+      params.set("new", "true");
+
       if (!company?.id) {
         // Fallback: navigate without context (agent will ask)
-        router.push("/golden-interview");
+        router.push(`/golden-interview?${params.toString()}`);
         return;
       }
 
-      // Build URL with both companyId and companyName for immediate UI display
-      const params = new URLSearchParams();
+      // Add companyId and companyName for immediate UI display
       params.set("companyId", company.id);
 
       if (company.name) {
@@ -66,7 +69,8 @@ export function InterviewLaunchTrigger({ children }) {
 
   const handleSkipCompany = useCallback(() => {
     setIsOpen(false);
-    router.push("/golden-interview");
+    // Force new session even when skipping company selection
+    router.push("/golden-interview?new=true");
   }, [router]);
 
   return (
