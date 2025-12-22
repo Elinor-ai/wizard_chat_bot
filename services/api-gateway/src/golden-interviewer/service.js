@@ -418,12 +418,12 @@ export class GoldenInterviewerService {
     // Extract only the fields needed for the prompt
     const companyDataForPrompt = companyData
       ? {
-          name: companyData.name,
-          industry: companyData.industry,
-          description: companyData.longDescription || companyData.description,
-          employeeCountBucket: companyData.employeeCountBucket,
-          toneOfVoice: companyData.toneOfVoice,
-        }
+        name: companyData.name,
+        industry: companyData.industry,
+        description: companyData.longDescription || companyData.description,
+        employeeCountBucket: companyData.employeeCountBucket,
+        toneOfVoice: companyData.toneOfVoice,
+      }
       : null;
 
     const firstTurnResponse = await this.generateFirstTurn(
@@ -1755,11 +1755,12 @@ export class GoldenInterviewerService {
     const nextIndex = Math.min(currentNavIndex + 1, maxIndex);
     const nextTurn = getTurnByIndex(session, nextIndex);
 
-    // Clear navigation index since user is moving forward
-    // NOTE: Using null instead of delete to ensure Firestore properly clears the field
-    session.metadata.navigationIndex = null;
+    // Clear navigation index only if we've reached the end (latest turn)
+    // If we're still in the past, update navigationIndex to the next turn so user stays in "review mode"
+    const isStillInPast = nextIndex < maxIndex;
+    session.metadata.navigationIndex = isStillInPast ? nextIndex : null;
 
-    console.log(`🧭 [handleEditTurn] Clearing navigationIndex. Before: ${currentNavIndex}, After: ${session.metadata.navigationIndex}`);
+    console.log(`🧭 [handleEditTurn] Updated navigationIndex. Before: ${currentNavIndex}, After: ${session.metadata.navigationIndex}`);
 
     await saveSession({
       firestore: this.firestore,
@@ -1856,8 +1857,8 @@ export class GoldenInterviewerService {
     // Check if skipped field is sensitive
     const isSensitiveField = skippedField
       ? GoldenInterviewerService.SENSITIVE_FIELDS.some((sensitive) =>
-          skippedField.startsWith(sensitive)
-        )
+        skippedField.startsWith(sensitive)
+      )
       : false;
 
     // Level 3: High friction - defer and move on

@@ -355,6 +355,38 @@ describe("Golden Interviewer Flow", () => {
       const llmCall = internalLlmCalls.find((c) => c.url.includes("/api/llm"));
       expect(llmCall.body.context).toHaveProperty("uiResponse");
     });
+
+    it("triggers refinement for custom input when allowCustomInput was true", async () => {
+      // Seed session with allowCustomInput: true in metadata
+      mockFirestore._seedDocument(
+        "golden_interview_sessions",
+        "custom_input_session",
+        createTestSession({
+          sessionId: "custom_input_session",
+          userId: TEST_USER_ID,
+          metadata: {
+            completionPercentage: 10,
+            currentPhase: "discovery",
+            lastToolUsed: "icon_grid",
+            lastToolAllowCustomInput: true, // Key flag
+            lastAskedField: "growth_trajectory.skill_building.technologies_used", // Required for context
+          },
+        })
+      );
+
+      await request(app)
+        .post("/golden-interview/chat")
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          sessionId: "custom_input_session",
+          userMessage: "My Custom Tool",
+        });
+
+      // Verify "golden_refine" task was called
+      const refineCall = internalLlmCalls.find(c => c.body?.taskType === "golden_refine");
+      expect(refineCall).toBeDefined();
+      expect(refineCall.body.context).toHaveProperty("userMessage", "My Custom Tool");
+    });
   });
 
   // ===========================================================================
