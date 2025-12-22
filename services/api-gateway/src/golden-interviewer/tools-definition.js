@@ -18,29 +18,29 @@ export const UI_TOOLS_SCHEMA = {
   circular_gauge: {
     name: "circular_gauge",
     description:
-      "A circular SVG slider for selecting numerical values within a range. Includes labeled markers on the gauge arc for reference points (e.g., 'Entry', 'Market', 'Expert'). Ideal for salary, budget, team size, or any numeric input where a visual dial metaphor works well.",
+      "A circular SVG slider for selecting numerical values or ranges within a scale. Features a modern gradient arc with tick marks. Supports both single values and range objects ({min, max}). Ideal for salary, budget, team size, or any numeric input where a visual dial metaphor works well.",
     category: "visual_quantifiers",
-    valueType: "number",
+    valueType: "number | object",
     props: {
       label: {
         type: "string",
         description:
-          "Title displayed in the center of the gauge above the value. REQUIRED.",
-        required: true,
+          "Title displayed in the center of the gauge above the value.",
+        required: false,
         example: "Annual Compensation",
       },
       min: {
         type: "number",
-        description:
-          "Minimum value of the scale. REQUIRED. Markers must have values >= this.",
-        required: true,
+        description: "Minimum value of the scale.",
+        required: false,
+        default: 0,
         example: 30000,
       },
       max: {
         type: "number",
-        description:
-          "Maximum value of the scale. REQUIRED. Markers must have values <= this.",
-        required: true,
+        description: "Maximum value of the scale.",
+        required: false,
+        default: 100,
         example: 150000,
       },
       step: {
@@ -65,43 +65,84 @@ export const UI_TOOLS_SCHEMA = {
         default: "",
         example: "$",
       },
-      markers: {
-        type: "array",
-        description:
-          "Reference markers displayed on the gauge arc. Each marker's value MUST be within [min, max] range.",
-        required: true,
-        items: {
-          type: "object",
-          required: ["value", "label"],
-          properties: {
-            value: {
-              type: "number",
-              description:
-                "Numeric position on the gauge (must be >= min and <= max)",
-            },
-            label: {
-              type: "string",
-              description: "Text label displayed at this position",
-            },
-          },
-        },
-        example: [
-          { value: 45000, label: "Entry" },
-          { value: 85000, label: "Market" },
-          { value: 130000, label: "Expert" },
-        ],
+      size: {
+        type: "number",
+        description: "SVG size in pixels",
+        required: false,
+        default: 300,
+        example: 300,
       },
     },
     useCases: [
-      "Salary range selection with market benchmarks",
-      "Team size estimation with tier labels",
-      "Budget allocation with category markers",
-      "Percentage selection with threshold indicators",
+      "Salary range selection",
+      "Team size estimation",
+      "Budget allocation",
+      "Percentage selection",
     ],
     schemaMapping: [
       "financial_reality.base_compensation.amount_or_range",
       "humans_and_culture.team_composition.team_size",
       "humans_and_culture.team_composition.direct_reports",
+    ],
+  },
+
+  linear_slider: {
+    name: "linear_slider",
+    description:
+      "A horizontal linear slider bar for selecting a value or a range (min/max). Supports both single values and range objects with min/max properties. Great for simple numeric inputs or budget/price ranges.",
+    category: "visual_quantifiers",
+    valueType: "number | object",
+    props: {
+      label: {
+        type: "string",
+        description: "Label for the slider (for context)",
+        required: false,
+      },
+      min: {
+        type: "number",
+        description: "Minimum value of the scale",
+        required: false,
+        default: 0,
+        example: 0,
+      },
+      max: {
+        type: "number",
+        description: "Maximum value of the scale",
+        required: false,
+        default: 100,
+        example: 100,
+      },
+      step: {
+        type: "number",
+        description: "Step increment",
+        required: false,
+        default: 1,
+        example: 1,
+      },
+      unit: {
+        type: "string",
+        description: "Unit suffix (e.g., '%')",
+        required: false,
+        default: "",
+        example: "%",
+      },
+      prefix: {
+        type: "string",
+        description: "Prefix (e.g., '$')",
+        required: false,
+        default: "",
+        example: "$",
+      },
+    },
+    useCases: [
+      "Budget or price range selection",
+      "Percentage allocation",
+      "Numeric range inputs",
+      "Simple value selection",
+    ],
+    schemaMapping: [
+      "financial_reality.base_compensation.amount_or_range",
+      "time_and_life.schedule_pattern.typical_hours_per_week",
     ],
   },
 

@@ -6,6 +6,7 @@
 
 // Visual Quantifiers & Sliders
 import CircularGauge from "./inputs/CircularGauge";
+import LinearSlider from "./inputs/LinearSlider";
 import StackedBarInput from "./inputs/StackedBarInput";
 import EquityBuilder from "./inputs/EquityBuilder";
 import GradientSlider from "./inputs/GradientSlider";
@@ -75,9 +76,9 @@ export const COMPONENT_CATALOG = {
     schema: {
       name: "circular_gauge",
       description:
-        "A circular SVG slider for selecting numerical values within a range. Ideal for salary, budget, team size, or any numeric input where a visual dial metaphor works well.",
+        "A circular SVG slider for selecting numerical values or ranges within a scale. Features a modern gradient arc with tick marks. Supports both single values and range objects ({min, max}). Ideal for salary, budget, team size, or any numeric input where a visual dial metaphor works well.",
       category: "visual_quantifiers",
-      valueType: "number",
+      valueType: "number | object",
       props: {
         label: {
           type: "string",
@@ -126,7 +127,7 @@ export const COMPONENT_CATALOG = {
           type: "number",
           description: "SVG size in pixels",
           required: false,
-          default: 200,
+          default: 300,
         },
       },
       useCases: [
@@ -134,6 +135,65 @@ export const COMPONENT_CATALOG = {
         "Team size estimation",
         "Budget allocation",
         "Percentage selection",
+      ],
+    },
+  },
+
+  linear_slider: {
+    component: LinearSlider,
+    schema: {
+      name: "linear_slider",
+      description:
+        "A horizontal linear slider bar for selecting a value or a range (min/max). Supports both single values and range objects with min/max properties.",
+      category: "visual_quantifiers",
+      valueType: "number | object",
+      props: {
+        label: {
+          type: "string",
+          description: "Label for the slider (passed by LLM for context)",
+          required: false,
+        },
+        min: {
+          type: "number",
+          description: "Minimum value of the scale",
+          required: false,
+          default: 0,
+          example: 0,
+        },
+        max: {
+          type: "number",
+          description: "Maximum value of the scale",
+          required: false,
+          default: 100,
+          example: 100,
+        },
+        step: {
+          type: "number",
+          description: "Step increment for the value",
+          required: false,
+          default: 1,
+          example: 1,
+        },
+        unit: {
+          type: "string",
+          description: "Unit suffix (e.g., '%', 'K')",
+          required: false,
+          default: "",
+          example: "%",
+        },
+        prefix: {
+          type: "string",
+          description: "Prefix displayed before the value (e.g., '$')",
+          required: false,
+          default: "",
+          example: "$",
+        },
+      },
+      useCases: [
+        "Budget or price range selection",
+        "Percentage allocation",
+        "Numeric range inputs",
+        "Simple value selection",
       ],
     },
   },
