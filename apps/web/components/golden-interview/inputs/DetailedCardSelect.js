@@ -142,6 +142,8 @@ export default function DetailedCardSelect({
               type="button"
               key={option.id}
               onClick={() => handleSelect(option.id)}
+              aria-label={`${option.title}${option.description ? `: ${option.description}` : ''}`}
+              aria-pressed={isSelected}
               className={`relative p-4 rounded-xl border transition-all duration-200 text-left group ${
                 isSelected
                   ? "border-transparent"
@@ -252,6 +254,8 @@ export default function DetailedCardSelect({
               type="button"
               key={customVal.id}
               onClick={() => handleSelect(customVal)}
+              aria-label={`Custom answer: ${customVal.title}${customVal.description ? `: ${customVal.description}` : ''}`}
+              aria-pressed={true}
               className="relative p-4 rounded-xl border-2 border-dashed transition-all duration-200 text-left group"
               style={{
                 backgroundColor: `${selectedColor}15`,
@@ -334,19 +338,23 @@ export default function DetailedCardSelect({
         {/* "Add New" Card - shown when allowCustomInput is true */}
         {allowCustomInput && (
           <div
+            role={isAddingCustom ? "group" : "button"}
+            aria-label={isAddingCustom ? "Custom option form" : "Add new custom option"}
+            tabIndex={isAddingCustom ? undefined : 0}
             className={`relative p-4 rounded-xl border-2 border-dashed transition-all duration-200 ${
               isAddingCustom
                 ? "border-primary-400 bg-primary-50"
                 : "border-slate-300 bg-white hover:border-primary-300 hover:bg-slate-50 cursor-pointer"
             }`}
             onClick={() => !isAddingCustom && setIsAddingCustom(true)}
+            onKeyDown={(e) => !isAddingCustom && e.key === 'Enter' && setIsAddingCustom(true)}
           >
             {isAddingCustom ? (
               // Custom input form
               <div className="space-y-3">
                 <div className="flex items-start gap-4">
                   {/* Icon placeholder */}
-                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center">
+                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center" aria-hidden="true">
                     <svg
                       className="w-6 h-6 text-slate-400"
                       fill="none"
@@ -371,6 +379,7 @@ export default function DetailedCardSelect({
                       onChange={(e) => setCustomTitle(e.target.value)}
                       onKeyDown={handleCustomKeyDown}
                       placeholder={customTitlePlaceholder}
+                      aria-label="Enter option title"
                       className="w-full px-3 py-2 text-sm font-semibold border border-slate-200 rounded-lg focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
                       autoFocus
                     />
@@ -379,6 +388,7 @@ export default function DetailedCardSelect({
                       onChange={(e) => setCustomDescription(e.target.value)}
                       onKeyDown={handleCustomKeyDown}
                       placeholder={customDescriptionPlaceholder}
+                      aria-label="Enter option description (optional)"
                       rows={2}
                       className="w-full px-3 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg resize-none focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
                     />
@@ -390,6 +400,7 @@ export default function DetailedCardSelect({
                   <button
                     type="button"
                     onClick={handleCustomCancel}
+                    aria-label="Cancel custom option"
                     className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
                   >
                     Cancel
@@ -398,6 +409,7 @@ export default function DetailedCardSelect({
                     type="button"
                     onClick={handleCustomSubmit}
                     disabled={!customTitle.trim()}
+                    aria-label="Add custom option"
                     className="px-4 py-1.5 text-xs font-medium text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: selectedColor }}
                   >
@@ -408,7 +420,7 @@ export default function DetailedCardSelect({
             ) : (
               // Add button mode
               <div className="flex items-center gap-4">
-                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center group-hover:bg-slate-200 transition-colors">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center group-hover:bg-slate-200 transition-colors" aria-hidden="true">
                   <svg
                     className="w-6 h-6 text-slate-400"
                     fill="none"
@@ -423,7 +435,7 @@ export default function DetailedCardSelect({
                     />
                   </svg>
                 </div>
-                <div className="flex-1">
+                <div className="flex-1" aria-hidden="true">
                   <h4 className="font-semibold text-slate-500">Add New Option</h4>
                   <p className="text-slate-400 text-sm mt-0.5">
                     Click to create your own

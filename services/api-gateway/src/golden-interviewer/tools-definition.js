@@ -776,11 +776,27 @@ export const UI_TOOLS_SCHEMA = {
         default: 2,
         enum: [2, 3, 4],
       },
+      allowCustomInput: {
+        type: "boolean",
+        description:
+          "When true, displays an 'Add Other' card that allows users to enter a custom option with their own label. Use this for mood/vibe questions where users might have unique preferences not covered by the predefined options.",
+        required: false,
+        default: false,
+      },
+      customInputPlaceholder: {
+        type: "string",
+        description:
+          "Placeholder text shown in the custom input field when allowCustomInput is true",
+        required: false,
+        default: "Describe your vibe...",
+      },
     },
     useCases: [
       "Workspace mood selection",
       "Culture vibe preferences",
       "Environment type",
+      "Custom workspace mood entry",
+      "Unique culture preferences",
     ],
     schemaMapping: [
       "environment.physical_space.type",
@@ -958,11 +974,27 @@ export const UI_TOOLS_SCHEMA = {
         default: "default",
         enum: ["default", "danger", "success"],
       },
+      allowCustomInput: {
+        type: "boolean",
+        description:
+          "When true, displays an 'Add Other' toggle that expands to a text input, allowing users to add custom items not in the predefined list. Use this for questions where the provided options might not cover all possible answers.",
+        required: false,
+        default: false,
+      },
+      customInputPlaceholder: {
+        type: "string",
+        description:
+          "Placeholder text shown in the custom input field when allowCustomInput is true",
+        required: false,
+        default: "Type your answer...",
+      },
     },
     useCases: [
       "Red flag detection",
       "Worry/concern checklist",
       "Feature presence verification",
+      "Custom concern entry",
+      "Feature requests with custom additions",
     ],
     schemaMapping: [
       "stability_signals.company_health.recent_layoffs",
