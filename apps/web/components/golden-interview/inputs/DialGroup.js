@@ -6,7 +6,8 @@ import DynamicIcon from "./DynamicIcon";
  * DialGroup - Series of range inputs that calculate and display an average score
  */
 export default function DialGroup({
-  dials,
+  dials: initialDials,
+  value,
   onChange,
   min = 0,
   max = 100,
@@ -18,8 +19,8 @@ export default function DialGroup({
     { min: 75, max: 100, label: "Excellent", color: "#22c55e" },
   ],
 }) {
-  // 1. Safety Check: Default to empty array
-  const safeDials = dials || [];
+  // 1. Safety Check: Use value (user's response) if available, otherwise use initialDials from LLM
+  const safeDials = value || initialDials || [];
 
   const average =
     safeDials.length > 0

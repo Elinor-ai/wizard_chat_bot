@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from "react";
 
 export default function CircularGauge({
-  value,
+  value: propValue,
   onChange,
   min = 0,
   max = 100,
@@ -13,6 +13,8 @@ export default function CircularGauge({
   prefix = "",
   size = 300
 }) {
+  // Default value to min if not provided
+  const value = propValue ?? min;
   const svgRef = useRef(null);
   const [activeThumb, setActiveThumb] = useState(null);
 
