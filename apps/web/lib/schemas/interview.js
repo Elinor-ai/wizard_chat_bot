@@ -15,7 +15,7 @@ const goldenInterviewUiToolSchema = z
 // Refine result schema - when LLM suggests improvements
 const goldenRefineSuggestionSchema = z.object({
   value: z.string(),
-  improvement_type: z.enum(["clarity", "completeness", "specificity", "professionalism"]).optional(),
+  improvement_type: z.enum(["clarity", "completeness", "specificity", "professionalism", "attractiveness"]).optional(),
   why_better: z.string().optional(),
 });
 

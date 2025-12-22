@@ -32,6 +32,14 @@ export const SMART_DEFAULTS = {
     prefix: "",
     unit: "",
   },
+  linear_slider: {
+    min: 0,
+    max: 100,
+    step: 1,
+    label: "Value",
+    unit: "",
+    prefix: "",
+  },
   stacked_bar: {
     total: 100,
     autoBalance: true,
@@ -123,11 +131,7 @@ export const SCHEMA_BINDINGS = {
       max: 200000,
       step: 5000,
       prefix: "$",
-      markers: [
-        { value: 50000, label: "Entry" },
-        { value: 100000, label: "Market" },
-        { value: 150000, label: "Senior" },
-      ],
+      size: 300,
     },
     variants: {
       hourly: {
@@ -136,11 +140,6 @@ export const SCHEMA_BINDINGS = {
         max: 100,
         step: 1,
         unit: "/hr",
-        markers: [
-          { value: 25, label: "Entry" },
-          { value: 50, label: "Skilled" },
-          { value: 75, label: "Expert" },
-        ],
       },
     },
   },
@@ -227,6 +226,17 @@ export const SCHEMA_BINDINGS = {
     },
   },
 
+  "time_and_life.schedule_pattern.typical_hours_per_week": {
+    recommendedTool: "linear_slider",
+    defaultProps: {
+      label: "Hours Per Week",
+      min: 20,
+      max: 60,
+      step: 1,
+      unit: " hrs",
+    },
+  },
+
   "time_and_life.time_off.pto_days": {
     recommendedTool: "counter_stack",
     defaultProps: {
@@ -289,11 +299,7 @@ export const SCHEMA_BINDINGS = {
       max: 50,
       step: 1,
       unit: " people",
-      markers: [
-        { value: 5, label: "Small" },
-        { value: 15, label: "Medium" },
-        { value: 30, label: "Large" },
-      ],
+      size: 300,
     },
   },
 
@@ -554,6 +560,7 @@ export const TEMPLATE_SHORTCUTS = {
   // Time
   schedule_type: "time_and_life.schedule_pattern.type",
   remote_flex: "time_and_life.flexibility.remote_frequency",
+  hours_per_week: "time_and_life.schedule_pattern.typical_hours_per_week",
   pto: "time_and_life.time_off.pto_days",
   overtime: "time_and_life.overtime_reality.overtime_expected",
 
@@ -619,18 +626,19 @@ Instead of building full props, you can reference a pre-built template:
 
 | Shortcut | Tool | Description |
 |----------|------|-------------|
-| salary | circular_gauge | Salary input with market benchmarks |
+| salary | circular_gauge | Salary input with gradient dial |
 | hourly_rate | circular_gauge | Hourly rate variant ($15-100/hr) |
 | variable_comp | icon_grid | Tips, commission, bonuses selector |
 | equity | equity_builder | Stock options & vesting wizard |
 | benefits | icon_grid | Health, dental, 401k, PTO selector |
 | schedule_type | detailed_cards | Fixed/rotating/flexible cards |
 | remote_flex | gradient_slider | Remote ↔ On-site spectrum |
+| hours_per_week | linear_slider | Weekly hours (20-60 hrs) |
 | pto | counter_stack | Vacation/sick/personal day counters |
 | overtime | segmented_rows | Overtime/weekend/on-call frequency |
 | workspace | gradient_cards | Office/retail/warehouse/remote |
 | physical_demands | segmented_rows | Standing/lifting/walking frequency |
-| team_size | circular_gauge | 1-50 team members with markers |
+| team_size | circular_gauge | 1-50 team members dial |
 | management | bipolar_scale | Hands-off↔on, Flexible↔Structured |
 | tech_stack | chip_cloud | Frontend/backend tech groups |
 | career_path | timeline_builder | Year 1 / Year 2-3 / Year 5+ |

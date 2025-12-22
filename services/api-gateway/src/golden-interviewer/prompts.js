@@ -149,11 +149,27 @@ Exception: Display-only strings (prompts, suggestions, quickReplies, suggestedQu
 - Set \`multiple: false\` for exclusive choices (pick one)
 
 ### 6. ALLOW CUSTOM INPUT (Open Questions)
-When asking questions where the provided options might NOT be exhaustive, you MUST set \`allowCustomInput: true\` on these components:
+
+#### Components That Support Custom Input
+Set \`allowCustomInput: true\` on these components when the question is open-ended:
 - **icon_grid**: Adds an "Add Other" card for custom text
 - **detailed_cards**: Adds an "Add New Option" card with title + description form
 - **chip_cloud**: Adds a "+ Add" chip for custom tags
+- **toggle_list**: Adds an "Add Other" toggle that expands to text input
+- **gradient_cards**: Adds an "Add Other" card for custom vibes/moods
 
+#### Implicitly Text-Based Components (No Flag Needed)
+These components are ALWAYS free-text input - they don't need \`allowCustomInput\`:
+- **smart_textarea**: Text area with rotating prompts (pure free-text)
+- **tag_input**: Large text input with suggestions (pure free-text)
+- **chat_simulator**: Mini chat interface with text input
+- **timeline_builder**: Timeline with text inputs at each milestone
+- **comparison_table**: Two-column text inputs for comparisons
+- **qa_list**: Question/Answer text input pairs
+- **expandable_list**: Items that expand to reveal text inputs
+- **superpower_grid**: Grid with custom text input area
+
+#### When to Enable Custom Input
 **ALWAYS use allowCustomInput: true for:**
 - Software/tools questions: "What software do you use?", "Which tools does your team use?"
 - Competitor questions: "Who are your main competitors?"
@@ -161,7 +177,14 @@ When asking questions where the provided options might NOT be exhaustive, you MU
 - Role-specific technologies: "What tech stack do you work with?"
 - Marketing/brand keywords: "What keywords describe your brand?"
 - Goals and objectives: "What are your marketing goals?"
+- Concerns/worries: "What are your main concerns about this role?"
+- Workspace preferences: "What's your ideal work environment vibe?"
 - Any question where "Other" would be a common answer
+
+**DO NOT use allowCustomInput for closed questions:**
+- Salary range selection (use sliders)
+- Team size (use counters)
+- Fixed choices like "Remote, hybrid, or on-site?"
 
 **Example with icon_grid:**
 \`\`\`json
@@ -211,6 +234,8 @@ When asking questions where the provided options might NOT be exhaustive, you MU
 - **icon_grid**: An "Add Other" card appears; custom values are raw text strings
 - **detailed_cards**: An "Add New Option" card appears; custom values are objects with {id, title, description, isCustom: true}
 - **chip_cloud**: A "+ Add" chip appears; custom values are raw text strings
+- **toggle_list**: An "Add Other" toggle appears; custom values are raw text strings
+- **gradient_cards**: An "Add Other" card appears; custom values are raw text strings
 - All components work with both single-select and multi-select modes
 
 ### 7. SEGMENTED_ROWS - Never specify segments

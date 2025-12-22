@@ -248,13 +248,61 @@ export class GoldenInterviewerService {
   }
 
   /**
-   * Check if a UI tool type is a free-text input that should be refined
+   * Check if a UI tool type is inherently a free-text input (always allows custom input)
+   * These tools don't need explicit allowCustomInput flag - they're always text-based
+   * Includes all text_media category components and other free-text tools
    * @param {string} toolType - The UI tool type (e.g., "smart_textarea", "tag_input")
    * @returns {boolean}
    */
-  isRefineableToolType(toolType) {
-    const REFINEABLE_TOOLS = ["smart_textarea", "tag_input"];
-    return REFINEABLE_TOOLS.includes(toolType);
+  isImplicitTextInputTool(toolType) {
+    const IMPLICIT_TEXT_TOOLS = [
+      // Pure text inputs
+      "smart_textarea",
+      "tag_input",
+      // Structured components with text inputs
+      "chat_simulator",
+      "timeline_builder",
+      "comparison_table",
+      "qa_list",
+      "expandable_list",
+      "superpower_grid",
+    ];
+    return IMPLICIT_TEXT_TOOLS.includes(toolType);
+  }
+
+  /**
+   * Determine if custom input is allowed for a given UI tool
+   * Combines explicit allowCustomInput prop with implicit text input detection
+   * @param {object} uiTool - The UI tool object with type and props
+   * @returns {boolean}
+   */
+  getAllowCustomInput(uiTool) {
+    if (!uiTool) return false;
+    const explicitFlag = uiTool.props?.allowCustomInput || false;
+    const implicitFlag = this.isImplicitTextInputTool(uiTool.type);
+    return explicitFlag || implicitFlag;
+  }
+
+  /**
+   * Format a value for Golden Refine context.
+   * Handles strings, arrays, and objects to produce a clean text representation.
+   * @param {*} value - The value to format (can be string, array, or object)
+   * @returns {string|null} - Formatted string representation or null
+   */
+  formatValueForRefinement(value) {
+    if (value === null || value === undefined) return null;
+
+    if (Array.isArray(value)) {
+      return value
+        .map(v => typeof v === 'object' ? (v.title || v.label || v.id || JSON.stringify(v)) : v)
+        .join(', ');
+    }
+
+    if (typeof value === 'object') {
+      return value.title || value.label || value.id || JSON.stringify(value);
+    }
+
+    return String(value);
   }
 
   // ===========================================================================
@@ -410,6 +458,7 @@ export class GoldenInterviewerService {
     session.conversationHistory.push(assistantMessage);
     session.turnCount = 1;
     session.metadata.lastToolUsed = firstTurnResponse.ui_tool?.type;
+    session.metadata.lastToolAllowCustomInput = this.getAllowCustomInput(firstTurnResponse.ui_tool);
     session.metadata.currentPhase =
       firstTurnResponse.interview_phase || "opening";
     session.metadata.lastAskedField = currentlyAskingField;
@@ -672,9 +721,11 @@ export class GoldenInterviewerService {
     // GOLDEN REFINE: Validate free-text input before saving
     // =========================================================================
     // Check if this was a free-text input that should be refined
+    // Refine is triggered when the previous tool allowed custom input (either explicitly via
+    // allowCustomInput prop, or implicitly for text-based tools like smart_textarea/tag_input)
     // Skip refine if acceptRefinedValue=true (user already saw suggestions and confirmed)
-    const previousToolType = session.metadata?.lastToolUsed;
-    const shouldRefine = this.isRefineableToolType(previousToolType) &&
+    const previousToolAllowCustomInput = session.metadata?.lastToolAllowCustomInput || false;
+    const shouldRefine = previousToolAllowCustomInput &&
       valueToSave !== null &&
       typeof valueToSave === "string" &&
       valueToSave.trim().length > 0 &&
@@ -1138,6 +1189,7 @@ export class GoldenInterviewerService {
         estimateSchemaCompletion(session.goldenSchema),
       currentPhase: parsed.interview_phase || session.metadata?.currentPhase,
       lastToolUsed: parsed.ui_tool?.type,
+      lastToolAllowCustomInput: this.getAllowCustomInput(parsed.ui_tool),
       // Store the field being asked NOW (for skip attribution on next turn)
       lastAskedField: currentlyAskingField,
       lastAskedCategory: currentlyAskingCategory,

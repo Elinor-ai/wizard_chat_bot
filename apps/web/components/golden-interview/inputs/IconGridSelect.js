@@ -128,6 +128,8 @@ export default function IconGridSelect({
             <button
               key={option.id}
               onClick={() => handleSelect(option.id)}
+              aria-label={`${option.label}${option.description ? `: ${option.description}` : ''}`}
+              aria-pressed={isSelected}
               className={`relative aspect-square p-4 rounded-xl border transition-all duration-200 flex flex-col items-center justify-center gap-2 group ${
                 isSelected
                   ? "border-transparent shadow-lg bg-white"
@@ -216,12 +218,16 @@ export default function IconGridSelect({
         {/* "Add Other" Card - shown when allowCustomInput is true */}
         {allowCustomInput && (
           <div
+            role={isAddingCustom ? "group" : "button"}
+            aria-label={isAddingCustom ? "Custom input field" : "Add custom answer"}
+            tabIndex={isAddingCustom ? undefined : 0}
             className={`relative aspect-square p-4 rounded-xl border-2 border-dashed transition-all duration-200 flex flex-col items-center justify-center gap-2 ${
               isAddingCustom
                 ? "border-primary-400 bg-primary-50"
                 : "border-slate-300 bg-white hover:border-primary-300 hover:bg-slate-50 cursor-pointer"
             }`}
             onClick={() => !isAddingCustom && setIsAddingCustom(true)}
+            onKeyDown={(e) => !isAddingCustom && e.key === 'Enter' && setIsAddingCustom(true)}
           >
             {isAddingCustom ? (
               // Custom input mode
@@ -234,17 +240,18 @@ export default function IconGridSelect({
                   onKeyDown={handleCustomInputKeyDown}
                   onBlur={handleCustomInputSubmit}
                   placeholder={customInputPlaceholder}
+                  aria-label="Enter custom answer"
                   className="w-full px-2 py-1.5 text-xs text-center border border-slate-200 rounded-lg focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
                   autoFocus
                 />
-                <span className="text-[10px] text-slate-400">
+                <span className="text-[10px] text-slate-400" aria-hidden="true">
                   Press Enter to add
                 </span>
               </div>
             ) : (
               // Add button mode
               <>
-                <div className="transition-transform duration-200 group-hover:scale-105">
+                <div className="transition-transform duration-200 group-hover:scale-105" aria-hidden="true">
                   <svg
                     className="w-8 h-8 text-slate-400"
                     fill="none"
@@ -259,7 +266,7 @@ export default function IconGridSelect({
                     />
                   </svg>
                 </div>
-                <span className="text-xs font-medium text-center leading-tight text-slate-500">
+                <span className="text-xs font-medium text-center leading-tight text-slate-500" aria-hidden="true">
                   Add Other
                 </span>
               </>
@@ -315,6 +322,7 @@ export default function IconGridSelect({
                     e.stopPropagation();
                     handleSelect(val);
                   }}
+                  aria-label={`Remove ${isCustom ? val : option?.label}`}
                   className="ml-1 hover:text-red-500 transition-colors"
                 >
                   ×

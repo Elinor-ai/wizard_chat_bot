@@ -157,6 +157,8 @@ export default function ChipCloud({
                       key={itemId}
                       onClick={() => handleChipToggle(itemId)}
                       disabled={isDisabled}
+                      aria-label={itemLabel}
+                      aria-pressed={isSelected}
                       className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                         isSelected
                           ? "text-white shadow-lg"
@@ -171,7 +173,7 @@ export default function ChipCloud({
                           : undefined,
                       }}
                     >
-                      {isSelected && <span className="mr-1">✓</span>}
+                      {isSelected && <span className="mr-1" aria-hidden="true">✓</span>}
                       {itemLabel}
                     </button>
                   );
@@ -196,20 +198,22 @@ export default function ChipCloud({
                 <button
                   key={chipValue}
                   onClick={() => handleChipToggle(chipValue)}
+                  aria-label={`Custom answer: ${chipValue}`}
+                  aria-pressed={true}
                   className="px-4 py-2 rounded-full text-sm font-medium text-white shadow-lg transition-all duration-200"
                   style={{
                     backgroundColor: selectedColor,
                     boxShadow: `0 4px 15px ${selectedColor}40`,
                   }}
                 >
-                  <span className="mr-1">✓</span>
+                  <span className="mr-1" aria-hidden="true">✓</span>
                   {chipValue}
                 </button>
               ))}
 
               {/* "+ Add" chip or inline input */}
               {isAddingCustom ? (
-                <div className="inline-flex items-center">
+                <div className="inline-flex items-center" role="group" aria-label="Custom input field">
                   <input
                     ref={customInputRef}
                     type="text"
@@ -218,6 +222,7 @@ export default function ChipCloud({
                     onKeyDown={handleCustomKeyDown}
                     onBlur={handleCustomSubmit}
                     placeholder={customInputPlaceholder}
+                    aria-label="Enter custom answer"
                     className="px-4 py-2 rounded-full text-sm border-2 border-dashed border-primary-400 bg-primary-50 focus:outline-none focus:border-primary-500 min-w-[120px]"
                     autoFocus
                   />
@@ -226,9 +231,10 @@ export default function ChipCloud({
                 canSelectMore && (
                   <button
                     onClick={() => setIsAddingCustom(true)}
+                    aria-label="Add custom answer"
                     className="px-4 py-2 rounded-full text-sm font-medium border-2 border-dashed border-slate-300 text-slate-500 hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50 transition-all duration-200"
                   >
-                    <span className="mr-1">+</span>
+                    <span className="mr-1" aria-hidden="true">+</span>
                     Add
                   </button>
                 )
@@ -285,6 +291,7 @@ export default function ChipCloud({
                   {itemLabel}
                   <button
                     onClick={() => handleChipToggle(itemId)}
+                    aria-label={`Remove ${itemLabel}`}
                     className="ml-1 hover:text-red-200 transition-colors"
                   >
                     ×
