@@ -768,6 +768,14 @@ export class GoldenInterviewerService {
             "golden-interviewer.refine.blocked"
           );
 
+          const navState = {
+            currentIndex: maxIndex,
+            maxIndex: maxIndex,
+            canGoBack: maxIndex > 0,
+            canGoForward: false,
+            isEditing: false,
+          };
+          console.log(`🧭 [processTurn] RETURNING (refine validation failed). navigation:`, navState);
           return {
             message: refineResult.validation_issue || "This response doesn't match what we're looking for. Please try again.",
             ui_tool: null, // Keep current UI tool
@@ -781,6 +789,8 @@ export class GoldenInterviewerService {
               validation_issue: refineResult.validation_issue,
               reasoning: refineResult.reasoning,
             },
+            // Navigation state - user stays at current turn (validation failed, no progression)
+            navigation: navState,
           };
         }
 
@@ -798,6 +808,14 @@ export class GoldenInterviewerService {
 
           // Return early - don't continue to next question yet
           // Data is NOT saved yet - user needs to confirm or pick a suggestion
+          const suggestNavState = {
+            currentIndex: maxIndex,
+            maxIndex: maxIndex,
+            canGoBack: maxIndex > 0,
+            canGoForward: false,
+            isEditing: false,
+          };
+          console.log(`🧭 [processTurn] RETURNING (refine suggestions). navigation:`, suggestNavState, `| suggestionCount: ${refineResult.suggestions.length}`);
           return {
             message: "", // Empty string - frontend will show suggestions instead
             ui_tool: null, // Keep current UI tool
@@ -814,6 +832,8 @@ export class GoldenInterviewerService {
               suggestions: refineResult.suggestions,
               reasoning: refineResult.reasoning,
             },
+            // Navigation state - user stays at current turn (choosing suggestion, no progression)
+            navigation: suggestNavState,
           };
         }
       } catch (error) {
@@ -1017,6 +1037,14 @@ export class GoldenInterviewerService {
         "golden-interviewer.turn.llm_api_error"
       );
       // Return a fallback response that keeps the conversation going
+      const apiErrorNavState = {
+        currentIndex: maxIndex,
+        maxIndex: maxIndex,
+        canGoBack: maxIndex > 0,
+        canGoForward: false,
+        isEditing: false,
+      };
+      console.log(`🧭 [processTurn] RETURNING (LLM API error). navigation:`, apiErrorNavState);
       return {
         message:
           "I had trouble processing that. Let me try asking differently...",
@@ -1031,6 +1059,8 @@ export class GoldenInterviewerService {
         interview_phase: session.metadata?.currentPhase || "opening",
         extracted_fields: [],
         next_priority_fields: [],
+        // Navigation state - user stays at current turn (LLM error, no progression)
+        navigation: apiErrorNavState,
       };
     }
 
@@ -1041,6 +1071,14 @@ export class GoldenInterviewerService {
         "golden-interviewer.turn.llm_error"
       );
       // Return a fallback response that keeps the conversation going
+      const llmErrorNavState = {
+        currentIndex: maxIndex,
+        maxIndex: maxIndex,
+        canGoBack: maxIndex > 0,
+        canGoForward: false,
+        isEditing: false,
+      };
+      console.log(`🧭 [processTurn] RETURNING (LLM response error). navigation:`, llmErrorNavState);
       return {
         message:
           "I had trouble processing that. Let me try asking differently...",
@@ -1055,6 +1093,8 @@ export class GoldenInterviewerService {
         interview_phase: session.metadata?.currentPhase || "opening",
         extracted_fields: [],
         next_priority_fields: [],
+        // Navigation state - user stays at current turn (LLM error, no progression)
+        navigation: llmErrorNavState,
       };
     }
 
@@ -1587,6 +1627,7 @@ export class GoldenInterviewerService {
 
     // Get the user's response for this turn (if any)
     const userResponse = getUserResponseForTurn(session, turn.historyIndex);
+    console.log(`🧭 [navigateToTurn] Turn historyIndex: ${turn.historyIndex}, userResponse:`, userResponse ? { content: userResponse.content?.slice(0, 50), uiResponse: userResponse.uiResponse } : "NULL");
 
     // Update session's navigation index (track where user is browsing)
     // IMPORTANT: Only set navigationIndex when editing a past turn (targetTurnIndex < maxIndex)
@@ -1615,7 +1656,7 @@ export class GoldenInterviewerService {
       "golden-interviewer.navigation.navigated"
     );
 
-    return {
+    const navResponse = {
       message: turn.message.content,
       ui_tool: turn.message.uiTool,
       currently_asking_field: turn.message.currentlyAskingField,
@@ -1635,6 +1676,9 @@ export class GoldenInterviewerService {
         isEditing: targetTurnIndex < maxIndex, // User is editing a past turn
       },
     };
+
+    console.log(`🧭 [navigateToTurn] RETURNING. navigation:`, navResponse.navigation, `| previous_response:`, navResponse.previous_response ? { content: navResponse.previous_response.content?.slice(0, 50), uiResponse: navResponse.previous_response.uiResponse } : "NULL");
+    return navResponse;
   }
 
   /**

@@ -96,13 +96,26 @@ export default function ChatInterface({
   const [copySuccess, setCopySuccess] = useState(false);
 
   // Navigation state
-  const [navigationState, setNavigationState] = useState({
+  const [navigationState, setNavigationStateInternal] = useState({
     currentIndex: 0,
     maxIndex: 0,
     canGoBack: false,
     canGoForward: false,
     isEditing: false,
   });
+
+  // Wrapper to log all navigation state changes
+  const setNavigationState = useCallback((newState) => {
+    setNavigationStateInternal((prev) => {
+      const next = typeof newState === "function" ? newState(prev) : newState;
+      console.log(
+        `🧭 [NAV STATE] Change:`,
+        `\n  FROM: idx=${prev.currentIndex}/${prev.maxIndex}, back=${prev.canGoBack}, fwd=${prev.canGoForward}, edit=${prev.isEditing}`,
+        `\n  TO:   idx=${next.currentIndex}/${next.maxIndex}, back=${next.canGoBack}, fwd=${next.canGoForward}, edit=${next.isEditing}`
+      );
+      return next;
+    });
+  }, []);
 
   const inputRef = useRef(null);
 
@@ -200,7 +213,11 @@ export default function ChatInterface({
             }
             if (navResponse.previous_response) {
               if (navResponse.previous_response.uiResponse !== undefined) {
+                // For UI-based tools (detailed_cards, icon_grid, etc.), use uiResponse
                 setDynamicValue(navResponse.previous_response.uiResponse);
+              } else if (navResponse.previous_response.content) {
+                // For text-based tools (smart_textarea), content IS the dynamicValue
+                setDynamicValue(navResponse.previous_response.content);
               }
               if (navResponse.previous_response.content) {
                 setInputValue(navResponse.previous_response.content);
@@ -294,15 +311,21 @@ export default function ChatInterface({
 
   // Sync navigation state with URL parameter (q=questionNumber)
   useEffect(() => {
-    if (isInitializing || !sessionId) return;
+    if (isInitializing || !sessionId) {
+      console.log(`🧭 [URL SYNC] Skipped - isInitializing=${isInitializing}, sessionId=${!!sessionId}`);
+      return;
+    }
 
     // Update URL when navigation changes (use currentIndex + 1 for 1-based display)
     const currentQ = searchParams.get("q");
     const newQ = String(navigationState.currentIndex + 1);
 
+    console.log(`🧭 [URL SYNC] Check: currentQ="${currentQ}", newQ="${newQ}" (from currentIndex=${navigationState.currentIndex})`);
+
     if (currentQ !== newQ) {
       const params = new URLSearchParams(searchParams.toString());
       params.set("q", newQ);
+      console.log(`🧭 [URL SYNC] Updating URL: q=${currentQ} → q=${newQ}`);
       // Use replace to avoid adding to browser history on every navigation
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
@@ -340,7 +363,11 @@ export default function ChatInterface({
             }
             if (response.previous_response) {
               if (response.previous_response.uiResponse !== undefined) {
+                // For UI-based tools (detailed_cards, icon_grid, etc.), use uiResponse
                 setDynamicValue(response.previous_response.uiResponse);
+              } else if (response.previous_response.content) {
+                // For text-based tools (smart_textarea), content IS the dynamicValue
+                setDynamicValue(response.previous_response.content);
               }
               if (response.previous_response.content) {
                 setInputValue(response.previous_response.content);
@@ -364,6 +391,16 @@ export default function ChatInterface({
       inputRef.current.focus();
     }
   }, [isInitializing, currentTool]);
+
+  // Log navigation bar visibility conditions
+  useEffect(() => {
+    const showNavBar = !isTyping && !isComplete;
+    console.log(
+      `🧭 [NAV BAR] Visibility: ${showNavBar ? "VISIBLE" : "HIDDEN"}`,
+      `\n  Conditions: isTyping=${isTyping}, isComplete=${isComplete}`,
+      `\n  State: idx=${navigationState.currentIndex}/${navigationState.maxIndex}, canGoBack=${navigationState.canGoBack}, canGoForward=${navigationState.canGoForward}`
+    );
+  }, [isTyping, isComplete, navigationState.currentIndex, navigationState.maxIndex, navigationState.canGoBack, navigationState.canGoForward]);
 
   // Fetch full data when interview is complete
   useEffect(() => {
@@ -460,13 +497,19 @@ export default function ChatInterface({
         setCurrentlyAskingField(response.currently_asking_field ?? null);
 
         // Log key response fields for debugging
-        console.log(`🧭 [Frontend] sendMessage - RESPONSE. was_edit: ${response.was_edit}, phase: ${response.interview_phase}, field: ${response.currently_asking_field}, navigation:`, response.navigation);
+        console.log(
+          `🧭 [API RESPONSE] sendMessage received:`,
+          `\n  navigation: ${response.navigation ? JSON.stringify(response.navigation) : "MISSING!"}`,
+          `\n  phase: ${response.interview_phase}, field: ${response.currently_asking_field}`,
+          `\n  was_edit: ${response.was_edit}, has_refine: ${!!response.refine_result}`
+        );
 
         // Update navigation state from response
         if (response.navigation) {
-          console.log(`🧭 [Frontend] sendMessage - setting navigationState from response`);
+          console.log(`🧭 [API RESPONSE] Setting navigation from response:`, response.navigation);
           setNavigationState(response.navigation);
         } else {
+          console.log(`🧭 [API RESPONSE] WARNING: No navigation in response! Using fallback increment.`);
           // Normal turn progression - update maxIndex
           setNavigationState(prev => ({
             ...prev,
@@ -522,10 +565,13 @@ export default function ChatInterface({
   // ==========================================================================
 
   const handleGoBack = useCallback(async () => {
-    if (!navigationState.canGoBack || !sessionId || !authToken) return;
+    if (!navigationState.canGoBack || !sessionId || !authToken) {
+      console.log(`🧭 [NAV BACK] Blocked: canGoBack=${navigationState.canGoBack}, sessionId=${!!sessionId}, authToken=${!!authToken}`);
+      return;
+    }
 
     const targetIndex = navigationState.currentIndex - 1;
-    console.log(`🧭 [Frontend] handleGoBack - from index ${navigationState.currentIndex} to ${targetIndex}, maxIndex: ${navigationState.maxIndex}`);
+    console.log(`🧭 [NAV BACK] Request: from idx=${navigationState.currentIndex} to idx=${targetIndex}, maxIndex=${navigationState.maxIndex}`);
 
     setIsTyping(true);
     setError(null);
@@ -537,7 +583,8 @@ export default function ChatInterface({
         { authToken }
       );
 
-      console.log(`🧭 [Frontend] handleGoBack - response navigation:`, response.navigation);
+      console.log(`🧭 [NAV BACK] Response received:`, response.navigation ? JSON.stringify(response.navigation) : "NO NAVIGATION!");
+      console.log(`🧭 [NAV BACK] previous_response:`, response.previous_response ? JSON.stringify(response.previous_response) : "MISSING!");
 
       // Update UI with the previous turn's data
       if (response.message) setCurrentMessage(response.message);
@@ -556,10 +603,18 @@ export default function ChatInterface({
       // Pre-fill the user's previous response if available
       if (response.previous_response) {
         if (response.previous_response.uiResponse !== undefined) {
+          // For UI-based tools (detailed_cards, icon_grid, etc.), use uiResponse
           setDynamicValue(response.previous_response.uiResponse);
+        } else if (response.previous_response.content) {
+          // For text-based tools (smart_textarea), content IS the dynamicValue
+          setDynamicValue(response.previous_response.content);
+        } else {
+          setDynamicValue(null);
         }
         if (response.previous_response.content) {
           setInputValue(response.previous_response.content);
+        } else {
+          setInputValue("");
         }
       } else {
         // No previous response - clear the input
@@ -578,10 +633,13 @@ export default function ChatInterface({
   }, [sessionId, authToken, navigationState.canGoBack, navigationState.currentIndex]);
 
   const handleGoForward = useCallback(async () => {
-    if (!navigationState.canGoForward || !sessionId || !authToken) return;
+    if (!navigationState.canGoForward || !sessionId || !authToken) {
+      console.log(`🧭 [NAV FWD] Blocked: canGoForward=${navigationState.canGoForward}, sessionId=${!!sessionId}, authToken=${!!authToken}`);
+      return;
+    }
 
     const targetIndex = navigationState.currentIndex + 1;
-    console.log(`🧭 [Frontend] handleGoForward - from index ${navigationState.currentIndex} to ${targetIndex}, maxIndex: ${navigationState.maxIndex}`);
+    console.log(`🧭 [NAV FWD] Request: from idx=${navigationState.currentIndex} to idx=${targetIndex}, maxIndex=${navigationState.maxIndex}`);
 
     setIsTyping(true);
     setError(null);
@@ -593,7 +651,7 @@ export default function ChatInterface({
         { authToken }
       );
 
-      console.log(`🧭 [Frontend] handleGoForward - response navigation:`, response.navigation);
+      console.log(`🧭 [NAV FWD] Response received:`, response.navigation ? JSON.stringify(response.navigation) : "NO NAVIGATION!");
 
       // Update UI with the next turn's data
       if (response.message) setCurrentMessage(response.message);
@@ -612,10 +670,18 @@ export default function ChatInterface({
       // Pre-fill the user's previous response if available
       if (response.previous_response) {
         if (response.previous_response.uiResponse !== undefined) {
+          // For UI-based tools (detailed_cards, icon_grid, etc.), use uiResponse
           setDynamicValue(response.previous_response.uiResponse);
+        } else if (response.previous_response.content) {
+          // For text-based tools (smart_textarea), content IS the dynamicValue
+          setDynamicValue(response.previous_response.content);
+        } else {
+          setDynamicValue(null);
         }
         if (response.previous_response.content) {
           setInputValue(response.previous_response.content);
+        } else {
+          setInputValue("");
         }
       } else {
         // No previous response - clear the input
@@ -673,6 +739,7 @@ export default function ChatInterface({
       );
 
       // Process normal response
+      console.log(`🧭 [handleSelectSuggestion] API RESPONSE navigation:`, response.navigation);
       if (response.interview_phase) setCurrentPhase(response.interview_phase);
       if (response.context_explanation) setContextExplanation(response.context_explanation);
       if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
@@ -680,6 +747,13 @@ export default function ChatInterface({
       if (response.ui_tool) setCurrentTool(response.ui_tool);
       // ALWAYS update currentlyAskingField to avoid stale state
       setCurrentlyAskingField(response.currently_asking_field ?? null);
+      // Update navigation state from response
+      if (response.navigation) {
+        setNavigationState(response.navigation);
+      }
+      // Clear input values for next question
+      setInputValue("");
+      setDynamicValue(null);
       if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
     } catch (err) {
       console.error("Failed to submit suggestion:", err);
@@ -711,6 +785,7 @@ export default function ChatInterface({
       );
 
       // Process normal response
+      console.log(`🧭 [handleKeepOriginal] API RESPONSE navigation:`, response.navigation);
       if (response.interview_phase) setCurrentPhase(response.interview_phase);
       if (response.context_explanation) setContextExplanation(response.context_explanation);
       if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
@@ -718,6 +793,13 @@ export default function ChatInterface({
       if (response.ui_tool) setCurrentTool(response.ui_tool);
       // ALWAYS update currentlyAskingField to avoid stale state
       setCurrentlyAskingField(response.currently_asking_field ?? null);
+      // Update navigation state from response
+      if (response.navigation) {
+        setNavigationState(response.navigation);
+      }
+      // Clear input values for next question
+      setInputValue("");
+      setDynamicValue(null);
       if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
     } catch (err) {
       console.error("Failed to keep original:", err);
@@ -774,6 +856,7 @@ export default function ChatInterface({
       }
 
       // Process normal response
+      console.log(`🧭 [handleRewriteSubmit] API RESPONSE navigation:`, response.navigation);
       if (response.interview_phase) setCurrentPhase(response.interview_phase);
       if (response.context_explanation) setContextExplanation(response.context_explanation);
       if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
@@ -781,6 +864,13 @@ export default function ChatInterface({
       if (response.ui_tool) setCurrentTool(response.ui_tool);
       // ALWAYS update currentlyAskingField to avoid stale state
       setCurrentlyAskingField(response.currently_asking_field ?? null);
+      // Update navigation state from response
+      if (response.navigation) {
+        setNavigationState(response.navigation);
+      }
+      // Clear input values for next question
+      setInputValue("");
+      setDynamicValue(null);
       if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
     } catch (err) {
       console.error("Failed to submit rewrite:", err);
@@ -1410,8 +1500,8 @@ export default function ChatInterface({
               </div>
             )}
 
-            {/* Navigation Controls - shown when user can navigate */}
-            {!isTyping && (navigationState.canGoBack || navigationState.canGoForward) && (
+            {/* Navigation Controls - always shown (disabled buttons when can't navigate) */}
+            {!isTyping && !isComplete && (
               <div className="mb-6 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-3">
                 {/* Back Button */}
                 <button

@@ -8,17 +8,26 @@ import { formatForAnthropic } from "../utils/schema-converter.js";
  * Models that support Structured Outputs (constrained decoding).
  * As of November 2025: Claude Sonnet 4.5, Opus 4.1, Opus 4.5
  * See: https://docs.anthropic.com/en/docs/build-with-claude/structured-outputs
- *
- * NOTE: Temporarily disabled for all models because our schemas use
- * permissive types like z.record(z.any()) which allow empty objects.
- * This causes Claude to return valid-but-empty responses.
- * TODO: Fix schemas to be more specific, then re-enable.
  */
 const STRUCTURED_OUTPUT_MODELS = new Set([
-  // Temporarily disabled - using prefill mode instead
-  // "claude-sonnet-4-5-20250929",
-  // "claude-opus-4-1-20250929",
-  // "claude-opus-4-5-20251101",
+  "claude-sonnet-4-5-20250929",
+  "claude-opus-4-1-20250929",
+  "claude-opus-4-5-20251101",
+]);
+
+/**
+ * Tasks with schemas too complex for Structured Outputs.
+ *
+ * Anthropic Structured Outputs has strict requirements:
+ * - Max 24 optional parameters
+ * - ALL objects must have additionalProperties: false
+ *
+ * Record-type objects (like z.record()) are handled by converting them
+ * to empty schema {} which accepts any JSON value. This is done in
+ * enforceStrictMode() in schema-converter.js.
+ */
+const STRUCTURED_OUTPUTS_EXCLUDED_TASKS = new Set([
+  // Add task names here if they exceed the 24 optional param limit
 ]);
 
 /**
@@ -95,10 +104,13 @@ export class AnthropicAdapter {
     }
 
     // Determine if we can use Structured Outputs (native JSON schema enforcement)
+    // Excluded tasks have schemas too complex for Anthropic's 24 optional param limit
+    const isExcludedTask = taskType && STRUCTURED_OUTPUTS_EXCLUDED_TASKS.has(taskType);
     const canUseStructuredOutputs =
       mode === "json" &&
       outputSchema &&
-      this.supportsStructuredOutputs(model);
+      this.supportsStructuredOutputs(model) &&
+      !isExcludedTask;
 
     // Build messages array
     const messages = [{ role: "user", content: user }];
@@ -111,14 +123,20 @@ export class AnthropicAdapter {
 
     if (usePrefill) {
       messages.push({ role: "assistant", content: "{" });
+      const prefillReason = isExcludedTask
+        ? "schema too complex (>24 optional params)"
+        : !outputSchema
+          ? "no output schema provided"
+          : "model does not support Structured Outputs";
       llmLogger.info(
         {
           taskType,
           schemaName: outputSchemaName,
           model,
           mode: "json_prefill",
+          reason: prefillReason,
         },
-        "AnthropicAdapter using prefill technique (Structured Outputs not available)"
+        `AnthropicAdapter using prefill technique (${prefillReason})`
       );
     }
 

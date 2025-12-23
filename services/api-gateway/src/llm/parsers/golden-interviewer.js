@@ -9,6 +9,69 @@ import { llmLogger } from "../logger.js";
 import { safePreview } from "../utils/parsing.js";
 
 /**
+ * Decode JSON-encoded string fields back to objects.
+ *
+ * Anthropic Structured Outputs doesn't support record-type objects (z.record()),
+ * so we convert them to JSON-encoded strings in the schema. This function
+ * decodes them back to objects after receiving the response.
+ *
+ * @param {object} parsed - The parsed response from the LLM
+ * @returns {object} - Response with decoded fields
+ */
+function decodeJsonEncodedFields(parsed) {
+  if (!parsed || typeof parsed !== "object") {
+    return parsed;
+  }
+
+  const result = { ...parsed };
+
+  // Decode extraction.updates if it's a string
+  if (result.extraction) {
+    result.extraction = { ...result.extraction };
+
+    if (typeof result.extraction.updates === "string") {
+      try {
+        result.extraction.updates = JSON.parse(result.extraction.updates);
+      } catch (e) {
+        llmLogger.warn(
+          { field: "extraction.updates", value: result.extraction.updates?.slice(0, 100) },
+          "Failed to decode JSON-encoded extraction.updates"
+        );
+        result.extraction.updates = {};
+      }
+    }
+
+    if (typeof result.extraction.confidence === "string") {
+      try {
+        result.extraction.confidence = JSON.parse(result.extraction.confidence);
+      } catch (e) {
+        llmLogger.warn(
+          { field: "extraction.confidence", value: result.extraction.confidence?.slice(0, 100) },
+          "Failed to decode JSON-encoded extraction.confidence"
+        );
+        result.extraction.confidence = {};
+      }
+    }
+  }
+
+  // Decode ui_tool.props if it's a string
+  if (result.ui_tool && typeof result.ui_tool.props === "string") {
+    try {
+      result.ui_tool = { ...result.ui_tool };
+      result.ui_tool.props = JSON.parse(result.ui_tool.props);
+    } catch (e) {
+      llmLogger.warn(
+        { field: "ui_tool.props", value: result.ui_tool.props?.slice(0, 100) },
+        "Failed to decode JSON-encoded ui_tool.props"
+      );
+      result.ui_tool.props = {};
+    }
+  }
+
+  return result;
+}
+
+/**
  * Zod schema for validating LLM responses
  */
 const LLMResponseSchema = z.object({
@@ -54,6 +117,113 @@ const FALLBACK_RESPONSE = {
 };
 
 /**
+ * Validate that ui_tool has valid props for its type.
+ * Returns an error message if invalid, null if valid.
+ *
+ * @param {object} uiTool - The ui_tool object from the response
+ * @returns {string|null} - Error message if invalid, null if valid
+ */
+function validateUiToolProps(uiTool) {
+  if (!uiTool || !uiTool.type) {
+    return null; // No ui_tool is valid (optional field)
+  }
+
+  const { type, props } = uiTool;
+
+  // Check for completely empty props
+  if (!props || Object.keys(props).length === 0) {
+    return `ui_tool.type="${type}" has empty props object`;
+  }
+
+  // Type-specific validation for common tools
+  switch (type) {
+    case "detailed_cards":
+      if (!props.options || !Array.isArray(props.options) || props.options.length < 2) {
+        return `detailed_cards requires options array with at least 2 items, got: ${JSON.stringify(props.options)}`;
+      }
+      // Validate each option has required fields
+      for (let i = 0; i < props.options.length; i++) {
+        const opt = props.options[i];
+        if (!opt.id || !opt.title) {
+          return `detailed_cards.options[${i}] missing required fields (id, title): ${JSON.stringify(opt)}`;
+        }
+      }
+      break;
+
+    case "icon_grid":
+      if (!props.options || !Array.isArray(props.options) || props.options.length < 2) {
+        return `icon_grid requires options array with at least 2 items`;
+      }
+      break;
+
+    case "smart_textarea":
+      if (!props.prompts || !Array.isArray(props.prompts) || props.prompts.length < 1) {
+        return `smart_textarea requires prompts array with at least 1 item`;
+      }
+      break;
+
+    case "toggle_list":
+      if (!props.items || !Array.isArray(props.items) || props.items.length < 1) {
+        return `toggle_list requires items array with at least 1 item`;
+      }
+      break;
+
+    case "chip_cloud":
+      if (!props.groups || !Array.isArray(props.groups) || props.groups.length < 1) {
+        return `chip_cloud requires groups array with at least 1 group`;
+      }
+      break;
+
+    case "gradient_cards":
+      if (!props.options || !Array.isArray(props.options) || props.options.length < 2) {
+        return `gradient_cards requires options array with at least 2 items`;
+      }
+      break;
+
+    case "segmented_rows":
+      if (!props.rows || !Array.isArray(props.rows) || props.rows.length < 1) {
+        return `segmented_rows requires rows array with at least 1 row`;
+      }
+      break;
+
+    case "circular_gauge":
+    case "linear_slider":
+      if (!props.label) {
+        return `${type} requires label prop`;
+      }
+      break;
+
+    case "bipolar_scale":
+      if (!props.items || !Array.isArray(props.items) || props.items.length < 1) {
+        return `bipolar_scale requires items array with at least 1 item`;
+      }
+      break;
+
+    case "stacked_bar":
+      if (!props.segments || !Array.isArray(props.segments) || props.segments.length < 2) {
+        return `stacked_bar requires segments array with at least 2 segments`;
+      }
+      break;
+
+    case "comparison_duel":
+      if (!props.optionA || !props.optionB) {
+        return `comparison_duel requires optionA and optionB`;
+      }
+      break;
+
+    case "tag_input":
+      // tag_input has all optional props, just needs non-empty props object (already checked above)
+      break;
+
+    default:
+      // Unknown type - just ensure props isn't empty (already checked above)
+      break;
+  }
+
+  return null; // Valid
+}
+
+/**
  * Parse and validate the Golden Interviewer LLM response.
  *
  * @param {object} raw - The raw response from the LLM adapter
@@ -96,6 +266,10 @@ export function parseGoldenInterviewerResult(raw, context = {}) {
       throw new Error("Response has neither json nor text field");
     }
 
+    // Decode JSON-encoded string fields (Anthropic Structured Outputs workaround)
+    // Record-type fields (updates, confidence, props) may be JSON-encoded strings
+    parsed = decodeJsonEncodedFields(parsed);
+
     // Validate against schema
     const validationResult = LLMResponseSchema.safeParse(parsed);
 
@@ -110,6 +284,29 @@ export function parseGoldenInterviewerResult(raw, context = {}) {
 
       // Return what we have with defaults for missing fields
       return normalizeResponse(parsed, raw.metadata);
+    }
+
+    // Runtime guard: Validate ui_tool props are not empty/invalid
+    // This catches cases where Claude returns minimal valid schema (e.g., { type: "detailed_cards", props: {} })
+    const uiToolError = validateUiToolProps(validationResult.data.ui_tool);
+    if (uiToolError) {
+      llmLogger.error(
+        {
+          uiToolError,
+          parsedResponse: JSON.stringify(validationResult.data, null, 2),
+          uiTool: validationResult.data.ui_tool,
+        },
+        "golden_interviewer.parse.invalid_ui_tool_props"
+      );
+
+      // Return error to trigger retry
+      return {
+        error: {
+          reason: "invalid_ui_tool_props",
+          message: uiToolError,
+          rawPreview: safePreview(JSON.stringify(validationResult.data.ui_tool)),
+        },
+      };
     }
 
     return normalizeResponse(validationResult.data, raw.metadata);

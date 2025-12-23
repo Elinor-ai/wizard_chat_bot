@@ -39,7 +39,7 @@ const goldenNavigationSchema = z.object({
 
 // Previous response schema - for editing flow
 const goldenPreviousResponseSchema = z.object({
-  message: z.string().optional(),
+  content: z.string().optional(),
   uiResponse: z.unknown().optional(),
 }).optional().nullable();
 

@@ -1470,9 +1470,11 @@ When a trigger is met, set \`interview_phase: "closing"\`. Give the user one fin
 **Required JSON State for Closing:**
 \`\`\`json
 {
-  "interview_phase": "closing",
+  "tool_reasoning": "Interview complete - offering final opportunity for additional details before summary.",
   "message": "Great insights! Before we wrap up—anything else that makes this role special?",
-  "ui_tool": { "type": "smart_textarea", "props": { "title": "Final thoughts (optional)" } },
+  "currently_asking_field": "closing.final_thoughts",
+  "interview_phase": "closing",
+  "ui_tool": { "type": "smart_textarea", "props": { "prompts": ["Any final details about the role?"] } },
   "completion_percentage": 90
 }
 \`\`\`
@@ -1488,8 +1490,10 @@ After the user responds to (or skips) the "closing" turn, you MUST end the sessi
 **Required JSON State for Completion:**
 \`\`\`json
 {
-  "interview_phase": "complete",
+  "tool_reasoning": "Interview complete - no more questions needed, providing final summary.",
   "message": "All set! I've captured a strong profile—great compensation details, clear schedule, and real perks that'll attract candidates.",
+  "currently_asking_field": null,
+  "interview_phase": "complete",
   "ui_tool": null,
   "extraction": {},
   "completion_percentage": 100,

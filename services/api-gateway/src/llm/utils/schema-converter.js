@@ -116,36 +116,57 @@ export function formatForOpenAI(zodSchema, name = "response") {
 }
 
 /**
- * Recursively enforce strict mode requirements for OpenAI.
+ * Recursively enforce strict mode requirements for OpenAI/Anthropic.
  * Sets additionalProperties: false on all object types.
  *
+ * For Anthropic Structured Outputs:
+ * - ALL objects must have additionalProperties: false
+ * - Record-type objects (no fixed properties) are converted to empty schema {}
+ *   which accepts any JSON value
+ *
  * @param {object} schema - The schema to modify in place
+ * @param {boolean} [isAnthropic=false] - If true, apply Anthropic-specific rules
  */
-function enforceStrictMode(schema) {
+function enforceStrictMode(schema, isAnthropic = false) {
   if (!schema || typeof schema !== "object") {
     return;
   }
 
   if (schema.type === "object") {
-    schema.additionalProperties = false;
+    const hasDefinedProperties = schema.properties && Object.keys(schema.properties).length > 0;
 
-    // Process properties
-    if (schema.properties) {
+    if (hasDefinedProperties) {
+      schema.additionalProperties = false;
+
+      // Process nested properties
       for (const prop of Object.values(schema.properties)) {
-        enforceStrictMode(prop);
+        enforceStrictMode(prop, isAnthropic);
       }
+    } else if (isAnthropic) {
+      // Anthropic: Record-type objects (z.record()) cannot use additionalProperties
+      // Convert to string type - the model will return JSON-encoded string
+      // The parser will decode it back to an object
+      schema.type = "string";
+      delete schema.additionalProperties;
+      // Update description to indicate JSON encoding
+      const originalDesc = schema.description || "Dynamic key-value pairs";
+      schema.description = `JSON-encoded object. ${originalDesc}. Return as a valid JSON string (e.g., "{\\"key\\": \\"value\\"}").`;
+    } else {
+      // OpenAI: Record-types can use additionalProperties: false with empty properties
+      schema.additionalProperties = false;
+      schema.properties = schema.properties || {};
     }
   }
 
   if (schema.type === "array" && schema.items) {
-    enforceStrictMode(schema.items);
+    enforceStrictMode(schema.items, isAnthropic);
   }
 
   // Handle anyOf, oneOf, allOf
   for (const key of ["anyOf", "oneOf", "allOf"]) {
     if (Array.isArray(schema[key])) {
       for (const item of schema[key]) {
-        enforceStrictMode(item);
+        enforceStrictMode(item, isAnthropic);
       }
     }
   }
@@ -195,13 +216,67 @@ export function formatForAnthropic(zodSchema, name = "response") {
     return null;
   }
 
-  // Anthropic also requires additionalProperties: false for strict mode
-  enforceStrictMode(jsonSchema);
+  // Anthropic requires additionalProperties: false for all objects
+  // Pass isAnthropic=true to convert record-types to empty schema {}
+  enforceStrictMode(jsonSchema, true);
+
+  // Remove features not supported by Anthropic Structured Outputs
+  const cleanedSchema = removeUnsupportedAnthropicFeatures(jsonSchema);
 
   return {
     type: "json_schema",
-    schema: jsonSchema,
+    schema: cleanedSchema,
   };
+}
+
+/**
+ * Remove JSON Schema features not supported by Anthropic Structured Outputs.
+ *
+ * Known limitations:
+ * - minItems: Only values 0 or 1 are supported (not 2+)
+ * - maxItems: Similar restrictions may apply
+ *
+ * Note: We do NOT add minProperties constraints here because:
+ * - extraction.updates and extraction.confidence should allow empty {}
+ * - ui_tool.props is validated at runtime by validateUiToolProps()
+ *
+ * @param {object} schema - The schema to clean
+ * @returns {object} - Cleaned schema
+ */
+function removeUnsupportedAnthropicFeatures(schema) {
+  if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+
+  const cleaned = { ...schema };
+
+  // Anthropic only supports minItems of 0 or 1
+  // Clamp higher values to 1 (runtime validation will catch actual violations)
+  if (typeof cleaned.minItems === "number" && cleaned.minItems > 1) {
+    cleaned.minItems = 1;
+  }
+
+  // Process nested schemas in properties
+  if (cleaned.properties) {
+    cleaned.properties = {};
+    for (const [key, value] of Object.entries(schema.properties)) {
+      cleaned.properties[key] = removeUnsupportedAnthropicFeatures(value);
+    }
+  }
+
+  // Process array items
+  if (cleaned.items) {
+    cleaned.items = removeUnsupportedAnthropicFeatures(schema.items);
+  }
+
+  // Handle anyOf, oneOf, allOf
+  for (const key of ["anyOf", "oneOf", "allOf"]) {
+    if (Array.isArray(cleaned[key])) {
+      cleaned[key] = cleaned[key].map(removeUnsupportedAnthropicFeatures);
+    }
+  }
+
+  return cleaned;
 }
 
 /**
