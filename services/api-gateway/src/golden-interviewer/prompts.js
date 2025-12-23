@@ -915,6 +915,11 @@ Below is the complete list of all field paths you can extract to. Use these exac
  * @param {string} [companyData.description] - Company description
  * @param {string} [companyData.employeeCountBucket] - Company size bucket
  * @param {string} [companyData.toneOfVoice] - Brand voice guidelines
+ * @param {string} [companyData.companyType] - Type of company (company, agency, freelancer)
+ * @param {string} [companyData.tagline] - Company tagline
+ * @param {string} [companyData.hqCountry] - Headquarters country
+ * @param {string} [companyData.hqCity] - Headquarters city
+ * @param {string} [companyData.intelSummary] - Intelligence summary about the company
  * @returns {string} - Company context section or empty string
  */
 function buildCompanyContextSection(companyData) {
@@ -922,8 +927,18 @@ function buildCompanyContextSection(companyData) {
     return "";
   }
 
-  const { name, description, industry, employeeCountBucket, toneOfVoice } =
-    companyData;
+  const {
+    name,
+    description,
+    industry,
+    employeeCountBucket,
+    toneOfVoice,
+    companyType,
+    tagline,
+    hqCountry,
+    hqCity,
+    intelSummary,
+  } = companyData;
 
   // Only build context if we have at least a company name
   if (!name) {
@@ -940,12 +955,30 @@ You are representing **${name}**`;
 
   contextSection += ".\n\n";
 
+  if (tagline) {
+    contextSection += `**Tagline:** "${tagline}"\n\n`;
+  }
+
   if (description) {
     contextSection += `**About the Company:** ${description}\n\n`;
   }
 
+  if (intelSummary) {
+    contextSection += `**Company Intelligence:** ${intelSummary}\n\n`;
+  }
+
+  if (companyType && companyType !== "unknown") {
+    contextSection += `**Company Type:** ${companyType}\n\n`;
+  }
+
   if (employeeCountBucket && employeeCountBucket !== "unknown") {
     contextSection += `**Company Size:** ${employeeCountBucket} employees\n\n`;
+  }
+
+  // Build location string from hqCity and hqCountry
+  const locationParts = [hqCity, hqCountry].filter(Boolean);
+  if (locationParts.length > 0) {
+    contextSection += `**Headquarters:** ${locationParts.join(", ")}\n\n`;
   }
 
   if (toneOfVoice) {

@@ -328,12 +328,76 @@ export class GoldenInterviewerService {
 
     // =========================================================================
     // STEP 1: Fetch company data if companyId is provided (via repository)
+    // Wait for FULL enrichment to complete (enrichmentStatus === "READY")
+    // This ensures the Golden Interview has all company intel before starting
     // =========================================================================
     let companyData = null;
 
     if (companyId) {
       try {
+        // First fetch
         companyData = await getCompanyById(this.firestore, companyId);
+
+        // If enrichment is still pending, wait for it to complete
+        // This ensures we have ALL company data (industry, description, tagline, etc.)
+        // before starting the Golden Interview LLM call
+        if (companyData?.enrichmentStatus === "PENDING") {
+          this.logger.info(
+            { sessionId, companyId, status: companyData.enrichmentStatus },
+            "golden-interviewer.session.waiting_for_enrichment"
+          );
+
+          // Poll for enrichment completion with timeout
+          // 3 minutes max to handle LLM retries (Gemini parser failures can add 60+ seconds)
+          const MAX_WAIT_MS = 180000; // 3 minutes max
+          const POLL_INTERVAL_MS = 3000; // Check every 3 seconds
+          const startTime = Date.now();
+
+          while (companyData?.enrichmentStatus === "PENDING") {
+            const elapsed = Date.now() - startTime;
+
+            if (elapsed >= MAX_WAIT_MS) {
+              this.logger.warn(
+                { sessionId, companyId, elapsedMs: elapsed },
+                "golden-interviewer.session.enrichment_timeout"
+              );
+              break;
+            }
+
+            // Wait before next poll
+            await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+            // Re-fetch to check enrichment status
+            companyData = await getCompanyById(this.firestore, companyId);
+
+            this.logger.info(
+              {
+                sessionId,
+                companyId,
+                status: companyData?.enrichmentStatus,
+                elapsedMs: elapsed,
+                hasIndustry: !!companyData?.industry,
+                hasDescription: !!companyData?.description,
+              },
+              "golden-interviewer.session.enrichment_poll"
+            );
+          }
+
+          // Log final enrichment result
+          this.logger.info(
+            {
+              sessionId,
+              companyId,
+              finalStatus: companyData?.enrichmentStatus,
+              totalWaitMs: Date.now() - startTime,
+              hasIndustry: !!companyData?.industry,
+              hasDescription: !!companyData?.description,
+              hasTagline: !!companyData?.tagline,
+              hasToneOfVoice: !!companyData?.toneOfVoice,
+            },
+            "golden-interviewer.session.enrichment_complete"
+          );
+        }
 
         if (companyData) {
           this.logger.info(
@@ -423,6 +487,11 @@ export class GoldenInterviewerService {
         description: companyData.longDescription || companyData.description,
         employeeCountBucket: companyData.employeeCountBucket,
         toneOfVoice: companyData.toneOfVoice,
+        companyType: companyData.companyType,
+        tagline: companyData.tagline,
+        hqCountry: companyData.hqCountry,
+        hqCity: companyData.hqCity,
+        intelSummary: companyData.intelSummary,
       }
       : null;
 
@@ -695,6 +764,11 @@ export class GoldenInterviewerService {
             description: company.longDescription || company.description,
             employeeCountBucket: company.employeeCountBucket,
             toneOfVoice: company.toneOfVoice,
+            companyType: company.companyType,
+            tagline: company.tagline,
+            hqCountry: company.hqCountry,
+            hqCity: company.hqCity,
+            intelSummary: company.intelSummary,
           };
         }
       } catch (error) {

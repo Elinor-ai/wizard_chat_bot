@@ -1036,6 +1036,9 @@ export default function ChatInterface({
   // ==========================================================================
 
   if (isInitializing) {
+    // Show different message when gathering company data
+    const isGatheringCompanyData = !!companyId;
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F8F7FC]">
         <div className="flex flex-col items-center gap-6">
@@ -1049,10 +1052,12 @@ export default function ChatInterface({
           </div>
           <div className="text-center">
             <h2 className="text-lg font-semibold text-slate-800">
-              Preparing Your Interview
+              {isGatheringCompanyData ? "Gathering Company Intelligence" : "Preparing Your Interview"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Setting up your personalized experience...
+              {isGatheringCompanyData
+                ? `Loading data for ${companyName || "your company"}...`
+                : "Setting up your personalized experience..."}
             </p>
           </div>
           <div className="h-1.5 w-48 overflow-hidden rounded-full bg-slate-200">

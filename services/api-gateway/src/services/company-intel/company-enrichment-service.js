@@ -8,7 +8,26 @@ import { CompanyEnrichmentStatusEnum, CompanyJobDiscoveryStatusEnum, CompanyType
 import { recordLlmUsageFromResult } from "../llm-usage-ledger.js";
 import { LLM_CORE_TASK } from "../../config/task-types.js";
 
-import { BRAND_SOURCE, STUCK_ENRICHMENT_THRESHOLD_MS } from "./config.js";
+import { BRAND_SOURCE, STUCK_ENRICHMENT_THRESHOLD_MS, GOOGLE_CSE_ID, GOOGLE_CSE_KEY, SERP_API_KEY } from "./config.js";
+
+/**
+ * Safely truncate a string for logging, handling null/undefined.
+ * @param {*} value - Value to truncate
+ * @param {number} maxLen - Maximum length
+ * @returns {string|null} - Truncated string or null
+ */
+function truncateForLog(value, maxLen = 100) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  if (value.length <= maxLen) {
+    return value;
+  }
+  return value.slice(0, maxLen) + "...";
+}
 import {
   hasValue,
   normalizeUrl,
@@ -88,9 +107,12 @@ export function computeCompanyGaps(company = {}) {
   if (!hasValue(company?.toneOfVoice) && !hasValue(brand?.toneOfVoiceHint)) {
     pushGap("voice", "toneOfVoice");
   }
-  const hasStory = hasValue(company?.tagline) || hasValue(company?.description);
-  if (!hasStory) {
+  if (!hasValue(company?.tagline)) {
     pushGap("voice", "tagline");
+  }
+  // Request description separately - LLM can provide it when Brandfetch data is corrupt/missing
+  if (!hasValue(company?.description)) {
+    pushGap("voice", "description");
   }
   const normalizedSocials = normalizeSocials(company?.socials ?? {});
   if (!hasValue(normalizedSocials?.linkedin)) {
@@ -252,10 +274,30 @@ async function runCompanyEnrichmentCore({
     throw new Error("Company context required for enrichment");
   }
 
+  // =========================================================================
+  // DEBUG: Log initial company state
+  // =========================================================================
+  console.log(`\n${"=".repeat(80)}`);
+  console.log(`🏢 [ENRICHMENT START] Company: ${company.name} (${company.id})`);
+  console.log(`${"=".repeat(80)}`);
+  console.log(`📋 Initial State:`, JSON.stringify({
+    name: company.name,
+    primaryDomain: company.primaryDomain,
+    website: company.website,
+    industry: company.industry,
+    enrichmentStatus: company.enrichmentStatus,
+    sourcesUsed: company.sourcesUsed,
+  }, null, 2));
+
   const normalizedDomain = company.primaryDomain?.toLowerCase();
   const websiteCandidate =
     company.website ?? (normalizedDomain ? `https://${normalizedDomain}` : null);
   let currentWebsiteBase = websiteCandidate;
+
+  console.log(`\n📡 [STEP 1] Starting parallel data gathering...`);
+  console.log(`   • Brandfetch: domain=${normalizedDomain}`);
+  console.log(`   • Web Search: name="${company.name}", domain="${company.primaryDomain}"`);
+  console.log(`   • Website HTML: url="${websiteCandidate}"`);
 
   // Run initial data gathering in parallel
   const tasks = [
@@ -272,7 +314,30 @@ async function runCompanyEnrichmentCore({
   ];
   const [brandResult, searchResult, websiteResult] = await Promise.allSettled(tasks);
 
+  // =========================================================================
+  // DEBUG: Log parallel data gathering results
+  // =========================================================================
+  console.log(`\n✅ [STEP 1 COMPLETE] Parallel data gathering finished`);
+
   const brandfetchData = brandResult.status === "fulfilled" ? brandResult.value : null;
+  console.log(`\n   📦 Brandfetch Result:`);
+  if (brandResult.status === "fulfilled") {
+    if (brandfetchData) {
+      console.log(`      ✓ SUCCESS - Got data:`, JSON.stringify({
+        name: brandfetchData.name,
+        domain: brandfetchData.domain,
+        description: truncateForLog(brandfetchData.description, 100),
+        industry: brandfetchData.industry,
+        logoUrl: truncateForLog(brandfetchData.logos?.[0]?.formats?.[0]?.src, 50),
+        colors: brandfetchData.colors?.slice(0, 2),
+        links: brandfetchData.links?.slice(0, 3),
+      }, null, 2));
+    } else {
+      console.log(`      ⚠ No data returned (null)`);
+    }
+  } else {
+    console.log(`      ✗ FAILED:`, brandResult.reason?.message || brandResult.reason);
+  }
   if (brandResult.status === "rejected") {
     logger?.debug?.(
       { companyId: company.id, err: brandResult.reason },
@@ -284,6 +349,23 @@ async function runCompanyEnrichmentCore({
     searchResult.status === "fulfilled" && Array.isArray(searchResult.value)
       ? searchResult.value
       : [];
+  console.log(`\n   🔍 Web Search Result:`);
+  if (searchResult.status === "fulfilled") {
+    if (searchResults.length > 0) {
+      console.log(`      ✓ SUCCESS - Found ${searchResults.length} results`);
+      console.log(`      Top 3:`, searchResults.slice(0, 3).map(r => ({ title: truncateForLog(r.title, 40), url: truncateForLog(r.link, 50) })));
+    } else {
+      // Explain WHY we got 0 results - this helps debugging
+      console.log(`      ⚠ 0 results returned`);
+      if (!GOOGLE_CSE_ID && !GOOGLE_CSE_KEY && !SERP_API_KEY) {
+        console.log(`         Reason: No search API configured (need GOOGLE_CSE_ID+KEY or SERP_API_KEY)`);
+      } else {
+        console.log(`         Reason: API call succeeded but returned no results for this query`);
+      }
+    }
+  } else {
+    console.log(`      ✗ FAILED:`, searchResult.reason?.message || searchResult.reason);
+  }
   if (searchResult.status === "rejected") {
     logger?.debug?.(
       { companyId: company.id, err: searchResult.reason },
@@ -295,6 +377,24 @@ async function runCompanyEnrichmentCore({
   let websiteCheerio = null;
   let websiteContext = "";
   let metaTags = null;
+
+  console.log(`\n   🌐 Website HTML Result:`);
+  if (websiteResult.status === "fulfilled") {
+    if (websiteHtml) {
+      console.log(`      ✓ SUCCESS - Got HTML (${websiteHtml.length} chars)`);
+      console.log(`      Preview: "${websiteHtml.slice(0, 200).replace(/\n/g, ' ')}..."`);
+    } else {
+      // Explain WHY we got null - this helps debugging
+      console.log(`      ⚠ No HTML returned (null)`);
+      if (!websiteCandidate) {
+        console.log(`         Reason: No website URL to fetch (domain is empty)`);
+      } else {
+        console.log(`         Reason: Fetch attempted but returned empty (site may block scraping)`);
+      }
+    }
+  } else {
+    console.log(`      ✗ FAILED:`, websiteResult.reason?.message || websiteResult.reason);
+  }
 
   const hydrateWebsiteArtifacts = (html, base) => {
     websiteHtml = html ?? websiteHtml;
@@ -320,14 +420,24 @@ async function runCompanyEnrichmentCore({
   }
 
   // Apply Brandfetch data if available
+  console.log(`\n📝 [STEP 2] Applying Brandfetch data...`);
   if (brandfetchData) {
     const brandPatch = applyBrandfetchToCompany(company, brandfetchData);
     if (brandPatch) {
+      console.log(`   ✓ Brandfetch patch created:`, JSON.stringify({
+        name: brandPatch.name,
+        website: brandPatch.website,
+        industry: brandPatch.industry,
+        logoUrl: truncateForLog(brandPatch.logoUrl, 50),
+        primaryColor: brandPatch.primaryColor,
+        description: truncateForLog(brandPatch.description, 80),
+      }, null, 2));
       const brandSources = new Set(company.sourcesUsed ?? []);
       brandSources.add(BRAND_SOURCE);
       brandPatch.sourcesUsed = Array.from(brandSources);
       brandPatch.updatedAt = new Date();
       const refreshed = await firestore.saveCompanyDocument(company.id, brandPatch);
+      console.log(`   ✓ Saved Brandfetch patch to Firestore`);
       company = {
         ...company,
         ...refreshed
@@ -345,19 +455,59 @@ async function runCompanyEnrichmentCore({
           hydrateWebsiteArtifacts(refreshedHtml, currentWebsiteBase);
         }
       }
+    } else {
+      console.log(`   ⚠ No patch generated from Brandfetch data`);
     }
+  } else {
+    console.log(`   ⚠ No Brandfetch data available to apply`);
   }
 
   const gaps = computeCompanyGaps(company);
   logger?.info?.({ companyId: company.id, gaps }, "company.intel.gaps");
 
   // Call LLM for company intel
+  console.log(`\n🤖 [STEP 3] Calling LLM for company intel...`);
+  console.log(`   📤 LLM INPUT:`, JSON.stringify({
+    domain: company.primaryDomain,
+    companySnapshot: {
+      name: company.name,
+      industry: company.industry,
+      website: company.website,
+      description: truncateForLog(company.description, 100),
+      hqCountry: company.hqCountry,
+      hqCity: company.hqCity,
+    },
+    gaps,
+    websiteContextLength: websiteContext?.length ?? 0,
+    websiteContextPreview: truncateForLog(websiteContext, 200),
+  }, null, 2));
+
   const intelResult = await llmClient.askCompanyIntel({
     domain: company.primaryDomain,
     companySnapshot: company,
     gaps,
     websiteContext: websiteContext ?? ""
   });
+
+  console.log(`\n   📥 LLM OUTPUT:`, JSON.stringify({
+    profile: intelResult?.profile ? {
+      officialName: intelResult.profile.officialName,
+      website: intelResult.profile.website,
+      industry: intelResult.profile.industry,
+      companyType: intelResult.profile.companyType,
+      employeeCountBucket: intelResult.profile.employeeCountBucket,
+      hqCountry: intelResult.profile.hqCountry,
+      hqCity: intelResult.profile.hqCity,
+      tagline: truncateForLog(intelResult.profile.tagline, 50),
+      description: truncateForLog(intelResult.profile.description, 150),
+      summary: truncateForLog(intelResult.profile.summary, 100),
+    } : null,
+    branding: intelResult?.branding,
+    socials: intelResult?.socials,
+    jobsCount: intelResult?.jobs?.length ?? 0,
+    jobs: intelResult?.jobs?.slice(0, 3).map(j => ({ title: j.title, url: truncateForLog(j.url, 40) })),
+    error: intelResult?.error,
+  }, null, 2));
 
   await recordLlmUsageFromResult({
     firestore,
@@ -372,8 +522,11 @@ async function runCompanyEnrichmentCore({
   });
 
   if (intelResult?.error) {
+    console.log(`   ✗ LLM ERROR:`, intelResult.error.message);
     throw new Error(intelResult.error.message ?? "LLM company intel task failed");
   }
+  console.log(`   ✓ LLM call successful`);
+
 
   const profile = intelResult?.profile ?? {};
   const branding = intelResult?.branding ?? {};
@@ -541,6 +694,21 @@ async function runCompanyEnrichmentCore({
       sources: gatherSources("profile", "tagline")
     });
   }
+  // Apply description from LLM when missing (e.g., Brandfetch data was corrupt)
+  // Fallback: if description is null but summary is available, use summary as description
+  const descriptionValue = hasValue(profile.description)
+    ? profile.description
+    : (hasValue(profile.summary) ? profile.summary : null);
+  if (hasGap("voice", "description") && hasValue(descriptionValue)) {
+    const descSources = hasValue(profile.description)
+      ? gatherSources("profile", "description")
+      : gatherSources("profile", "summary");
+    applyField("description", descriptionValue, {
+      section: "voice",
+      evidenceSection: "profile",
+      sources: descSources
+    });
+  }
   if (hasGap("segmentation", "industry") && hasValue(profile.industry)) {
     applyField("industry", profile.industry, {
       section: "segmentation",
@@ -663,13 +831,35 @@ async function runCompanyEnrichmentCore({
   );
 
   // Save enriched company
+  console.log(`\n💾 [STEP 4] Saving enriched company to Firestore...`);
+  console.log(`   📤 PATCH being saved:`, JSON.stringify({
+    enrichmentStatus: patch.enrichmentStatus,
+    name: patch.name,
+    website: patch.website,
+    careerPageUrl: patch.careerPageUrl,
+    industry: patch.industry,
+    companyType: patch.companyType,
+    employeeCountBucket: patch.employeeCountBucket,
+    hqCountry: patch.hqCountry,
+    hqCity: patch.hqCity,
+    tagline: truncateForLog(patch.tagline, 50),
+    intelSummary: truncateForLog(patch.intelSummary, 100),
+    description: truncateForLog(patch.description, 100),
+    primaryColor: patch.primaryColor,
+    fontFamilyPrimary: patch.fontFamilyPrimary,
+    socials: patch.socials,
+    sourcesUsed: patch.sourcesUsed,
+  }, null, 2));
+
   const refreshed = await firestore.saveCompanyDocument(company.id, patch);
   const updatedCompany = {
     ...company,
     ...refreshed
   };
+  console.log(`   ✓ Company document saved successfully`);
 
   // Discover and save jobs
+  console.log(`\n🔍 [STEP 5] Discovering jobs for company...`);
   const jobs = await discoverJobsForCompany({
     company: updatedCompany,
     logger,
@@ -677,7 +867,12 @@ async function runCompanyEnrichmentCore({
     careerPageUrl,
     intelJobs: intelResult?.jobs ?? []
   });
+  console.log(`   Found ${jobs.length} jobs`);
+  if (jobs.length > 0) {
+    console.log(`   Jobs:`, jobs.slice(0, 5).map(j => ({ title: j.title, department: j.department, location: j.location })));
+  }
   await saveDiscoveredJobs({ firestore, logger, company: updatedCompany, jobs });
+  console.log(`   ✓ Jobs saved to Firestore`);
 
   const jobDiscoveryStatus =
     jobs.length > 0
@@ -692,6 +887,64 @@ async function runCompanyEnrichmentCore({
     jobDiscoveryAttempts,
     updatedAt: new Date()
   });
+
+  // =========================================================================
+  // DEBUG: Log final company schema in Firestore
+  // =========================================================================
+  console.log(`\n${"=".repeat(80)}`);
+  console.log(`🏁 [ENRICHMENT COMPLETE] Company: ${updatedCompany.name} (${updatedCompany.id})`);
+  console.log(`${"=".repeat(80)}`);
+  console.log(`\n📋 FINAL COMPANY SCHEMA IN FIRESTORE:`);
+  console.log(JSON.stringify({
+    // Core identity
+    id: updatedCompany.id,
+    name: updatedCompany.name,
+    primaryDomain: updatedCompany.primaryDomain,
+    website: updatedCompany.website,
+    careerPageUrl: updatedCompany.careerPageUrl,
+
+    // Segmentation
+    industry: updatedCompany.industry,
+    companyType: updatedCompany.companyType,
+    employeeCountBucket: updatedCompany.employeeCountBucket,
+
+    // Location
+    hqCountry: updatedCompany.hqCountry,
+    hqCity: updatedCompany.hqCity,
+
+    // Content
+    tagline: updatedCompany.tagline,
+    description: truncateForLog(updatedCompany.description, 200),
+    intelSummary: truncateForLog(updatedCompany.intelSummary, 200),
+    toneOfVoice: updatedCompany.toneOfVoice,
+
+    // Branding
+    logoUrl: updatedCompany.logoUrl,
+    primaryColor: updatedCompany.primaryColor,
+    fontFamilyPrimary: updatedCompany.fontFamilyPrimary,
+    brand: updatedCompany.brand ? {
+      name: updatedCompany.brand.name,
+      logoUrl: updatedCompany.brand.logoUrl,
+      bannerUrl: updatedCompany.brand.bannerUrl,
+      colors: updatedCompany.brand.colors,
+      fonts: updatedCompany.brand.fonts,
+    } : null,
+
+    // Socials
+    socials: updatedCompany.socials,
+
+    // Enrichment status
+    enrichmentStatus: updatedCompany.enrichmentStatus,
+    sourcesUsed: updatedCompany.sourcesUsed,
+    confidenceScore: updatedCompany.confidenceScore,
+    lastEnrichedAt: updatedCompany.lastEnrichedAt,
+
+    // Jobs
+    jobDiscoveryStatus,
+    jobDiscoveryAttempts,
+    jobsFound: jobs.length,
+  }, null, 2));
+  console.log(`\n${"=".repeat(80)}\n`);
 
   return { jobs };
 }
