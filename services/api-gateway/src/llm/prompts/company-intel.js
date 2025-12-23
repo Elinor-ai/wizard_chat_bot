@@ -64,9 +64,10 @@ export function buildCompanyIntelPrompt(context = {}) {
       "Only output values for fields listed in missingTargets.* unless you have definitive proof that an existing value is wrong. Call out corrections via evidence.sources.",
       "Always attempt job discovery; return an empty array when nothing reliable is found.",
       "Favor primary sources (official website, press releases, LinkedIn company page, trusted news) over scraped directories.",
-      "Provide concise descriptions (summary max 2 sentences) suitable for recruiters.",
+      "Provide concise descriptions (summary max 2 sentences, description max 3-4 sentences) suitable for recruiters.",
       "Every field you populate must have an evidence entry listing the sources that justify it.",
       "For job fields, set a value only when you are at least ~90% confident in its accuracy; otherwise emit null/omit.",
+      "CRITICAL: Do NOT hallucinate or fabricate information. Only return data you found from real sources. If you cannot find reliable information for a field, return null or omit it entirely. It is better to leave a field empty than to provide incorrect or made-up information.",
       "Do not hallucinate social URLs or job postings. Return null/omit if uncertain.",
       "Respond ONLY with a single JSON object that matches responseContract. No markdown, no prose, no code fences, no headings, no extra keys. If unsure about a field, omit it or return null/empty as appropriate."
     ],
@@ -80,8 +81,9 @@ export function buildCompanyIntelPrompt(context = {}) {
           "1-10 | 11-50 | 51-200 | 201-500 | 501-1000 | 1000+",
         hqCountry: "string",
         hqCity: "string",
-        tagline: "string",
-        summary: "<=2 sentences overview",
+        tagline: "string (short catchy phrase)",
+        description: "3-4 sentences describing what the company does, their main products/services, and value proposition",
+        summary: "<=2 sentences brief overview for internal use",
         toneOfVoice: "keywords describing writing voice",
       },
       branding: {

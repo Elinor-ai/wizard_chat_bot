@@ -546,11 +546,25 @@ export class GeminiAdapter {
     if (mode === "json") {
       try {
         let jsonStr = text.trim();
-        const fenceRegex = /^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/;
+
+        // Try to extract JSON from markdown code fences anywhere in the text
+        // Gemini sometimes adds explanatory text before/after the JSON
+        const fenceRegex = /```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/;
         const match = jsonStr.match(fenceRegex);
         if (match && match[1]) {
           jsonStr = match[1].trim();
+        } else {
+          // If no fence found, try to find JSON object/array directly
+          const jsonStartObj = jsonStr.indexOf("{");
+          const jsonStartArr = jsonStr.indexOf("[");
+          const jsonStart = jsonStartObj >= 0 && jsonStartArr >= 0
+            ? Math.min(jsonStartObj, jsonStartArr)
+            : Math.max(jsonStartObj, jsonStartArr);
+          if (jsonStart > 0) {
+            jsonStr = jsonStr.slice(jsonStart);
+          }
         }
+
         jsonPayload = JSON.parse(jsonStr);
       } catch (e) {
         llmLogger.warn(

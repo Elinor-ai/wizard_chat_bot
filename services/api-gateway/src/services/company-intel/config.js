@@ -79,8 +79,8 @@ export const SOCIAL_LINK_KEYS = [
 
 // API Configuration
 export const hasFetchSupport = typeof fetch === "function";
-export const ALLOW_WEB_FETCH =
-  hasFetchSupport && process.env.ENABLE_COMPANY_INTEL_FETCH === "true";
+// Web fetch is enabled by default - no need for explicit opt-in flag
+export const ALLOW_WEB_FETCH = hasFetchSupport;
 
 export const BRANDFETCH_API_URL = "https://api.brandfetch.io/v2/brands";
 export const BRANDFETCH_API_TOKEN =

@@ -271,8 +271,9 @@ export async function saveDiscoveredJobs({ firestore, logger, company, jobs }) {
         originalPostedAt: job.postedAt ?? null,
         importedAt: now,
         companyIntelSource: "company-intel-worker",
-        overallConfidence: job.overallConfidence ?? null,
-        fieldConfidence: job.fieldConfidence ?? null,
+        // These are optional in schema (not nullable), so use undefined if not present
+        overallConfidence: job.overallConfidence ?? undefined,
+        fieldConfidence: job.fieldConfidence ?? undefined,
         evidenceSources: job.evidenceSources ?? []
       },
       createdAt: now,

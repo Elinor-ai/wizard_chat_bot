@@ -365,6 +365,42 @@ export function extractJobAnchorsFromHtml({ html, baseUrl, company }) {
 }
 
 /**
+ * Check if title looks like a LinkedIn "Related Jobs" aggregation.
+ * These are NOT real job listings - they're search result counts like "Security Professional jobs 114,757 open jobs"
+ * @param {string} title - Job title to check
+ * @returns {boolean} True if looks like aggregated listing (should be rejected)
+ */
+function looksLikeAggregatedJobListing(title) {
+  if (!title) return true;
+  const normalized = title.trim().toLowerCase();
+
+  // Too generic - just "jobs" or very short
+  if (normalized === "jobs" || normalized === "job" || normalized.length < 5) {
+    return true;
+  }
+
+  // Contains job count patterns like "114,757 open jobs" or "500+ jobs"
+  // Matches: "X,XXX jobs", "X,XXX open jobs", "XXX+ jobs"
+  if (/\d[\d,]*\+?\s*(open\s+)?jobs?/i.test(title)) {
+    return true;
+  }
+
+  // Pattern: "X jobs Y open jobs" (like "Security Professional jobs 114,757 open jobs")
+  if (/jobs\s+\d/i.test(title)) {
+    return true;
+  }
+
+  // Ends with " jobs" (like "Marketing jobs", "Technology Specialist jobs")
+  // These are LinkedIn category searches, not actual job postings
+  // Real job titles don't end with "jobs" - they're specific like "Marketing Manager"
+  if (/\sjobs$/i.test(normalized)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Check if anchor looks like a LinkedIn job link.
  * @param {string} href - Anchor href
  * @param {string} text - Anchor text
@@ -416,6 +452,10 @@ function buildLinkedInJobFromAnchor({ anchorMarkup, href, text, baseUrl, company
     title = inferTitleFromUrl(url);
   }
   if (!title || title.length < 3) {
+    return null;
+  }
+  // Filter out LinkedIn "Related Jobs" aggregations (e.g., "Security Professional jobs 114,757 open jobs")
+  if (looksLikeAggregatedJobListing(title)) {
     return null;
   }
   const jobSource =
