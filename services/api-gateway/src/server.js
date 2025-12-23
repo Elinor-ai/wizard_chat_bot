@@ -24,8 +24,12 @@ import {
 import { requestContextMiddleware } from "./llm/request-context.js";
 import { VIDEO_BEHAVIOR_CONFIG } from "./config/llm-config.js";
 
+// Dynamic CORS - allow requests from any origin (localhost, ngrok, etc.)
 const corsConfig = {
-  origin: "http://localhost:3000",
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl) or any origin
+    callback(null, origin || true);
+  },
   credentials: true,
   methods: ["GET", "POST", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],

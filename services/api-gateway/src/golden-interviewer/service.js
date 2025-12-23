@@ -432,6 +432,15 @@ export class GoldenInterviewerService {
       companyDataForPrompt
     );
 
+    this.logger.info(
+      {
+        sessionId,
+        hasResponse: !!firstTurnResponse,
+        isFallback: !firstTurnResponse.completion_percentage,
+      },
+      "golden-interviewer.start.turn_generated"
+    );
+
     // Update session with first turn via repository
     // Build snapshot for navigation
     const snapshot = buildSnapshot({
@@ -442,8 +451,8 @@ export class GoldenInterviewerService {
 
     const assistantMessage = buildAssistantMessage({
       content: firstTurnResponse.message,
-      uiTool: firstTurnResponse.ui_tool,
-      currentlyAskingField: firstTurnResponse.currently_asking_field,
+      uiTool: firstTurnResponse.ui_tool || null,
+      currentlyAskingField: firstTurnResponse.currently_asking_field || null,
       snapshot,
     });
 
@@ -457,12 +466,13 @@ export class GoldenInterviewerService {
 
     session.conversationHistory.push(assistantMessage);
     session.turnCount = 1;
-    session.metadata.lastToolUsed = firstTurnResponse.ui_tool?.type;
-    session.metadata.lastToolAllowCustomInput = this.getAllowCustomInput(firstTurnResponse.ui_tool);
+    session.metadata.lastToolUsed = firstTurnResponse.ui_tool?.type || null;
+    session.metadata.lastToolAllowCustomInput =
+      this.getAllowCustomInput(firstTurnResponse.ui_tool) ?? false;
     session.metadata.currentPhase =
       firstTurnResponse.interview_phase || "opening";
-    session.metadata.lastAskedField = currentlyAskingField;
-    session.metadata.lastAskedCategory = currentlyAskingCategory;
+    session.metadata.lastAskedField = currentlyAskingField || null;
+    session.metadata.lastAskedCategory = currentlyAskingCategory || null;
     session.updatedAt = new Date();
 
     await saveSession({

@@ -649,7 +649,6 @@ export class VeoClient extends IVideoClient {
                 console.log(`☁️  Downloaded from GCS: ${videoData.value}`);
                 console.log(`✅ Saved locally: ${localPath}`);
                 console.log(`🔗 Routing URL: ${finalUrl}`);
-                console.log(`🌐 [Video Debug] Full URL will be: http://localhost:4000${finalUrl}`);
               }
             }
           } catch (downloadErr) {

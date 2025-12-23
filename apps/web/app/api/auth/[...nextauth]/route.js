@@ -21,7 +21,8 @@ import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import jwt from "jsonwebtoken";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+// Server-side calls use API_BACKEND_URL (same as Next.js rewrites)
+const API_BASE_URL = process.env.API_BACKEND_URL ?? "http://localhost:4000";
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET;
 
 /**

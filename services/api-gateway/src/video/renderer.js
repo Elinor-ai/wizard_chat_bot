@@ -78,12 +78,8 @@ export function createRenderer(options = {}) {
     logger: options.logger,
   });
 
-  const assetBaseSetting = "http://localhost:4000/video-assets";
-  const assetBaseUrl = new URL(assetBaseSetting, "http://localhost");
-  const basePath =
-    assetBaseUrl.pathname === "/"
-      ? ""
-      : assetBaseUrl.pathname.replace(/\/$/, "");
+  // Use relative paths for video assets - works via Next.js proxy on any domain
+  const basePath = "/backend-api/video-assets";
 
   function toAbsoluteUrl(rawUrl) {
     if (!rawUrl) {
@@ -103,17 +99,16 @@ export function createRenderer(options = {}) {
       candidatePath = `/${candidatePath}`;
     }
 
-    if (basePath && candidatePath.startsWith(basePath)) {
-      return `${assetBaseUrl.origin}${candidatePath}`;
-    }
-    if (!basePath && candidatePath.startsWith("/")) {
-      return `${assetBaseUrl.origin}${candidatePath}`;
+    // If already a proper relative path, return as-is
+    if (candidatePath.startsWith(basePath)) {
+      return candidatePath;
     }
 
+    // Extract filename and build relative path
     const segments = candidatePath.split("/").filter(Boolean);
     const fileSegment = segments.pop() ?? "";
     const normalizedPath = `${basePath}/${fileSegment}`.replace(/\/{2,}/g, "/");
-    return `${assetBaseUrl.origin}${normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`}`;
+    return normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
   }
 
   return {
