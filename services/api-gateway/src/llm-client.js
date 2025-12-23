@@ -58,6 +58,17 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? null;
 const ANTHROPIC_API_URL =
   process.env.ANTHROPIC_API_URL ?? "https://api.anthropic.com/v1/messages";
 
+// DEBUG: Log Env loading status
+console.log("[llm-client] Loading environment...");
+console.log("[llm-client] WIZARD_ENV_PATH:", process.env.WIZARD_ENV_PATH || process.env._WIZARD_ENV_PATH || "unknown");
+console.log("[llm-client] ANTHROPIC_API_KEY present:", !!ANTHROPIC_API_KEY);
+if (ANTHROPIC_API_KEY) {
+  console.log("[llm-client] ANTHROPIC_API_KEY length:", ANTHROPIC_API_KEY.length);
+  console.log("[llm-client] ANTHROPIC_API_KEY preview:", ANTHROPIC_API_KEY.slice(0, 7) + "...");
+} else {
+  console.warn("[llm-client] ANTHROPIC_API_KEY is MISSING in process.env");
+}
+
 // DALL-E uses OpenAI API key if not separately configured
 const DALL_E_API_KEY =
   process.env.DALL_E_API_KEY || (OPENAI_LLM_ENABLED ? OPENAI_API_KEY : null);
