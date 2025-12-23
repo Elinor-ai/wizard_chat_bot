@@ -107,7 +107,8 @@ export default function ChatInterface({
   const inputRef = useRef(null);
 
   // Check if current field is mandatory (skip button should be hidden)
-  const isCurrentFieldMandatory = MANDATORY_FIELDS.includes(currentlyAskingField);
+  const isCurrentFieldMandatory =
+    MANDATORY_FIELDS.includes(currentlyAskingField);
   const initRef = useRef(false);
   const initialNavDoneRef = useRef(false); // Track if initial navigation from URL is done
 
@@ -131,15 +132,19 @@ export default function ChatInterface({
 
       // Check for existing session in URL or localStorage
       const urlSessionId = searchParams.get("session");
-      const storedSessionId = typeof window !== "undefined"
-        ? localStorage.getItem(STORAGE_KEY)
-        : null;
+      const storedSessionId =
+        typeof window !== "undefined"
+          ? localStorage.getItem(STORAGE_KEY)
+          : null;
       const existingSessionId = urlSessionId || storedSessionId;
 
       // Try to restore existing session
       if (existingSessionId) {
         try {
-          console.log("[ChatInterface] Attempting to restore session:", existingSessionId);
+          console.log(
+            "[ChatInterface] Attempting to restore session:",
+            existingSessionId
+          );
 
           // Check if session exists and is active
           const statusResponse = await GoldenInterviewApi.getSessionStatus(
@@ -164,7 +169,11 @@ export default function ChatInterface({
             let targetIndex = maxIndex;
             if (qParam) {
               const requestedIndex = parseInt(qParam, 10) - 1; // Convert 1-based to 0-based
-              if (!isNaN(requestedIndex) && requestedIndex >= 0 && requestedIndex <= maxIndex) {
+              if (
+                !isNaN(requestedIndex) &&
+                requestedIndex >= 0 &&
+                requestedIndex <= maxIndex
+              ) {
                 targetIndex = requestedIndex;
               }
             }
@@ -182,7 +191,8 @@ export default function ChatInterface({
             if (navResponse.currently_asking_field !== undefined) {
               setCurrentlyAskingField(navResponse.currently_asking_field);
             }
-            if (navResponse.interview_phase) setCurrentPhase(navResponse.interview_phase);
+            if (navResponse.interview_phase)
+              setCurrentPhase(navResponse.interview_phase);
             if (navResponse.completion_percentage !== undefined) {
               setCompletionPercentage(navResponse.completion_percentage);
             }
@@ -201,7 +211,9 @@ export default function ChatInterface({
             // Update URL with session
             const params = new URLSearchParams(searchParams.toString());
             params.set("session", existingSessionId);
-            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            router.replace(`${pathname}?${params.toString()}`, {
+              scroll: false,
+            });
 
             // Mark initial navigation as done (we already navigated to the right turn)
             initialNavDoneRef.current = true;
@@ -270,7 +282,12 @@ export default function ChatInterface({
           isEditing: false,
         });
         // DEBUG: Log the currently asking field on session start
-        console.log("[ChatInterface] Session start - currently_asking_field:", response.currently_asking_field, "| isMandatory:", MANDATORY_FIELDS.includes(response.currently_asking_field));
+        console.log(
+          "[ChatInterface] Session start - currently_asking_field:",
+          response.currently_asking_field,
+          "| isMandatory:",
+          MANDATORY_FIELDS.includes(response.currently_asking_field)
+        );
       } catch (err) {
         console.error("Failed to start session:", err);
         setError(err.message || "Failed to start interview. Please try again.");
@@ -296,17 +313,29 @@ export default function ChatInterface({
       // Use replace to avoid adding to browser history on every navigation
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  }, [navigationState.currentIndex, isInitializing, sessionId, pathname, searchParams, router]);
+  }, [
+    navigationState.currentIndex,
+    isInitializing,
+    sessionId,
+    pathname,
+    searchParams,
+    router,
+  ]);
 
   // Handle initial load with q parameter (navigate to specific question)
   // Note: initialNavDoneRef is defined at the top with other refs
   useEffect(() => {
-    if (isInitializing || !sessionId || !authToken || initialNavDoneRef.current) return;
+    if (isInitializing || !sessionId || !authToken || initialNavDoneRef.current)
+      return;
 
     const qParam = searchParams.get("q");
     if (qParam) {
       const targetIndex = parseInt(qParam, 10) - 1; // Convert 1-based to 0-based
-      if (!isNaN(targetIndex) && targetIndex >= 0 && targetIndex !== navigationState.currentIndex) {
+      if (
+        !isNaN(targetIndex) &&
+        targetIndex >= 0 &&
+        targetIndex !== navigationState.currentIndex
+      ) {
         initialNavDoneRef.current = true;
         // Navigate to the specified question
         (async () => {
@@ -321,7 +350,8 @@ export default function ChatInterface({
             if (response.currently_asking_field !== undefined) {
               setCurrentlyAskingField(response.currently_asking_field);
             }
-            if (response.interview_phase) setCurrentPhase(response.interview_phase);
+            if (response.interview_phase)
+              setCurrentPhase(response.interview_phase);
             if (response.completion_percentage !== undefined) {
               setCompletionPercentage(response.completion_percentage);
             }
@@ -346,7 +376,13 @@ export default function ChatInterface({
     } else {
       initialNavDoneRef.current = true;
     }
-  }, [isInitializing, sessionId, authToken, searchParams, navigationState.currentIndex]);
+  }, [
+    isInitializing,
+    sessionId,
+    authToken,
+    searchParams,
+    navigationState.currentIndex,
+  ]);
 
   // Focus input when ready
   useEffect(() => {
@@ -397,7 +433,11 @@ export default function ChatInterface({
     async (messageContent, value = null, skipAction = null) => {
       if (!sessionId || !authToken) return;
 
-      console.log(`🧭 [Frontend] sendMessage - BEFORE. navigationState:`, navigationState, `| hasMessage: ${!!messageContent}, hasValue: ${value !== null}, isSkip: ${skipAction?.isSkip}`);
+      console.log(
+        `🧭 [Frontend] sendMessage - BEFORE. navigationState:`,
+        navigationState,
+        `| hasMessage: ${!!messageContent}, hasValue: ${value !== null}, isSkip: ${skipAction?.isSkip}`
+      );
 
       setCurrentTool(null);
       setRefineResult(null);
@@ -425,7 +465,11 @@ export default function ChatInterface({
 
         // Check if validation failed (can_proceed = false)
         if (response.refine_result?.can_proceed === false) {
-          setError(response.refine_result.validation_issue || response.message || "Please provide a valid response.");
+          setError(
+            response.refine_result.validation_issue ||
+              response.message ||
+              "Please provide a valid response."
+          );
           // Keep current tool so user can retry
           return;
         }
@@ -450,15 +494,20 @@ export default function ChatInterface({
         setCurrentlyAskingField(response.currently_asking_field ?? null);
 
         // Log key response fields for debugging
-        console.log(`🧭 [Frontend] sendMessage - RESPONSE. was_edit: ${response.was_edit}, phase: ${response.interview_phase}, field: ${response.currently_asking_field}, navigation:`, response.navigation);
+        console.log(
+          `🧭 [Frontend] sendMessage - RESPONSE. was_edit: ${response.was_edit}, phase: ${response.interview_phase}, field: ${response.currently_asking_field}, navigation:`,
+          response.navigation
+        );
 
         // Update navigation state from response
         if (response.navigation) {
-          console.log(`🧭 [Frontend] sendMessage - setting navigationState from response`);
+          console.log(
+            `🧭 [Frontend] sendMessage - setting navigationState from response`
+          );
           setNavigationState(response.navigation);
         } else {
           // Normal turn progression - update maxIndex
-          setNavigationState(prev => ({
+          setNavigationState((prev) => ({
             ...prev,
             currentIndex: prev.maxIndex + 1,
             maxIndex: prev.maxIndex + 1,
@@ -487,7 +536,12 @@ export default function ChatInterface({
           setInputValue("");
         }
         // DEBUG: Log the currently asking field to understand skip button behavior
-        console.log("[ChatInterface] Turn response - currently_asking_field:", response.currently_asking_field, "| isMandatory:", MANDATORY_FIELDS.includes(response.currently_asking_field));
+        console.log(
+          "[ChatInterface] Turn response - currently_asking_field:",
+          response.currently_asking_field,
+          "| isMandatory:",
+          MANDATORY_FIELDS.includes(response.currently_asking_field)
+        );
         // Check if interview is complete
         if (response.is_complete || response.interview_phase === "complete") {
           setIsComplete(true);
@@ -515,7 +569,9 @@ export default function ChatInterface({
     if (!navigationState.canGoBack || !sessionId || !authToken) return;
 
     const targetIndex = navigationState.currentIndex - 1;
-    console.log(`🧭 [Frontend] handleGoBack - from index ${navigationState.currentIndex} to ${targetIndex}, maxIndex: ${navigationState.maxIndex}`);
+    console.log(
+      `🧭 [Frontend] handleGoBack - from index ${navigationState.currentIndex} to ${targetIndex}, maxIndex: ${navigationState.maxIndex}`
+    );
 
     setIsTyping(true);
     setError(null);
@@ -527,7 +583,10 @@ export default function ChatInterface({
         { authToken }
       );
 
-      console.log(`🧭 [Frontend] handleGoBack - response navigation:`, response.navigation);
+      console.log(
+        `🧭 [Frontend] handleGoBack - response navigation:`,
+        response.navigation
+      );
 
       // Update UI with the previous turn's data
       if (response.message) setCurrentMessage(response.message);
@@ -565,13 +624,20 @@ export default function ChatInterface({
     } finally {
       setIsTyping(false);
     }
-  }, [sessionId, authToken, navigationState.canGoBack, navigationState.currentIndex]);
+  }, [
+    sessionId,
+    authToken,
+    navigationState.canGoBack,
+    navigationState.currentIndex,
+  ]);
 
   const handleGoForward = useCallback(async () => {
     if (!navigationState.canGoForward || !sessionId || !authToken) return;
 
     const targetIndex = navigationState.currentIndex + 1;
-    console.log(`🧭 [Frontend] handleGoForward - from index ${navigationState.currentIndex} to ${targetIndex}, maxIndex: ${navigationState.maxIndex}`);
+    console.log(
+      `🧭 [Frontend] handleGoForward - from index ${navigationState.currentIndex} to ${targetIndex}, maxIndex: ${navigationState.maxIndex}`
+    );
 
     setIsTyping(true);
     setError(null);
@@ -583,7 +649,10 @@ export default function ChatInterface({
         { authToken }
       );
 
-      console.log(`🧭 [Frontend] handleGoForward - response navigation:`, response.navigation);
+      console.log(
+        `🧭 [Frontend] handleGoForward - response navigation:`,
+        response.navigation
+      );
 
       // Update UI with the next turn's data
       if (response.message) setCurrentMessage(response.message);
@@ -621,7 +690,12 @@ export default function ChatInterface({
     } finally {
       setIsTyping(false);
     }
-  }, [sessionId, authToken, navigationState.canGoForward, navigationState.currentIndex]);
+  }, [
+    sessionId,
+    authToken,
+    navigationState.canGoForward,
+    navigationState.currentIndex,
+  ]);
 
   const handleTextSubmit = (e) => {
     e.preventDefault();
@@ -642,42 +716,48 @@ export default function ChatInterface({
   };
 
   // Handle selecting a suggestion from refine result
-  const handleSelectSuggestion = useCallback(async (suggestionValue) => {
-    if (!refineResult || !sessionId || !authToken) return;
+  const handleSelectSuggestion = useCallback(
+    async (suggestionValue) => {
+      if (!refineResult || !sessionId || !authToken) return;
 
-    setRefineResult(null);
-    setShowRewriteInput(false);
-    setRewriteValue("");
-    setIsTyping(true);
-    setError(null);
+      setRefineResult(null);
+      setShowRewriteInput(false);
+      setRewriteValue("");
+      setIsTyping(true);
+      setError(null);
 
-    try {
-      // Re-submit with the improved value, marking as accepted (skip refine check)
-      const response = await GoldenInterviewApi.sendMessage(
-        {
-          sessionId,
-          userMessage: suggestionValue,
-          acceptRefinedValue: true, // Tell backend to skip golden_refine
-        },
-        { authToken }
-      );
+      try {
+        // Re-submit with the improved value, marking as accepted (skip refine check)
+        const response = await GoldenInterviewApi.sendMessage(
+          {
+            sessionId,
+            userMessage: suggestionValue,
+            acceptRefinedValue: true, // Tell backend to skip golden_refine
+          },
+          { authToken }
+        );
 
-      // Process normal response
-      if (response.interview_phase) setCurrentPhase(response.interview_phase);
-      if (response.context_explanation) setContextExplanation(response.context_explanation);
-      if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
-      if (response.message) setCurrentMessage(response.message);
-      if (response.ui_tool) setCurrentTool(response.ui_tool);
-      // ALWAYS update currentlyAskingField to avoid stale state
-      setCurrentlyAskingField(response.currently_asking_field ?? null);
-      if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
-    } catch (err) {
-      console.error("Failed to submit suggestion:", err);
-      setError(err.message || "Failed to submit. Please try again.");
-    } finally {
-      setIsTyping(false);
-    }
-  }, [refineResult, sessionId, authToken]);
+        // Process normal response
+        if (response.interview_phase) setCurrentPhase(response.interview_phase);
+        if (response.context_explanation)
+          setContextExplanation(response.context_explanation);
+        if (response.completion_percentage !== undefined)
+          setCompletionPercentage(response.completion_percentage);
+        if (response.message) setCurrentMessage(response.message);
+        if (response.ui_tool) setCurrentTool(response.ui_tool);
+        // ALWAYS update currentlyAskingField to avoid stale state
+        setCurrentlyAskingField(response.currently_asking_field ?? null);
+        if (response.is_complete || response.interview_phase === "complete")
+          setIsComplete(true);
+      } catch (err) {
+        console.error("Failed to submit suggestion:", err);
+        setError(err.message || "Failed to submit. Please try again.");
+      } finally {
+        setIsTyping(false);
+      }
+    },
+    [refineResult, sessionId, authToken]
+  );
 
   // Handle keeping the original value
   const handleKeepOriginal = useCallback(async () => {
@@ -702,13 +782,16 @@ export default function ChatInterface({
 
       // Process normal response
       if (response.interview_phase) setCurrentPhase(response.interview_phase);
-      if (response.context_explanation) setContextExplanation(response.context_explanation);
-      if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
+      if (response.context_explanation)
+        setContextExplanation(response.context_explanation);
+      if (response.completion_percentage !== undefined)
+        setCompletionPercentage(response.completion_percentage);
       if (response.message) setCurrentMessage(response.message);
       if (response.ui_tool) setCurrentTool(response.ui_tool);
       // ALWAYS update currentlyAskingField to avoid stale state
       setCurrentlyAskingField(response.currently_asking_field ?? null);
-      if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
+      if (response.is_complete || response.interview_phase === "complete")
+        setIsComplete(true);
     } catch (err) {
       console.error("Failed to keep original:", err);
       setError(err.message || "Failed to submit. Please try again.");
@@ -759,19 +842,25 @@ export default function ChatInterface({
 
       // Check if validation failed
       if (response.refine_result?.can_proceed === false) {
-        setError(response.refine_result.validation_issue || "Please provide a valid response.");
+        setError(
+          response.refine_result.validation_issue ||
+            "Please provide a valid response."
+        );
         return;
       }
 
       // Process normal response
       if (response.interview_phase) setCurrentPhase(response.interview_phase);
-      if (response.context_explanation) setContextExplanation(response.context_explanation);
-      if (response.completion_percentage !== undefined) setCompletionPercentage(response.completion_percentage);
+      if (response.context_explanation)
+        setContextExplanation(response.context_explanation);
+      if (response.completion_percentage !== undefined)
+        setCompletionPercentage(response.completion_percentage);
       if (response.message) setCurrentMessage(response.message);
       if (response.ui_tool) setCurrentTool(response.ui_tool);
       // ALWAYS update currentlyAskingField to avoid stale state
       setCurrentlyAskingField(response.currently_asking_field ?? null);
-      if (response.is_complete || response.interview_phase === "complete") setIsComplete(true);
+      if (response.is_complete || response.interview_phase === "complete")
+        setIsComplete(true);
     } catch (err) {
       console.error("Failed to submit rewrite:", err);
       setError(err.message || "Failed to submit. Please try again.");
@@ -821,9 +910,12 @@ export default function ChatInterface({
             <SparklesIcon className="h-5 w-5 text-primary-600" />
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">We have a few suggestions</h3>
+            <h3 className="font-semibold text-slate-800">
+              We have a few suggestions
+            </h3>
             <p className="text-sm text-slate-500">
-              {refineResult.reasoning || "Here are some ways to improve your response"}
+              {refineResult.reasoning ||
+                "Here are some ways to improve your response"}
             </p>
           </div>
         </div>
@@ -833,7 +925,9 @@ export default function ChatInterface({
           <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">
             Your answer
           </div>
-          <div className="text-sm text-slate-700">{refineResult.original_value}</div>
+          <div className="text-sm text-slate-700">
+            {refineResult.original_value}
+          </div>
         </div>
 
         {/* Suggestions */}
@@ -859,8 +953,18 @@ export default function ChatInterface({
                   )}
                 </div>
                 <div className="flex-shrink-0 rounded-full bg-slate-100 p-1.5 group-hover:bg-primary-100">
-                  <svg className="h-4 w-4 text-slate-400 group-hover:text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  <svg
+                    className="h-4 w-4 text-slate-400 group-hover:text-primary-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M14 5l7 7m0 0l-7 7m7-7H3"
+                    />
                   </svg>
                 </div>
               </div>
@@ -913,8 +1017,18 @@ export default function ChatInterface({
             onClick={() => setShowRewriteInput(true)}
             className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/50 px-4 py-3 text-sm font-medium text-slate-500 transition-all hover:bg-slate-100 hover:border-slate-400 hover:text-slate-600"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+              />
             </svg>
             Write a different answer
           </button>
@@ -1022,8 +1136,12 @@ export default function ChatInterface({
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-500 shadow-lg shadow-green-500/25">
               <CheckIcon className="h-8 w-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900">Interview Complete!</h1>
-            <p className="mt-1 text-sm text-slate-500">{completionPercentage}% completed</p>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Interview Complete!
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {completionPercentage}% completed
+            </p>
           </div>
 
           {/* Tabs */}
@@ -1059,7 +1177,8 @@ export default function ChatInterface({
                 className="mb-4 text-base text-slate-600 [&>h3]:text-lg [&>h3]:font-semibold [&>h3]:text-slate-700 [&>h3]:mb-2 [&>h3]:block"
                 dangerouslySetInnerHTML={{
                   __html: DOMPurify.sanitize(
-                    currentMessage || "Great work! We've captured everything we need about this role.",
+                    currentMessage ||
+                      "Great work! We've captured everything we need about this role.",
                     {
                       ALLOWED_TAGS: ["h3", "b", "strong", "span", "em"],
                       ALLOWED_ATTR: ["class"],
@@ -1112,8 +1231,12 @@ export default function ChatInterface({
               <div className="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
                 <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
                   <div>
-                    <h2 className="text-lg font-semibold text-slate-800">Full Golden Schema</h2>
-                    <p className="text-sm text-slate-500">Complete data captured during the interview</p>
+                    <h2 className="text-lg font-semibold text-slate-800">
+                      Full Golden Schema
+                    </h2>
+                    <p className="text-sm text-slate-500">
+                      Complete data captured during the interview
+                    </p>
                   </div>
                   <button
                     onClick={handleCopySchema}
@@ -1131,8 +1254,18 @@ export default function ChatInterface({
                       </>
                     ) : (
                       <>
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                          />
                         </svg>
                         Copy All
                       </>
@@ -1155,8 +1288,12 @@ export default function ChatInterface({
               {/* Conversation History Section */}
               <div className="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
                 <div className="border-b border-slate-100 px-6 py-4">
-                  <h2 className="text-lg font-semibold text-slate-800">Conversation History</h2>
-                  <p className="text-sm text-slate-500">{conversationHistory.length} messages exchanged</p>
+                  <h2 className="text-lg font-semibold text-slate-800">
+                    Conversation History
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    {conversationHistory.length} messages exchanged
+                  </p>
                 </div>
                 <div className="max-h-[400px] overflow-auto p-6">
                   {conversationHistory.length > 0 ? (
@@ -1172,10 +1309,14 @@ export default function ChatInterface({
                           )}
                         >
                           <div className="mb-2 flex items-center justify-between">
-                            <span className={clsx(
-                              "text-xs font-semibold uppercase",
-                              msg.role === "assistant" ? "text-primary-600" : "text-slate-500"
-                            )}>
+                            <span
+                              className={clsx(
+                                "text-xs font-semibold uppercase",
+                                msg.role === "assistant"
+                                  ? "text-primary-600"
+                                  : "text-slate-500"
+                              )}
+                            >
                               {msg.role === "assistant" ? "Interviewer" : "You"}
                             </span>
                             {msg.uiTool?.type && (
@@ -1187,10 +1328,19 @@ export default function ChatInterface({
                           <div
                             className="text-sm text-slate-700 [&>h3]:font-semibold [&>h3]:text-slate-800"
                             dangerouslySetInnerHTML={{
-                              __html: DOMPurify.sanitize(msg.content || "(UI response)", {
-                                ALLOWED_TAGS: ["h3", "b", "strong", "span", "em"],
-                                ALLOWED_ATTR: ["class"],
-                              }),
+                              __html: DOMPurify.sanitize(
+                                msg.content || "(UI response)",
+                                {
+                                  ALLOWED_TAGS: [
+                                    "h3",
+                                    "b",
+                                    "strong",
+                                    "span",
+                                    "em",
+                                  ],
+                                  ALLOWED_ATTR: ["class"],
+                                }
+                              ),
                             }}
                           />
                           {msg.hasUiResponse && (
@@ -1395,65 +1545,84 @@ export default function ChatInterface({
 
             {/* Suggestions UI - shown when refine_result has suggestions */}
             {refineResult?.suggestions?.length > 0 && (
-              <div className="space-y-6">
-                {renderSuggestionsUI()}
-              </div>
+              <div className="space-y-6">{renderSuggestionsUI()}</div>
             )}
 
             {/* Navigation Controls - shown when user can navigate */}
-            {!isTyping && (navigationState.canGoBack || navigationState.canGoForward) && (
-              <div className="mb-6 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                {/* Back Button */}
-                <button
-                  onClick={handleGoBack}
-                  disabled={!navigationState.canGoBack || isTyping}
-                  className={clsx(
-                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
-                    navigationState.canGoBack
-                      ? "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-sm"
-                      : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                  )}
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                  Back
-                </button>
+            {!isTyping &&
+              (navigationState.canGoBack || navigationState.canGoForward) && (
+                <div className="mb-6 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                  {/* Back Button */}
+                  <button
+                    onClick={handleGoBack}
+                    disabled={!navigationState.canGoBack || isTyping}
+                    className={clsx(
+                      "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                      navigationState.canGoBack
+                        ? "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-sm"
+                        : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                    )}
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 19l-7-7 7-7"
+                      />
+                    </svg>
+                    Back
+                  </button>
+                  {/* Position Indicator */}
 
-                {/* Position Indicator */}
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <span className="font-medium text-slate-700">
-                    Question {navigationState.currentIndex + 1}
-                  </span>
-                  <span>of</span>
-                  <span className="font-medium text-slate-700">
-                    {navigationState.maxIndex + 1}
-                  </span>
-                  {navigationState.isEditing && (
-                    <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                      Editing
+                  {/* <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <span className="font-medium text-slate-700">
+                      Question {navigationState.currentIndex + 1}
                     </span>
-                  )}
-                </div>
+                    <span>of</span>
+                    <span className="font-medium text-slate-700">
+                      {navigationState.maxIndex + 1}
+                    </span>
+                    {navigationState.isEditing && (
+                      <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        Editing
+                      </span>
+                    )}
+                  </div> */}
 
-                {/* Forward Button */}
-                <button
-                  onClick={handleGoForward}
-                  disabled={!navigationState.canGoForward || isTyping}
-                  className={clsx(
-                    "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
-                    navigationState.canGoForward
-                      ? "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-sm"
-                      : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                  )}
-                >
-                  Forward
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </div>
-            )}
+                  {/* Forward Button */}
+                  <button
+                    onClick={handleGoForward}
+                    disabled={!navigationState.canGoForward || isTyping}
+                    className={clsx(
+                      "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                      navigationState.canGoForward
+                        ? "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-sm"
+                        : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                    )}
+                  >
+                    Forward
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 5l7 7-7 7"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              )}
 
             {/* Dynamic Input OR Text Input - hidden when showing suggestions */}
             {!isTyping && !refineResult?.suggestions?.length && (
@@ -1465,10 +1634,14 @@ export default function ChatInterface({
                     </div>
 
                     {/* Action Buttons */}
-                    <div className={clsx(
-                      "flex flex-col-reverse gap-3 sm:flex-row sm:items-center",
-                      isCurrentFieldMandatory ? "sm:justify-end" : "sm:justify-between"
-                    )}>
+                    <div
+                      className={clsx(
+                        "flex flex-col-reverse gap-3 sm:flex-row sm:items-center",
+                        isCurrentFieldMandatory
+                          ? "sm:justify-end"
+                          : "sm:justify-between"
+                      )}
+                    >
                       {/* Skip button - hidden for mandatory fields */}
                       {!isCurrentFieldMandatory && (
                         <button
@@ -1509,7 +1682,11 @@ export default function ChatInterface({
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             strokeWidth={2}
-                            d={navigationState.isEditing ? "M5 13l4 4L19 7" : "M14 5l7 7m0 0l-7 7m7-7H3"}
+                            d={
+                              navigationState.isEditing
+                                ? "M5 13l4 4L19 7"
+                                : "M14 5l7 7m0 0l-7 7m7-7H3"
+                            }
                           />
                         </svg>
                       </button>
@@ -1528,10 +1705,14 @@ export default function ChatInterface({
                         className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-100"
                       />
                     </div>
-                    <div className={clsx(
-                      "mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center",
-                      isCurrentFieldMandatory ? "sm:justify-end" : "sm:justify-between"
-                    )}>
+                    <div
+                      className={clsx(
+                        "mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center",
+                        isCurrentFieldMandatory
+                          ? "sm:justify-end"
+                          : "sm:justify-between"
+                      )}
+                    >
                       {/* Skip button - hidden for mandatory fields */}
                       {!isCurrentFieldMandatory && (
                         <button
@@ -1571,7 +1752,11 @@ export default function ChatInterface({
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             strokeWidth={2}
-                            d={navigationState.isEditing ? "M5 13l4 4L19 7" : "M14 5l7 7m0 0l-7 7m7-7H3"}
+                            d={
+                              navigationState.isEditing
+                                ? "M5 13l4 4L19 7"
+                                : "M14 5l7 7m0 0l-7 7m7-7H3"
+                            }
                           />
                         </svg>
                       </button>
