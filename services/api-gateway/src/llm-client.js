@@ -2,6 +2,7 @@ import { loadEnv } from "@wizard/utils";
 import { llmLogger } from "./llm/logger.js";
 import { OpenAIAdapter } from "./llm/providers/openai-adapter.js";
 import { GeminiAdapter } from "./llm/providers/gemini-adapter.js";
+import { AnthropicAdapter } from "./llm/providers/anthropic-adapter.js";
 import { ProviderSelectionPolicy } from "./llm/providers/selection-policy.js";
 import { LlmOrchestrator } from "./llm/orchestrator.js";
 import { TASK_REGISTRY } from "./llm/tasks.js";
@@ -50,6 +51,13 @@ const GEMINI_API_URL =
   process.env.GEMINI_API_URL ??
   "https://generativelanguage.googleapis.com/v1beta";
 
+// Anthropic Claude LLM provider configuration
+// Adapter is registered automatically if ANTHROPIC_API_KEY is set.
+// Task assignment is controlled in llm-config.js (provider: "anthropic")
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? null;
+const ANTHROPIC_API_URL =
+  process.env.ANTHROPIC_API_URL ?? "https://api.anthropic.com/v1/messages";
+
 // DALL-E uses OpenAI API key if not separately configured
 const DALL_E_API_KEY =
   process.env.DALL_E_API_KEY || (OPENAI_LLM_ENABLED ? OPENAI_API_KEY : null);
@@ -85,6 +93,15 @@ if (OPENAI_LLM_ENABLED) {
   adapters["dall-e"] = new DalleImageAdapter({
     apiKey: DALL_E_API_KEY,
   });
+}
+
+// Register Anthropic Claude adapter if API key is configured
+if (ANTHROPIC_API_KEY && ANTHROPIC_API_KEY.trim() !== "") {
+  adapters.anthropic = new AnthropicAdapter({
+    apiKey: ANTHROPIC_API_KEY,
+    apiUrl: ANTHROPIC_API_URL,
+  });
+  llmLogger.info("Anthropic Claude adapter registered (ANTHROPIC_API_KEY found)");
 }
 
 const selectionPolicy = new ProviderSelectionPolicy(providerSelectionConfig);

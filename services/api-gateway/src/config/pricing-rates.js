@@ -151,6 +151,79 @@ const BASE_RATE_CARD = {
         }
       }
     },
+    // ═══════════════════════════════════════════════════════════════
+    // Anthropic Claude LLM pricing
+    // Updated: December 2025 - Official Anthropic API pricing
+    // See: https://www.anthropic.com/pricing
+    // ═══════════════════════════════════════════════════════════════
+    anthropic: {
+      planName: "anthropic-production",
+      credits: {
+        usdPerCredit: null
+      },
+      text: {
+        models: {
+          // ═══════════════════════════════════════════════════════════════
+          // Claude Opus Series - Highest capability
+          // ═══════════════════════════════════════════════════════════════
+          "claude-opus-4-5-20251101": {
+            inputUsdPerMillionTokens: 5.0,
+            outputUsdPerMillionTokens: 25.0,
+            cachedUsdPerMillionTokens: 0.5  // Cache hits: 10% of input
+          },
+          "claude-opus-4-1-20250929": {
+            inputUsdPerMillionTokens: 15.0,
+            outputUsdPerMillionTokens: 75.0,
+            cachedUsdPerMillionTokens: 1.5
+          },
+          "claude-opus-4-20250929": {
+            inputUsdPerMillionTokens: 15.0,
+            outputUsdPerMillionTokens: 75.0,
+            cachedUsdPerMillionTokens: 1.5
+          },
+
+          // ═══════════════════════════════════════════════════════════════
+          // Claude Sonnet Series - Balanced performance/cost
+          // ═══════════════════════════════════════════════════════════════
+          "claude-sonnet-4-5-20250929": {
+            inputUsdPerMillionTokens: 3.0,
+            outputUsdPerMillionTokens: 15.0,
+            cachedUsdPerMillionTokens: 0.3
+          },
+          "claude-sonnet-4-20250929": {
+            inputUsdPerMillionTokens: 3.0,
+            outputUsdPerMillionTokens: 15.0,
+            cachedUsdPerMillionTokens: 0.3
+          },
+
+          // ═══════════════════════════════════════════════════════════════
+          // Claude Haiku Series - Fast & cost-effective
+          // ═══════════════════════════════════════════════════════════════
+          "claude-haiku-4-5-20250929": {
+            inputUsdPerMillionTokens: 1.0,
+            outputUsdPerMillionTokens: 5.0,
+            cachedUsdPerMillionTokens: 0.1
+          },
+          "claude-3-5-haiku-20241022": {
+            inputUsdPerMillionTokens: 0.8,
+            outputUsdPerMillionTokens: 4.0,
+            cachedUsdPerMillionTokens: 0.08
+          },
+          "claude-3-haiku-20240307": {
+            inputUsdPerMillionTokens: 0.25,
+            outputUsdPerMillionTokens: 1.25,
+            cachedUsdPerMillionTokens: 0.03
+          }
+        },
+        // Default to Sonnet 4.5 rates as the recommended balanced option
+        default: {
+          inputUsdPerMillionTokens: 3.0,
+          outputUsdPerMillionTokens: 15.0,
+          cachedUsdPerMillionTokens: 0.3
+        }
+      }
+    },
+
     // OpenAI LLM text generation pricing
     // Updated: November 2025 - Official OpenAI API pricing
     // See: https://openai.com/api/pricing/

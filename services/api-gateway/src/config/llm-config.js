@@ -3,9 +3,19 @@ import { LLM_CORE_TASK, LLM_SPECIAL_TASK } from "./task-types.js";
 // ═══════════════════════════════════════════════════════════════════════════════
 // TEXT & IMAGE LLM CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// Gemini Models (Default)
 const GEMINI_DEFAULT_MODEL = "gemini-3-pro-preview";
 const GEMINI_FLASH_MODEL = "gemini-2.0-flash-001"; // Fast & cheap for simple tasks
 const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ANTHROPIC CLAUDE MODELS (requires ANTHROPIC_API_KEY in .env)
+// ═══════════════════════════════════════════════════════════════════════════════
+const CLAUDE_OPUS_MODEL = "claude-opus-4-5-20251101";      // Best: $5/$25 per MTok
+// const CLAUDE_SONNET_MODEL = "claude-sonnet-4-5-20250929";  // Balanced: $3/$15 per MTok
+// const CLAUDE_HAIKU_MODEL = "claude-haiku-4-5-20250929";    // Fast: $1/$5 per MTok
+// ═══════════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VIDEO RENDER CONFIGURATION
@@ -96,15 +106,15 @@ config[LLM_CORE_TASK.IMAGE_PROMPT_GENERATION] = {
   model: GEMINI_DEFAULT_MODEL
 };
 
-// Golden Refine - use fast model for quick validation and suggestions
+// Golden tasks - using Claude Opus 4.5 for best quality
 config[LLM_CORE_TASK.GOLDEN_REFINE] = {
-  provider: "gemini",
-  model: GEMINI_FLASH_MODEL
+  provider: "anthropic",
+  model: CLAUDE_OPUS_MODEL
 };
 
 config[LLM_CORE_TASK.GOLDEN_INTERVIEWER] = {
-  provider: "gemini",
-  model: "gemini-2.5-pro"  //  instead of GEMINI_DEFAULT_MODEL
+  provider: "anthropic",
+  model: CLAUDE_OPUS_MODEL
 };
 
 // Video render still goes through the shared LLM usage pipeline for pricing/logging.

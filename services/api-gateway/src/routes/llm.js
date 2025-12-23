@@ -476,7 +476,7 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
         });
       }
 
-      const jobId = context.jobId ?? context.job?.id ?? context.refinedJob?.jobId ?? null;
+      const jobId = context.jobId ?? context.job?.id ?? context.refinedJob?.jobId ?? context.sessionId ?? null;
       const result = await dispatcher(context);
 
       await recordLlmUsageFromResult({

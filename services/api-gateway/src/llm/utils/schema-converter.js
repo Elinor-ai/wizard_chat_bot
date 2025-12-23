@@ -171,6 +171,40 @@ export function formatForGemini(zodSchema) {
 }
 
 /**
+ * Format a JSON Schema for Anthropic's Structured Outputs API.
+ *
+ * Anthropic expects (with beta header):
+ * {
+ *   output_format: {
+ *     type: "json_schema",
+ *     schema: { ... }
+ *   }
+ * }
+ *
+ * Note: Unlike OpenAI which nests schema under json_schema.schema,
+ * Anthropic expects schema directly at output_format.schema
+ *
+ * @param {import('zod').ZodTypeAny} zodSchema - The Zod schema
+ * @param {string} [name] - Schema name (used for cleaning, not sent to API)
+ * @returns {object} - Anthropic output_format object
+ */
+export function formatForAnthropic(zodSchema, name = "response") {
+  const jsonSchema = zodToCleanJsonSchema(zodSchema, name);
+
+  if (!jsonSchema) {
+    return null;
+  }
+
+  // Anthropic also requires additionalProperties: false for strict mode
+  enforceStrictMode(jsonSchema);
+
+  return {
+    type: "json_schema",
+    schema: jsonSchema,
+  };
+}
+
+/**
  * Remove JSON Schema features not supported by Gemini.
  *
  * @param {object} schema - The schema to clean
