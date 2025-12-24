@@ -298,7 +298,7 @@ export function extractConversationHistory(session) {
     content: msg.content,
     timestamp: msg.timestamp,
     uiTool: msg.uiTool ? { type: msg.uiTool.type } : undefined,
-    hasUiResponse: !!msg.uiResponse,
+    uiResponse: msg.uiResponse, // Include actual UI response data for display
   }));
 }
 

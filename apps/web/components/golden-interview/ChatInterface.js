@@ -52,6 +52,66 @@ const MANDATORY_FIELDS = [
 ];
 
 // =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+/**
+ * Format a UI response value for display in conversation history.
+ * Handles various types: strings, arrays, objects with id/label/title.
+ * @param {*} uiResponse - The raw UI response value
+ * @returns {string} - Human-readable formatted string
+ */
+function formatUiResponseForDisplay(uiResponse) {
+  if (uiResponse === null || uiResponse === undefined) {
+    return null;
+  }
+
+  // String - return as-is
+  if (typeof uiResponse === "string") {
+    return uiResponse;
+  }
+
+  // Number - convert to string
+  if (typeof uiResponse === "number") {
+    return String(uiResponse);
+  }
+
+  // Boolean
+  if (typeof uiResponse === "boolean") {
+    return uiResponse ? "Yes" : "No";
+  }
+
+  // Array - format each item and join
+  if (Array.isArray(uiResponse)) {
+    const formatted = uiResponse.map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item === "object" && item !== null) {
+        return item.label || item.title || item.name || item.id || JSON.stringify(item);
+      }
+      return String(item);
+    });
+    return formatted.join(", ");
+  }
+
+  // Object with label/title/name/id
+  if (typeof uiResponse === "object") {
+    // Common patterns: { id, label }, { id, title }, { value, label }
+    if (uiResponse.label) return uiResponse.label;
+    if (uiResponse.title) return uiResponse.title;
+    if (uiResponse.name) return uiResponse.name;
+    if (uiResponse.value !== undefined) {
+      // For objects like { value: 5 } or { value: "something" }
+      return formatUiResponseForDisplay(uiResponse.value);
+    }
+    if (uiResponse.id) return uiResponse.id;
+    // Last resort - stringify
+    return JSON.stringify(uiResponse);
+  }
+
+  return String(uiResponse);
+}
+
+// =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
@@ -68,6 +128,7 @@ export default function ChatInterface({
   // Session state
   const [sessionId, setSessionId] = useState(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isRestoring, setIsRestoring] = useState(false); // true when restoring existing session
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState(null);
 
@@ -161,6 +222,7 @@ export default function ChatInterface({
       // Try to restore existing session
       if (existingSessionId) {
         try {
+          setIsRestoring(true); // Mark that we're restoring, not starting new
           console.log("[ChatInterface] Attempting to restore session:", existingSessionId);
 
           // Check if session exists and is active
@@ -184,12 +246,14 @@ export default function ChatInterface({
             // Check if there's a q parameter to navigate to a specific turn
             const qParam = searchParams.get("q");
             let targetIndex = maxIndex;
-            if (qParam) {
-              const requestedIndex = parseInt(qParam, 10) - 1; // Convert 1-based to 0-based
+            if (qParam && qParam !== "complete") {
+              // Parse numeric q parameter (1-based to 0-based)
+              const requestedIndex = parseInt(qParam, 10) - 1;
               if (!isNaN(requestedIndex) && requestedIndex >= 0 && requestedIndex <= maxIndex) {
                 targetIndex = requestedIndex;
               }
             }
+            // If q=complete, stay at maxIndex (default)
 
             // Navigate to the target turn
             const navResponse = await GoldenInterviewApi.navigateToTurn(
@@ -237,6 +301,7 @@ export default function ChatInterface({
             return;
           } else {
             console.log("[ChatInterface] Session not active, starting new one");
+            setIsRestoring(false); // Not restoring, will start new
             // Clear stored session
             if (typeof window !== "undefined") {
               localStorage.removeItem(STORAGE_KEY);
@@ -244,6 +309,7 @@ export default function ChatInterface({
           }
         } catch (err) {
           console.error("[ChatInterface] Failed to restore session:", err);
+          setIsRestoring(false); // Restoration failed, will start new
           // Clear stored session on error
           if (typeof window !== "undefined") {
             localStorage.removeItem(STORAGE_KEY);
@@ -252,6 +318,7 @@ export default function ChatInterface({
       }
 
       // Start new session
+      setIsRestoring(false); // Ensure we're not in restoring mode
       try {
         const initialData = companyId ? { companyId } : {};
         const response = await GoldenInterviewApi.startSession({
@@ -309,27 +376,35 @@ export default function ChatInterface({
     initSession();
   }, [authToken, companyId, pathname, router, searchParams]);
 
-  // Sync navigation state with URL parameter (q=questionNumber)
+  // Sync navigation state with URL parameter (q=questionNumber or q=complete)
+  // Also ensures session param is always present (fixes race condition on refresh)
   useEffect(() => {
     if (isInitializing || !sessionId) {
       console.log(`🧭 [URL SYNC] Skipped - isInitializing=${isInitializing}, sessionId=${!!sessionId}`);
       return;
     }
 
-    // Update URL when navigation changes (use currentIndex + 1 for 1-based display)
+    // Determine q value: "complete" if finished, otherwise question number (1-based)
     const currentQ = searchParams.get("q");
-    const newQ = String(navigationState.currentIndex + 1);
+    const newQ = isComplete ? "complete" : String(navigationState.currentIndex + 1);
 
-    console.log(`🧭 [URL SYNC] Check: currentQ="${currentQ}", newQ="${newQ}" (from currentIndex=${navigationState.currentIndex})`);
+    // Check if session param is missing or wrong (fixes race condition)
+    const currentSession = searchParams.get("session");
+    const sessionMismatch = currentSession !== sessionId;
 
-    if (currentQ !== newQ) {
-      const params = new URLSearchParams(searchParams.toString());
+    console.log(`🧭 [URL SYNC] Check: currentQ="${currentQ}", newQ="${newQ}", session="${currentSession}", expected="${sessionId}"`);
+
+    // Update URL if q changed OR session is missing/wrong
+    if (currentQ !== newQ || sessionMismatch) {
+      // Build clean URL with only session and q params
+      const params = new URLSearchParams();
+      params.set("session", sessionId);
       params.set("q", newQ);
-      console.log(`🧭 [URL SYNC] Updating URL: q=${currentQ} → q=${newQ}`);
+      console.log(`🧭 [URL SYNC] Updating URL: session=${sessionId}, q=${newQ}`);
       // Use replace to avoid adding to browser history on every navigation
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  }, [navigationState.currentIndex, isInitializing, sessionId, pathname, searchParams, router]);
+  }, [navigationState.currentIndex, isInitializing, sessionId, isComplete, pathname, searchParams, router]);
 
   // Handle initial load with q parameter (navigate to specific question)
   // Note: initialNavDoneRef is defined at the top with other refs
@@ -337,7 +412,8 @@ export default function ChatInterface({
     if (isInitializing || !sessionId || !authToken || initialNavDoneRef.current) return;
 
     const qParam = searchParams.get("q");
-    if (qParam) {
+    // Skip navigation for "complete" - the completion screen handles this
+    if (qParam && qParam !== "complete") {
       const targetIndex = parseInt(qParam, 10) - 1; // Convert 1-based to 0-based
       if (!isNaN(targetIndex) && targetIndex >= 0 && targetIndex !== navigationState.currentIndex) {
         initialNavDoneRef.current = true;
@@ -1052,12 +1128,18 @@ export default function ChatInterface({
           </div>
           <div className="text-center">
             <h2 className="text-lg font-semibold text-slate-800">
-              {isGatheringCompanyData ? "Gathering Company Intelligence" : "Preparing Your Interview"}
+              {isGatheringCompanyData
+                ? "Gathering Company Intelligence"
+                : isRestoring
+                  ? "Resuming Your Interview"
+                  : "Preparing Your Interview"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
               {isGatheringCompanyData
                 ? `Loading data for ${companyName || "your company"}...`
-                : "Setting up your personalized experience..."}
+                : isRestoring
+                  ? "Loading your progress..."
+                  : "Setting up your personalized experience..."}
             </p>
           </div>
           <div className="h-1.5 w-48 overflow-hidden rounded-full bg-slate-200">
@@ -1292,17 +1374,15 @@ export default function ChatInterface({
                           <div
                             className="text-sm text-slate-700 [&>h3]:font-semibold [&>h3]:text-slate-800"
                             dangerouslySetInnerHTML={{
-                              __html: DOMPurify.sanitize(msg.content || "(UI response)", {
-                                ALLOWED_TAGS: ["h3", "b", "strong", "span", "em"],
-                                ALLOWED_ATTR: ["class"],
-                              }),
+                              __html: DOMPurify.sanitize(
+                                msg.content || formatUiResponseForDisplay(msg.uiResponse) || "(No response)",
+                                {
+                                  ALLOWED_TAGS: ["h3", "b", "strong", "span", "em"],
+                                  ALLOWED_ATTR: ["class"],
+                                }
+                              ),
                             }}
                           />
-                          {msg.hasUiResponse && (
-                            <div className="mt-2 text-xs text-slate-400">
-                              + UI component response
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
