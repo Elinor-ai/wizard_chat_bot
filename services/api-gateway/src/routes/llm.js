@@ -39,6 +39,59 @@ import { VideoRendererError } from "../video/renderers/contracts.js";
 import { generateHeroImage } from "../services/hero-image.js";
 import { runCompanyEnrichmentOnce } from "../services/company-intel.js";
 
+// Lock timeout for enrichment (5 minutes) - if lock is older, consider it stale
+const ENRICHMENT_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Try to acquire enrichment lock for a company.
+ * Returns true if lock acquired, false if already locked by another process.
+ */
+async function tryAcquireEnrichmentLock({ firestore, companyId, logger }) {
+  const company = await firestore.getDocument("companies", companyId);
+  if (!company) return false;
+
+  const now = new Date();
+  const lockedAt = company.enrichmentLockedAt;
+
+  // Check if already locked (and lock is not stale)
+  if (lockedAt) {
+    const lockTime = lockedAt instanceof Date ? lockedAt : new Date(lockedAt);
+    const lockAge = now.getTime() - lockTime.getTime();
+
+    if (lockAge < ENRICHMENT_LOCK_TIMEOUT_MS) {
+      logger?.info?.(
+        { companyId, lockAgeMs: lockAge },
+        "company_intel.lock.already_locked"
+      );
+      return false; // Already locked by another process
+    }
+    // Lock is stale, we can take over
+    logger?.warn?.(
+      { companyId, lockAgeMs: lockAge },
+      "company_intel.lock.stale_lock_override"
+    );
+  }
+
+  // Acquire lock
+  await firestore.saveCompanyDocument(companyId, {
+    enrichmentLockedAt: now,
+    updatedAt: now,
+  });
+  logger?.info?.({ companyId }, "company_intel.lock.acquired");
+  return true;
+}
+
+/**
+ * Release enrichment lock for a company.
+ */
+async function releaseEnrichmentLock({ firestore, companyId, logger }) {
+  await firestore.saveCompanyDocument(companyId, {
+    enrichmentLockedAt: null,
+    updatedAt: new Date(),
+  });
+  logger?.info?.({ companyId }, "company_intel.lock.released");
+}
+
 // Import task services
 import {
   handleSuggestTask,
@@ -298,6 +351,31 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
           throw httpError(404, "Company not found");
         }
 
+        // Try to acquire lock - if another process is already running, skip
+        const lockAcquired = await tryAcquireEnrichmentLock({
+          firestore,
+          companyId,
+          logger,
+        });
+
+        if (!lockAcquired) {
+          // Another enrichment is in progress - return current company state
+          logger?.info?.(
+            { companyId },
+            "company_intel.skipped_already_running"
+          );
+          const refreshedCompany = await getCompanyByIdParsed(firestore, companyId);
+          return res.json({
+            taskType,
+            result: {
+              company: refreshedCompany,
+              jobs: [],
+              skipped: true,
+              reason: "enrichment_already_in_progress",
+            },
+          });
+        }
+
         let intelResult = null;
         let intelError = null;
         try {
@@ -314,6 +392,9 @@ export function llmRouter({ llmClient, firestore, bigQuery, logger }) {
             { companyId, err },
             "company_intel.enrichment_failed"
           );
+        } finally {
+          // Always release the lock when done
+          await releaseEnrichmentLock({ firestore, companyId, logger });
         }
 
         const refreshedCompany = await getCompanyByIdParsed(firestore, companyId);

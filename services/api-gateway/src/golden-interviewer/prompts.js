@@ -125,6 +125,21 @@ const CONDENSED_TOOL_SCHEMA = `
 
 ## CRITICAL RULES
 
+### ⚠️ 0. PROPS ARE REQUIRED - NEVER EMPTY
+**CRITICAL: When you specify a ui_tool, the props object MUST contain the required fields for that tool type.**
+
+❌ WRONG (will cause retry):
+\`\`\`json
+{ "type": "smart_textarea", "props": {} }
+\`\`\`
+
+✅ CORRECT:
+\`\`\`json
+{ "type": "smart_textarea", "props": { "title": "Job Title", "prompts": ["What's the role?"] } }
+\`\`\`
+
+**Every tool requires at minimum a "title" prop. Check the UI Tool Catalog table for each tool's required props (marked in bold).**
+
 ### 1. ICONS - Lucide names ONLY (kebab-case)
 CORRECT: "sun", "moon", "calendar", "dollar-sign", "heart-pulse", "users", "briefcase"
 WRONG: "☀️", "🌙", "📅", "💰" (emojis will CRASH the app)
@@ -1597,6 +1612,7 @@ Before generating your response, you MUST complete this internal reasoning proce
   - Open-ended/Deep Insight → Text & Media (smart_textarea, qa_list)
 
 ### STEP 5: VALIDATE (Are my props correct?)
+- **Props NOT empty**: Every ui_tool.props MUST have at least "title" + tool-specific required fields.
 - Icons: All kebab-case Lucide names (NOT emojis).
 - Arrays: All objects with {id, label} for selectable items.
 - Colors: All hex codes (NOT Tailwind classes).

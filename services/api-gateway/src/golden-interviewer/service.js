@@ -306,6 +306,65 @@ export class GoldenInterviewerService {
   }
 
   // ===========================================================================
+  // COMPANY ENRICHMENT
+  // ===========================================================================
+
+  /**
+   * Trigger company enrichment via HTTP POST /api/llm
+   * This ensures the company has all intel data before starting the interview.
+   *
+   * @param {object} options
+   * @param {string} options.authToken - Bearer token for authentication
+   * @param {string} options.companyId - Company ID to enrich
+   * @returns {Promise<boolean>} - True if enrichment was triggered successfully
+   */
+  async triggerCompanyEnrichment({ authToken, companyId }) {
+    if (!authToken || !companyId) {
+      this.logger.warn(
+        { companyId, hasToken: !!authToken },
+        "golden-interviewer.enrichment.skipped_missing_params"
+      );
+      return false;
+    }
+
+    const url = `${this.apiBaseUrl}/api/llm`;
+
+    try {
+      this.logger.info(
+        { companyId },
+        "golden-interviewer.enrichment.triggering"
+      );
+
+      // Fire-and-forget: we don't wait for the enrichment to complete
+      // The polling loop will wait for it
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          taskType: "company_intel",
+          context: { companyId },
+        }),
+      }).catch((err) => {
+        this.logger.error(
+          { companyId, err },
+          "golden-interviewer.enrichment.http_failed"
+        );
+      });
+
+      return true;
+    } catch (err) {
+      this.logger.error(
+        { companyId, err },
+        "golden-interviewer.enrichment.trigger_error"
+      );
+      return false;
+    }
+  }
+
+  // ===========================================================================
   // SESSION MANAGEMENT
   // ===========================================================================
 
@@ -338,7 +397,7 @@ export class GoldenInterviewerService {
         // First fetch
         companyData = await getCompanyById(this.firestore, companyId);
 
-        // If enrichment is still pending, wait for it to complete
+        // If enrichment is still pending, TRIGGER it and wait for it to complete
         // This ensures we have ALL company data (industry, description, tagline, etc.)
         // before starting the Golden Interview LLM call
         if (companyData?.enrichmentStatus === "PENDING") {
@@ -346,6 +405,10 @@ export class GoldenInterviewerService {
             { sessionId, companyId, status: companyData.enrichmentStatus },
             "golden-interviewer.session.waiting_for_enrichment"
           );
+
+          // IMPORTANT: Trigger enrichment if it's not already running
+          // This handles the case where a company was created but enrichment was never started
+          await this.triggerCompanyEnrichment({ authToken, companyId });
 
           // Poll for enrichment completion with timeout
           // 3 minutes max to handle LLM retries (Gemini parser failures can add 60+ seconds)
