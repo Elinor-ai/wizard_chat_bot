@@ -31,6 +31,12 @@ import {
   completeSession as repoCompleteSession,
 } from "../services/repositories/golden-interviewer-repository.js";
 import { getUserById } from "../services/repositories/user-repository.js";
+import {
+  logFirstTurn,
+  logLlmResponse,
+  logUserResponse,
+  logInterviewComplete,
+} from "./interview-audit-logger.js";
 
 // =============================================================================
 // GOLDEN INTERVIEWER SERVICE CLASS
@@ -564,6 +570,13 @@ export class GoldenInterviewerService {
       companyDataForPrompt
     );
 
+    // Log first turn for audit
+    logFirstTurn({
+      sessionId,
+      llmResponse: firstTurnResponse,
+      companyData: companyDataForPrompt,
+    }).catch(() => {}); // Non-blocking
+
     // Update session with first turn via repository
     // Build snapshot for navigation
     const snapshot = buildSnapshot({
@@ -1019,6 +1032,23 @@ export class GoldenInterviewerService {
         },
         "golden-interviewer.server_extraction.saved"
       );
+
+      // Log user response for audit (non-blocking)
+      logUserResponse({
+        sessionId,
+        turnNumber: session.turnCount,
+        field: lastAskedField,
+        value: valueToSave,
+      }).catch(() => {});
+    } else if (isSkip && skippedField) {
+      // Log skip action for audit (non-blocking)
+      logUserResponse({
+        sessionId,
+        turnNumber: session.turnCount,
+        field: skippedField,
+        value: null,
+        isSkip: true,
+      }).catch(() => {});
     } else if (!lastAskedField && (userMessage || uiResponse) && !isSkip) {
       // First turn or no field specified - log for debugging
       this.logger.debug(
@@ -1397,6 +1427,13 @@ export class GoldenInterviewerService {
     });
     console.log("💾 [CHAT AGENT] Saved to Firestore (final save)");
 
+    // Log LLM response for audit (non-blocking)
+    logLlmResponse({
+      sessionId,
+      turnNumber: session.turnCount,
+      llmResponse: parsed,
+    }).catch(() => {});
+
     // Auto-complete session if interview is done
     if (isInterviewComplete) {
       try {
@@ -1413,6 +1450,14 @@ export class GoldenInterviewerService {
           },
           "golden-interviewer.session.auto_completed"
         );
+
+        // Log final schema for audit (non-blocking)
+        logInterviewComplete({
+          sessionId,
+          goldenSchema: session.goldenSchema,
+          totalTurns: session.turnCount,
+          completionPercentage: session.metadata.completionPercentage,
+        }).catch(() => {});
       } catch (completeError) {
         this.logger.error(
           { sessionId, err: completeError },

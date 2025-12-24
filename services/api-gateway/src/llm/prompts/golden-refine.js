@@ -381,14 +381,41 @@ export function buildGoldenRefinePrompt(context = {}) {
   // Get relevant schema context
   const schemaContext = getRelevantSchemaContext(currentSchema);
 
-  // Build company context section
+  // Build company context section (same fields as Golden Interview)
   let companySection = "";
   if (companyData?.name || companyData?.industry) {
+    const lines = [
+      `- Company: ${companyData.name || "Unknown"}`,
+      `- Industry: ${companyData.industry || "Unknown"}`,
+    ];
+
+    // Add optional fields if present
+    if (companyData.description) {
+      lines.push(`- Description: ${companyData.description}`);
+    }
+    if (companyData.employeeCountBucket) {
+      lines.push(`- Size: ${companyData.employeeCountBucket}`);
+    }
+    if (companyData.companyType) {
+      lines.push(`- Type: ${companyData.companyType}`);
+    }
+    if (companyData.tagline) {
+      lines.push(`- Tagline: ${companyData.tagline}`);
+    }
+    if (companyData.hqCountry || companyData.hqCity) {
+      const location = [companyData.hqCity, companyData.hqCountry].filter(Boolean).join(", ");
+      lines.push(`- Location: ${location}`);
+    }
+    if (companyData.toneOfVoice) {
+      lines.push(`- Brand Voice: ${companyData.toneOfVoice}`);
+    }
+    if (companyData.intelSummary) {
+      lines.push(`- Summary: ${companyData.intelSummary}`);
+    }
+
     companySection = `
 ## COMPANY CONTEXT
-- Company: ${companyData.name || "Unknown"}
-- Industry: ${companyData.industry || "Unknown"}
-${companyData.toneOfVoice ? `- Brand Voice: ${companyData.toneOfVoice}` : ""}
+${lines.join("\n")}
 `;
   }
 
